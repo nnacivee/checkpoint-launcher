@@ -1,0 +1,65 @@
+name: Build and Release Launcher
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "launcher.py"
+      - "requirements.txt"
+      - "icon.ico"
+      - "window_icon.png"
+      - "icons/**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Read version from launcher.py
+        id: version
+        shell: pwsh
+        run: |
+          $match = Select-String -Path launcher.py -Pattern '"LAUNCHER_VERSION":\s*"([^"]+)"'
+          $version = $match.Matches[0].Groups[1].Value
+          echo "Detected version: $version"
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build exe
+        shell: pwsh
+        run: |
+          $args = @("--onefile", "--noconsole", "--name", "Launcher")
+          if (Test-Path "icon.ico") {
+            $args += "--icon=icon.ico"
+            $args += "--add-data=icon.ico;."
+          }
+          if (Test-Path "icons") {
+            $args += "--add-data=icons;icons"
+          }
+          if (Test-Path "window_icon.png") {
+            $args += "--add-data=window_icon.png;."
+          }
+          $args += "launcher.py"
+          pyinstaller @args
+
+      - name: Create GitHub Release with the exe attached
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          files: dist/Launcher.exe
+          generate_release_notes: false
