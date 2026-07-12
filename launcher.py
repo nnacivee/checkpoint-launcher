@@ -269,7 +269,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.4.2",
+    "LAUNCHER_VERSION": "1.4.3",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -281,6 +281,14 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.4.3",
+            "date": "12 июля 2026",
+            "changes": [
+                "Кнопка \"Играть (тест)\" теперь ставит в клиент ровно те моды, "
+                "что лежат на локальном тестовом сервере — для перебора сборки",
+            ],
+        },
         {
             "version": "1.4.2",
             "date": "12 июля 2026",
@@ -1715,19 +1723,59 @@ def install_minecraft_and_modloader(status_cb, progress_cb) -> str:
     return version_id
 
 
-def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb, progress_cb, server_override=None):
+def deploy_test_mods(status_cb, progress_cb) -> bool:
+    """Тестовый режим (кнопка "Играть (тест)"): разворачивает в клиент РОВНО
+    те моды, что лежат в папке локального тестового сервера (плюс папка
+    client_only_mods с чисто клиентскими вроде шейдеров) — чтобы клиент и
+    сервер точно совпадали. Возвращает False, если тест-папок нет на диске
+    (тогда вызывающий код откатывается на обычную установку сборки)."""
+    base = Path.home() / "Desktop" / "Checkpoint Launcher-Server"
+    src_dirs = [base / "TestServer" / "mods", base / "client_only_mods"]
+    src_dirs = [d for d in src_dirs if d.is_dir()]
+    if not src_dirs:
+        return False
+
+    jars = []
+    for d in src_dirs:
+        jars += sorted(d.glob("*.jar"))
+    if not jars:
+        return False
+
+    mods_dst = INSTANCE_DIR / "mods"
+    if mods_dst.exists():
+        shutil.rmtree(mods_dst)
+    mods_dst.mkdir(parents=True, exist_ok=True)
+
+    total = len(jars)
+    for index, jar in enumerate(jars, start=1):
+        shutil.copy2(jar, mods_dst / jar.name)
+        progress_cb(int(index * 100 / total))
+        status_cb("Тест-сборка: копирую моды %d/%d" % (index, total))
+
+    # Помечаем, что в клиенте сейчас ТЕСТОВЫЕ моды, чтобы обычная кнопка
+    # "Играть" потом переустановила настоящую сборку с сервера-хостинга.
+    MODPACK_VERSION_FILE.write_text("TEST")
+    return True
+
+
+def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb, progress_cb, server_override=None, test_mode=False):
     INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
 
     version_id = install_minecraft_and_modloader(status_cb, progress_cb)
 
-    if get_local_modpack_version() != get_remote_modpack_version():
-        install_modpack(status_cb, progress_cb)
+    if test_mode and deploy_test_mods(status_cb, progress_cb):
+        # Тест-режим: моды взяты один-в-один с локального сервера,
+        # обычную установку сборки и опциональные моды пропускаем.
+        status_cb("Тестовая сборка развёрнута (моды с локального сервера).")
     else:
-        status_cb("Сборка модов уже актуальна.")
+        if get_local_modpack_version() != get_remote_modpack_version():
+            install_modpack(status_cb, progress_cb)
+        else:
+            status_cb("Сборка модов уже актуальна.")
 
-    harvest_optional_mods(status_cb)
-    restore_no_longer_optional_mods(status_cb)
-    apply_optional_mods(status_cb, progress_cb)
+        harvest_optional_mods(status_cb)
+        restore_no_longer_optional_mods(status_cb)
+        apply_optional_mods(status_cb, progress_cb)
 
     ensure_pinned_server(status_cb)
     apply_low_end_mode(low_end_enabled, status_cb)
@@ -2449,7 +2497,8 @@ class LauncherApp:
         self._run_in_background(
             lambda: launch_game(
                 username, memory_mb, low_end_enabled,
-                self.set_status, self.set_progress, server_override="localhost:25565",
+                self.set_status, self.set_progress,
+                server_override="localhost:25565", test_mode=True,
             )
         )
 
