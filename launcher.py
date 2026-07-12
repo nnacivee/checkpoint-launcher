@@ -269,7 +269,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.3.0",
+    "LAUNCHER_VERSION": "1.4.1",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -278,9 +278,25 @@ CONFIG = {
     # окна. Формат: "имя_пользователя/название_репозитория", например
     # "ivanov/checkpoint-launcher". Оставьте "" чтобы выключить проверку —
     # тогда просто ничего не будет происходить, ошибок не будет.
-    "GITHUB_REPO": "",
+    "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+          {
+                    "version": "1.4.1",
+                    "date": "12 июля 2026",
+                    "changes": [
+                                  "Исправлено: можно было случайно открыть несколько копий лаунчера "
+                                  "одновременно — теперь вторая копия просто не запускается",
+                    ],
+          },
+          {
+                    "version": "1.4.0",
+                    "date": "12 июля 2026",
+                    "changes": [
+                                  "Кнопка \"Играть\" теперь сразу подключает к серверу Checkpoint, минуя "
+                                  "главное меню игры",
+                    ],
+          },
         {
             "version": "1.3.0",
             "date": "12 июля 2026",
@@ -434,6 +450,13 @@ CONFIG = {
         "name": "Checkpoint",
         "ip": "95.216.30.64:25760",
     },
+
+      # Если True — кнопка "Играть" сразу подключает игрока к серверу из
+      # PINNED_SERVER выше, минуя главное меню (используется штатная
+      # возможность самого Minecraft, надёжно работает на любой версии).
+      # Поставьте False, если хотите, чтобы игрок сам заходил в мультиплеер
+      # вручную (например, если часто нужен одиночный мир).
+      "AUTO_JOIN_SERVER": True,
 
     # ------------------------- ШЕЙДЕРЫ (АВТО-СКАЧИВАНИЕ) -------------------
     # Шейдеры, которые лаунчер САМ скачивает с Modrinth (открытое API, без
@@ -1712,6 +1735,15 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
         "jvmArguments": ["-Xmx%dM" % memory_mb, "-Xms1024M"],
     }
 
+      # Автоподключение к серверу — это штатная возможность самого
+      # Minecraft (флаги --server/--port), заходит сразу в игру на сервере,
+      # минуя главное меню.
+      pinned = CONFIG.get("PINNED_SERVER") or {}
+    if CONFIG.get("AUTO_JOIN_SERVER") and pinned.get("ip"):
+              host, port = parse_host_port(pinned["ip"])
+              options["server"] = host
+              options["port"] = str(port)
+
     command = mll.command.get_minecraft_command(version_id, str(INSTANCE_DIR), options)
 
     # Java — консольное приложение. Если запустить её "как есть" из .exe,
@@ -2654,10 +2686,53 @@ class LauncherApp:
             webbrowser.open(self.update_info["url"])
 
 
+# Храним хэндл мутекса в переменной модуля, чтобы Windows не освободила
+  # его раньше времени (если объект будет собран сборщиком мусора).
+_single_instance_mutex = None
+
+
+def acquire_single_instance_lock() -> bool:
+      """Не даёт запустить вторую копию лаунчера одновременно — иначе
+          получится, что открыто несколько окон сразу (и, что хуже, можно
+              случайно нажать "Играть" в каждом и получить несколько копий игры).
+              
+                  Использует именованный mutex Windows: сама операционная система
+                      считает, сколько раз он занят, и сама освобождает его, если наш
+                          процесс закроется — даже аварийно. В отличие от файла-метки на диске,
+                              тут не может остаться "зависшая" блокировка после сбоя.
+                              
+                                  Возвращает True, если можно продолжать запуск (это первая и
+                                      единственная копия), False — если лаунчер уже запущен."""
+      global _single_instance_mutex
+      if sys.platform != "win32":
+                return True  # проверка актуальна только для Windows-сборки
+        
+      try:
+                import ctypes
+                mutex_name = "Local\\%sLauncherSingleInstance" % CONFIG["PACK_NAME"].replace(" ", "_")
+                _single_instance_mutex = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
+                ERROR_ALREADY_EXISTS = 183
+                if ctypes.windll.kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+                              return False
+                          return True
+except Exception:
+        return True  # если проверка сама не сработала — не блокируем на всякий случай
+
+
 def main():
-    root = tk.Tk()
-    LauncherApp(root)
-    root.mainloop()
+      if not acquire_single_instance_lock():
+                root = tk.Tk()
+                root.withdraw()
+                messagebox.showinfo(
+                              CONFIG["PACK_NAME"],
+                              "%s уже запущен — проверьте панель задач." % CONFIG["PACK_NAME"],
+                )
+                root.destroy()
+                return
+        
+      root = tk.Tk()
+      LauncherApp(root)
+      root.mainloop()
 
 
 if __name__ == "__main__":
