@@ -269,7 +269,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.4.1",
+    "LAUNCHER_VERSION": "1.4.2",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -281,6 +281,14 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.4.2",
+            "date": "12 июля 2026",
+            "changes": [
+                "Добавлена кнопка \"Играть (тест)\" — быстрый заход на локальный "
+                "тестовый сервер (localhost) для проверки сборки перед заливкой на хостинг",
+            ],
+        },
         {
             "version": "1.4.1",
             "date": "12 июля 2026",
@@ -1707,7 +1715,7 @@ def install_minecraft_and_modloader(status_cb, progress_cb) -> str:
     return version_id
 
 
-def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb, progress_cb):
+def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb, progress_cb, server_override=None):
     INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
 
     version_id = install_minecraft_and_modloader(status_cb, progress_cb)
@@ -1739,8 +1747,11 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     # Minecraft (флаги --server/--port), заходит сразу в игру на сервере,
     # минуя главное меню.
     pinned = CONFIG.get("PINNED_SERVER") or {}
-    if CONFIG.get("AUTO_JOIN_SERVER") and pinned.get("ip"):
-        host, port = parse_host_port(pinned["ip"])
+    # server_override — заход на конкретный сервер (кнопка "Играть (тест)").
+    # Если не задан — обычное поведение: авто-заход на PINNED_SERVER.
+    join_ip = server_override or (pinned.get("ip") if CONFIG.get("AUTO_JOIN_SERVER") else None)
+    if join_ip:
+        host, port = parse_host_port(join_ip)
         options["server"] = host
         options["port"] = str(port)
 
@@ -1829,7 +1840,7 @@ class LauncherApp:
         # Python соберёт их мусором и иконки пропадут с экрана.
         self.icons = load_icons(self.theme_name)
 
-        width, height = 520, 715
+        width, height = 520, 770
         root.title(CONFIG["PACK_NAME"])
         root.geometry("%dx%d" % (width, height))
         root.configure(bg=colors["bg_grad_top"])
@@ -1980,7 +1991,16 @@ class LauncherApp:
             disabled_bg=colors["accent_dim"], fg=colors["accent_text"],
             height=50, font_size=14,
         )
-        self.play_button.pack(fill="x", pady=(2, 18))
+        self.play_button.pack(fill="x", pady=(2, 8))
+
+        # Вторая кнопка — быстрый заход на локальный тестовый сервер (localhost).
+        self.play_test_button = self._make_pill_button(
+            inner, "ИГРАТЬ (ТЕСТ — localhost)", colors, self.on_play_test,
+            bg=colors["bg_field"], hover_bg=colors["accent_hover"],
+            disabled_bg=colors["accent_dim"], fg=colors["fg"],
+            height=38, font_size=11,
+        )
+        self.play_test_button.pack(fill="x", pady=(0, 18))
 
         # Статус + прогрессбар
         tk.Label(inner, textvariable=self.status_var, font=("Segoe UI", 9),
@@ -2409,6 +2429,28 @@ class LauncherApp:
 
         self._run_in_background(
             lambda: launch_game(username, memory_mb, low_end_enabled, self.set_status, self.set_progress)
+        )
+
+    def on_play_test(self) -> None:
+        """Как 'Играть', но сразу заходит на локальный сервер localhost —
+        для проверки сборки на своём ПК перед заливкой на хостинг."""
+        username = self.nick_var.get().strip()
+        if not username or not username.isalnum():
+            messagebox.showerror(
+                "Некорректный ник",
+                "Введите ник латинскими буквами и цифрами (без пробелов и спецсимволов).",
+            )
+            return
+
+        memory_mb = int(self.memory_var.get())
+        low_end_enabled = self.low_end_var.get()
+        update_settings(username=username, memory_mb=memory_mb, low_end_mode=low_end_enabled)
+
+        self._run_in_background(
+            lambda: launch_game(
+                username, memory_mb, low_end_enabled,
+                self.set_status, self.set_progress, server_override="localhost:25565",
+            )
         )
 
     def on_show_mod_list(self) -> None:
