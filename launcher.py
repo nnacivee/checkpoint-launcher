@@ -269,7 +269,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.4.3",
+    "LAUNCHER_VERSION": "1.4.4",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -281,6 +281,14 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.4.4",
+            "date": "12 июля 2026",
+            "changes": [
+                "Лаунчер теперь сам скачивает набор качественных клиентских модов "
+                "(Sound Physics, Dynamic FPS, Chat Heads, Controlling) — ставить вручную не нужно",
+            ],
+        },
         {
             "version": "1.4.3",
             "date": "12 июля 2026",
@@ -497,6 +505,22 @@ CONFIG = {
         {"slug": "sildurs-vibrant-shaders", "label": "Sildur's Vibrant Shaders (Lite)",
          "prefer_keyword": "lite"},
         {"slug": "nostalgia-shader", "label": "Nostalgia Shader"},
+    ],
+
+    # ------------------- ДОП. КЛИЕНТСКИЕ МОДЫ (АВТО-СКАЧИВАНИЕ) -------------
+    # Качественные ЧИСТО КЛИЕНТСКИЕ моды, которые лаунчер сам скачивает с
+    # Modrinth в mods/ каждому игроку (как шейдеры). Скачиваются один раз и
+    # кэшируются. Сюда — только клиентские (звук, HUD, интерфейс, перф),
+    # которые не нужны на сервере и не хранят состояние в мире.
+    #   "slug"  — часть ссылки на страницу мода на Modrinth
+    #             (modrinth.com/mod/<slug>).
+    #   "label" — что увидит игрок в статусе загрузки.
+    "EXTRA_CLIENT_MODS": [
+        {"slug": "sound-physics-remastered", "label": "Sound Physics Remastered (реалистичное эхо)"},
+        {"slug": "dynamic-fps", "label": "Dynamic FPS (экономия ресурсов в фоне)"},
+        {"slug": "chat-heads", "label": "Chat Heads (лицо игрока в чате)"},
+        {"slug": "searchables", "label": "Searchables (библиотека для Controlling)"},
+        {"slug": "controlling", "label": "Controlling (поиск по клавишам управления)"},
     ],
 
     # ------------------------- ИКОНКА ОКНА САМОЙ ИГРЫ -------------------------
@@ -1357,6 +1381,68 @@ def install_extra_shaderpacks(status_cb=None, progress_cb=None) -> None:
         marker_file.write_text(json.dumps(sorted(installed)), encoding="utf-8")
 
 
+def install_extra_client_mods(status_cb=None, progress_cb=None) -> None:
+    """Скачивает доп. клиентские моды из CONFIG["EXTRA_CLIENT_MODS"] с
+    Modrinth и кладёт в mods/. Скачивается каждый один раз в постоянный кэш
+    (APP_DATA), а в mods/ просто копируется при каждом запуске — поэтому
+    даже после переустановки/теста повторно из интернета не тянется.
+    Некритично: если мод недоступен или Modrinth молчит — тихо пропускаем,
+    игра всё равно запустится."""
+    entries = CONFIG.get("EXTRA_CLIENT_MODS", [])
+    if not entries:
+        return
+
+    cache = APP_DATA_DIR / "extra_client_mods_cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    marker = cache / ".installed.json"
+    installed = {}
+    if marker.exists():
+        try:
+            installed = json.loads(marker.read_text(encoding="utf-8"))
+        except Exception:
+            installed = {}
+
+    changed = False
+    for entry in entries:
+        slug = entry.get("slug")
+        if not slug:
+            continue
+        label = entry.get("label", slug)
+        have = installed.get(slug)
+        if have and (cache / have).exists():
+            continue  # уже скачан в кэш
+        if status_cb:
+            status_cb("Ищу мод «%s»..." % label)
+        try:
+            filename, url = _find_modrinth_download(
+                slug, CONFIG["MC_VERSION"], [CONFIG["MOD_LOADER"]]
+            )
+            if not filename or not url:
+                if status_cb:
+                    status_cb("Мод «%s» недоступен для %s — пропускаю." % (label, CONFIG["MC_VERSION"]))
+                continue
+            if status_cb:
+                status_cb("Скачиваю мод «%s»..." % label)
+            download_file(url, cache / filename)
+            installed[slug] = filename
+            changed = True
+        except Exception:
+            if status_cb:
+                status_cb("Не удалось скачать мод «%s» — пропускаю, это не критично." % label)
+            continue
+
+    if changed:
+        marker.write_text(json.dumps(installed), encoding="utf-8")
+
+    # Копируем всё из кэша в mods/ (быстро, из интернета уже не тянем)
+    mods_dir = INSTANCE_DIR / "mods"
+    mods_dir.mkdir(parents=True, exist_ok=True)
+    for slug, filename in installed.items():
+        src = cache / filename
+        if src.exists() and not (mods_dir / filename).exists():
+            shutil.copy2(src, mods_dir / filename)
+
+
 WINDOW_ICON_MOD_SLUG = "custom-window-title"
 
 
@@ -1781,6 +1867,7 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     apply_low_end_mode(low_end_enabled, status_cb)
     install_extra_shaderpacks(status_cb, progress_cb)
     install_game_window_icon(status_cb)
+    install_extra_client_mods(status_cb, progress_cb)
 
     status_cb("Запуск игры...")
 
