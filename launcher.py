@@ -269,7 +269,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.4.7",
+    "LAUNCHER_VERSION": "1.4.8",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -281,6 +281,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.4.8",
+            "date": "13 июля 2026",
+            "changes": [
+                "Надёжное обновление: перед заменой лаунчер проверяет, что новый "
+                "файл скачался целиком, и делает паузу перед запуском — чтобы не "
+                "получить повреждённый .exe.",
+            ],
+        },
         {
             "version": "1.4.7",
             "date": "13 июля 2026",
@@ -2923,6 +2932,23 @@ class LauncherApp:
                         % (info.get("version", "?"), pct)))
 
                 download_file(exe_url, new_exe, prog)
+                # Проверяем, что скачался целый .exe (заголовок PE "MZ" и вменяемый
+                # размер), а не обрывок или HTML-страница ошибки. Иначе НЕ трогаем
+                # рабочий файл — так не окажемся с битым лаунчером, который не
+                # может загрузить python-DLL.
+                ok = False
+                try:
+                    with open(new_exe, "rb") as fh:
+                        head = fh.read(2)
+                    ok = (new_exe.stat().st_size > 3_000_000 and head == b"MZ")
+                except Exception:
+                    ok = False
+                if not ok:
+                    try:
+                        new_exe.unlink()
+                    except Exception:
+                        pass
+                    raise RuntimeError("скачанный файл повреждён")
                 self.root.after(0, self._apply_downloaded_update, cur_exe, new_exe)
             except Exception:
                 self._updating = False
@@ -2950,6 +2976,7 @@ class LauncherApp:
             'del "{n}" >nul 2>&1\r\n'
             'if exist "{n}" goto wait\r\n'
             'move /y "{nn}" "{n}" >nul\r\n'
+            "ping -n 3 127.0.0.1 >nul\r\n"
             'start "" "{n}"\r\n'
             'del "%~f0" >nul 2>&1\r\n'
         ).format(n=name, nn=new_name)
