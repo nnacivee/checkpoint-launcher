@@ -269,7 +269,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.4.6",
+    "LAUNCHER_VERSION": "1.4.7",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -281,6 +281,14 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.4.7",
+            "date": "13 июля 2026",
+            "changes": [
+                "Новый дизайн: квадратное окно, обновлённая графитово-янтарная "
+                "палитра, более округлая карточка и заметная рамка.",
+            ],
+        },
         {
             "version": "1.4.6",
             "date": "13 июля 2026",
@@ -709,32 +717,32 @@ CONFIG = {
 # тёмный фон + золотисто-оранжевый акцент)
 THEMES = {
     "dark": {
-        "bg_grad_top": "#0d0b09",
-        "bg_grad_bottom": "#1c1309",
-        "bg_panel": "#17130f",
-        "bg_field": "#221c14",
-        "fg": "#f3ead9",
-        "fg_muted": "#9c8f7a",
-        "accent": "#e2a33c",
-        "accent_hover": "#f2ba55",
-        "accent_dim": "#4a3a1e",
-        "accent_text": "#1a1108",
-        "border": "#33291a",
-        "status_online": "#7cd992",
-        "status_offline": "#ff8577",
+        "bg_grad_top": "#101216",
+        "bg_grad_bottom": "#191b20",
+        "bg_panel": "#1b1e23",
+        "bg_field": "#262a30",
+        "fg": "#eef1f5",
+        "fg_muted": "#98a0ab",
+        "accent": "#ffb02e",
+        "accent_hover": "#ffc356",
+        "accent_dim": "#5a4620",
+        "accent_text": "#161006",
+        "border": "#333942",
+        "status_online": "#5fd48b",
+        "status_offline": "#ff7a6b",
     },
     "light": {
-        "bg_grad_top": "#f7efe0",
-        "bg_grad_bottom": "#eddcb8",
-        "bg_panel": "#fffaf0",
-        "bg_field": "#f1e6d1",
-        "fg": "#241d10",
-        "fg_muted": "#7d7160",
-        "accent": "#b9791b",
-        "accent_hover": "#9c6414",
-        "accent_dim": "#e8cf9c",
-        "accent_text": "#fffaf0",
-        "border": "#e4d6b8",
+        "bg_grad_top": "#eef1f5",
+        "bg_grad_bottom": "#dee3ea",
+        "bg_panel": "#ffffff",
+        "bg_field": "#eceff4",
+        "fg": "#1b1f25",
+        "fg_muted": "#6b7280",
+        "accent": "#d1861a",
+        "accent_hover": "#b06e12",
+        "accent_dim": "#e7d4ac",
+        "accent_text": "#ffffff",
+        "border": "#d6dbe2",
         "status_online": "#2f9e52",
         "status_offline": "#c94a3d",
     },
@@ -2007,7 +2015,7 @@ class LauncherApp:
         # Python соберёт их мусором и иконки пропадут с экрана.
         self.icons = load_icons(self.theme_name)
 
-        width, height = 520, 770
+        width, height = 680, 680
         root.title(CONFIG["PACK_NAME"])
         root.geometry("%dx%d" % (width, height))
         root.configure(bg=colors["bg_grad_top"])
@@ -2021,10 +2029,10 @@ class LauncherApp:
 
         # Скруглённая карточка поверх градиента
         margin = 20
-        radius = 22
+        radius = 30
         _draw_rounded_rect(
             bg_canvas, margin, margin, width - margin, height - margin, radius,
-            fill=colors["bg_panel"], outline=colors["border"], width=1,
+            fill=colors["bg_panel"], outline=colors["border"], width=2,
         )
 
         content = tk.Frame(bg_canvas, bg=colors["bg_panel"])
@@ -2034,7 +2042,7 @@ class LauncherApp:
         )
 
         inner = tk.Frame(content, bg=colors["bg_panel"])
-        inner.pack(fill="both", expand=True, padx=26, pady=24)
+        inner.pack(fill="both", expand=True, padx=40, pady=26)
 
         # Заголовок
         header_row = tk.Frame(inner, bg=colors["bg_panel"])
@@ -2171,7 +2179,7 @@ class LauncherApp:
 
         # Статус + прогрессбар
         tk.Label(inner, textvariable=self.status_var, font=("Segoe UI", 9),
-                 bg=colors["bg_panel"], fg=colors["fg_muted"], wraplength=400, justify="left",
+                 bg=colors["bg_panel"], fg=colors["fg_muted"], wraplength=540, justify="left",
                  anchor="w").pack(fill="x")
 
         self.progress = ttk.Progressbar(inner, mode="determinate", maximum=100,
