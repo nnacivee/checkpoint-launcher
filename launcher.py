@@ -40,6 +40,15 @@ except ImportError:
     print("Установите её командой: pip install minecraft-launcher-lib")
     sys.exit(1)
 
+# Pillow нужен только для миниатюр модов в меню опциональных модов (иконки с
+# Modrinth бывают в формате webp, который штатный tkinter не умеет). Если
+# библиотеки нет — иконки просто не покажутся, а меню продолжит работать.
+try:
+    from PIL import Image, ImageTk
+    _PIL_OK = True
+except Exception:
+    _PIL_OK = False
+
 
 # =========================== Мини-NBT ===========================
 # Minecraft хранит список серверов (вкладка "Множественная игра") в файле
@@ -237,7 +246,7 @@ CONFIG = {
     # Версия сборки модов "по умолчанию" — используется, только если ниже
     # НЕ указана MODPACK_VERSION_URL. Если её увеличить, тоже нужно заново
     # собирать .exe (см. MODPACK_VERSION_URL — так делать не обязательно).
-    "MODPACK_VERSION": 2,
+    "MODPACK_VERSION": 3,
 
     # (необязательно, но удобно) Ссылка на маленький текстовый файл, в
     # котором лежит только число — версия сборки. Если её указать, лаунчер
@@ -269,7 +278,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.4.9",
+    "LAUNCHER_VERSION": "1.5.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -281,6 +290,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.5.0",
+            "date": "13 июля 2026",
+            "changes": [
+                "Убрал мод FancyMenu из сборки.",
+                "Меню опциональных модов переделано: иконки модов и компактные "
+                "карточки. Моды, которых нет в сборке (например, InvMove), теперь "
+                "докачиваются с Modrinth прямо при включении галочки.",
+            ],
+        },
         {
             "version": "1.4.9",
             "date": "13 июля 2026",
@@ -648,6 +667,7 @@ CONFIG = {
         {
             "id": "emi",
             "name": "EMI",
+            "slug": "emi",
             "description": "Просмотр рецептов и предметов",
             # Актуальное на момент написания имя файла для NeoForge 1.21.1.
             # Если вы поставите более новую версию EMI — обновите имя файла
@@ -658,14 +678,15 @@ CONFIG = {
         {
             "id": "invmove",
             "name": "InvMove",
-            "description": "Ходьба при открытом инвентаре. Требует мод Cloth Config API "
-                            "(должен быть в основной, обязательной части сборки)",
+            "slug": "invmove",
+            "description": "Ходьба при открытом инвентаре",
             "filename": "InvMove-0.9.3+1.21.1-NeoForge.jar",
             "default": True,
         },
         {
             "id": "jade",
             "name": "Jade",
+            "slug": "jade",
             "description": "Подсказки при наведении на блоки",
             "filename": "Jade-1.21.1-NeoForge-15.10.5.jar",
             "default": True,
@@ -673,6 +694,7 @@ CONFIG = {
         {
             "id": "jade_addons",
             "name": "Jade Addons",
+            "slug": "jade-addons",
             "description": "Дополнительные подсказки для Jade",
             "filename": "JadeAddons-1.21.1-NeoForge-6.1.0.jar",
             "default": True,
@@ -680,6 +702,7 @@ CONFIG = {
         {
             "id": "appleskin",
             "name": "AppleSkin",
+            "slug": "appleskin",
             "description": "Показывает сытость/насыщение на HUD",
             "filename": "appleskin-neoforge-mc1.21-3.0.9.jar",
             "default": True,
@@ -687,6 +710,7 @@ CONFIG = {
         {
             "id": "ambient_sounds",
             "name": "AmbientSounds",
+            "slug": "ambientsounds",
             "description": "Атмосферные звуки",
             "filename": "AmbientSounds_NEOFORGE_v6.3.8_mc1.21.1.jar",
             "default": True,
@@ -694,6 +718,7 @@ CONFIG = {
         {
             "id": "mouse_tweaks",
             "name": "Mouse Tweaks",
+            "slug": "mouse-tweaks",
             "description": "Удобный drag&drop в инвентаре",
             "filename": "MouseTweaks-neoforge-mc1.21-2.26.1.jar",
             "default": True,
@@ -701,6 +726,7 @@ CONFIG = {
         {
             "id": "just_zoom",
             "name": "Just Zoom",
+            "slug": "just-zoom",
             "description": "Зум по клавише",
             "filename": "justzoom_neoforge_2.1.0_MC_1.21.1.jar",
             "default": True,
@@ -708,6 +734,7 @@ CONFIG = {
         {
             "id": "no_chat_reports",
             "name": "No Chat Reports",
+            "slug": "no-chat-reports",
             "description": "Убирает отчёты о чате (приватность)",
             "filename": "NoChatReports-NEOFORGE-1.21.1-v2.9.1.jar",
             "default": True,
@@ -715,6 +742,7 @@ CONFIG = {
         {
             "id": "betterf3",
             "name": "BetterF3",
+            "slug": "betterf3",
             "description": "Улучшенный экран отладки (F3)",
             "filename": "BetterF3-11.0.3-NeoForge-1.21.1.jar",
             "default": True,
@@ -722,6 +750,7 @@ CONFIG = {
         {
             "id": "iris",
             "name": "Iris Shaders",
+            "slug": "iris",
             "description": "Поддержка шейдеров",
             "filename": "iris-neoforge-1.8.12+mc1.21.1.jar",
             "default": True,
@@ -810,6 +839,7 @@ INSTANCE_DIR = APP_DATA_DIR / "instance"
 SETTINGS_FILE = APP_DATA_DIR / "settings.json"
 MODPACK_VERSION_FILE = INSTANCE_DIR / ".modpack_version"
 OPTIONAL_CACHE_DIR = APP_DATA_DIR / "optional_mods_cache"
+MOD_ICONS_DIR = APP_DATA_DIR / "mod_icons"
 INSTALL_MARKER_FILE = INSTANCE_DIR / ".install_complete.json"
 
 
@@ -1138,6 +1168,49 @@ def harvest_optional_mods(status_cb=None) -> None:
             shutil.copy2(src, cached)
 
 
+def _download_optional_from_modrinth(mod: dict, status_cb=None) -> bool:
+    """Качает jar опционального мода напрямую с Modrinth по его slug и кладёт в
+    кэш под именем mod["filename"]. Нужно для модов, которых нет в самой сборке
+    (например, InvMove) — их всё равно можно включить одной галочкой.
+    Возвращает True, если файл появился в кэше."""
+    slug = mod.get("slug")
+    if not slug:
+        return False
+    try:
+        if status_cb:
+            status_cb("Скачиваю мод: %s" % mod["name"])
+        _fname, url = _find_modrinth_download(
+            slug, CONFIG["MC_VERSION"], [CONFIG["MOD_LOADER"]])
+        if not url:
+            return False
+        OPTIONAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        download_file(url, OPTIONAL_CACHE_DIR / mod["filename"])
+        return (OPTIONAL_CACHE_DIR / mod["filename"]).exists()
+    except Exception:
+        return False
+
+
+def _load_mod_icon_image(slug: str, size: int = 40):
+    """Возвращает PIL.Image иконки мода (квадрат size×size) или None. Берёт
+    иконку с Modrinth (icon_url) и кэширует на диск. Формат webp/png/jpeg —
+    Pillow разбирает всё. Всегда вызывается из фонового потока."""
+    if not (_PIL_OK and slug):
+        return None
+    raw = MOD_ICONS_DIR / slug
+    try:
+        if not raw.exists():
+            meta = _modrinth_api_get(
+                "https://api.modrinth.com/v2/project/%s" % slug, timeout=8)
+            url = meta.get("icon_url")
+            if not url:
+                return None
+            MOD_ICONS_DIR.mkdir(parents=True, exist_ok=True)
+            download_file(url, raw)
+        return Image.open(raw).convert("RGBA").resize((size, size))
+    except Exception:
+        return None
+
+
 def _apply_one_optional_mod(mod: dict, enabled: bool, status_cb=None) -> str:
     """Перекладывает jar-файл одного опционального мода между кэшем и
     mods/ в соответствии с "enabled". Возвращает "" при успехе, иначе
@@ -1158,10 +1231,13 @@ def _apply_one_optional_mod(mod: dict, enabled: bool, status_cb=None) -> str:
         if dst.exists():
             return ""
         if not cached.exists():
-            msg = "Файл %s не найден (проверьте filename в CONFIG)" % mod["filename"]
-            if status_cb:
-                status_cb(msg)
-            return msg
+            # Файла нет в кэше — значит мода нет в самой сборке (как InvMove).
+            # Пробуем скачать его напрямую с Modrinth по slug.
+            if not _download_optional_from_modrinth(mod, status_cb):
+                msg = "Не удалось получить %s (нет в сборке и не скачался)" % mod["name"]
+                if status_cb:
+                    status_cb(msg)
+                return msg
         if status_cb:
             status_cb("Включаю мод: %s" % mod["name"])
         _install_with_retry(shutil.copy2, cached, dst, status_cb=status_cb)
@@ -2380,7 +2456,7 @@ class LauncherApp:
         dialog.configure(bg=colors["bg_panel"])
         dialog.resizable(False, False)
         dialog.transient(self.root)
-        dialog.geometry("420x480")
+        dialog.geometry("470x610")
         set_titlebar_dark(dialog, self.theme_name == "dark")
 
         outer = tk.Frame(dialog, bg=colors["bg_panel"])
@@ -2489,38 +2565,73 @@ class LauncherApp:
 
             threading.Thread(target=worker, daemon=True).start()
 
-        for mod in CONFIG["OPTIONAL_MODS"]:
-            row = tk.Frame(scroll_frame, bg=colors["bg_panel"])
-            row.pack(fill="x", padx=10, pady=6)
+        # Ссылки на картинки держим на self, иначе tkinter не хранит их сам и
+        # иконки пропадут после сборки мусора.
+        self._opt_icon_refs = {}
+        icon_labels = {}
 
+        def apply_icon(mod_id, pil_img):
+            lbl = icon_labels.get(mod_id)
+            if lbl is None or pil_img is None:
+                return
+            try:
+                photo = ImageTk.PhotoImage(pil_img)
+                self._opt_icon_refs[mod_id] = photo
+                lbl.configure(image=photo, text="")
+            except Exception:
+                pass
+
+        for mod in CONFIG["OPTIONAL_MODS"]:
             var = tk.BooleanVar(value=current.get(mod["id"], mod.get("default", True)))
             checkbox_vars[mod["id"]] = var
 
-            top_row = tk.Frame(row, bg=colors["bg_panel"])
-            top_row.pack(fill="x")
+            # Карточка мода: иконка | название+описание+статус | переключатель
+            card = tk.Frame(scroll_frame, bg=colors["bg_field"],
+                            highlightbackground=colors["border"], highlightthickness=1)
+            card.pack(fill="x", padx=8, pady=4)
+            body = tk.Frame(card, bg=colors["bg_field"])
+            body.pack(fill="x", padx=10, pady=8)
+
+            # Иконка 40×40 (пока не загрузилась — первая буква названия)
+            icon_holder = tk.Frame(body, bg=colors["bg_panel"], width=40, height=40)
+            icon_holder.pack(side="left", padx=(0, 10))
+            icon_holder.pack_propagate(False)
+            icon_lbl = tk.Label(icon_holder, bg=colors["bg_panel"],
+                                text=mod["name"][:1].upper(), font=("Segoe UI", 15, "bold"),
+                                fg=colors["accent"])
+            icon_lbl.pack(fill="both", expand=True)
+            icon_labels[mod["id"]] = icon_lbl
 
             cb = tk.Checkbutton(
-                top_row, text=mod["name"], variable=var, font=("Segoe UI", 10, "bold"),
-                bg=colors["bg_panel"], fg=colors["fg"], activebackground=colors["bg_panel"],
-                activeforeground=colors["fg"], selectcolor=colors["bg_field"],
-                anchor="w", cursor="hand2", command=lambda m=mod: on_toggle(m),
+                body, text="", variable=var,
+                bg=colors["bg_field"], activebackground=colors["bg_field"],
+                selectcolor=colors["bg_panel"], highlightthickness=0, bd=0,
+                cursor="hand2", command=lambda m=mod: on_toggle(m),
             )
-            cb.pack(side="left", anchor="w")
+            cb.pack(side="right", padx=(6, 0))
             checkboxes[mod["id"]] = cb
 
-            status_label = tk.Label(
-                top_row, text="", font=("Segoe UI", 8),
-                bg=colors["bg_panel"], fg=colors["fg_muted"],
-            )
-            status_label.pack(side="right")
-            status_labels[mod["id"]] = status_label
-
+            mid = tk.Frame(body, bg=colors["bg_field"])
+            mid.pack(side="left", fill="x", expand=True)
+            tk.Label(mid, text=mod["name"], font=("Segoe UI", 10, "bold"),
+                     bg=colors["bg_field"], fg=colors["fg"], anchor="w").pack(anchor="w")
             description = mod.get("description")
             if description:
-                tk.Label(
-                    row, text=description, font=("Segoe UI", 8),
-                    bg=colors["bg_panel"], fg=colors["fg_muted"], anchor="w",
-                ).pack(anchor="w", padx=(24, 0))
+                tk.Label(mid, text=description, font=("Segoe UI", 8),
+                         bg=colors["bg_field"], fg=colors["fg_muted"], anchor="w",
+                         justify="left", wraplength=300).pack(anchor="w")
+            status_label = tk.Label(mid, text="", font=("Segoe UI", 8),
+                                    bg=colors["bg_field"], fg=colors["fg_muted"], anchor="w")
+            status_label.pack(anchor="w")
+            status_labels[mod["id"]] = status_label
+
+            # Иконку тянем с Modrinth в фоне, чтобы окно не подвисало.
+            if _PIL_OK and mod.get("slug"):
+                def load_icon(m=mod):
+                    pil = _load_mod_icon_image(m["slug"], 40)
+                    if pil is not None:
+                        dialog.after(0, lambda mm=m, p=pil: apply_icon(mm["id"], p))
+                threading.Thread(target=load_icon, daemon=True).start()
 
         dialog.grab_set()
 
