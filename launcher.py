@@ -269,7 +269,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.4.5",
+    "LAUNCHER_VERSION": "1.4.6",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -281,6 +281,14 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.4.6",
+            "date": "13 июля 2026",
+            "changes": [
+                "Обновление лаунчера теперь скачивается и ставится прямо в окне "
+                "(без перехода на сайт), с прогрессом и автоперезапуском.",
+            ],
+        },
         {
             "version": "1.4.5",
             "date": "13 июля 2026",
@@ -1277,15 +1285,31 @@ def check_for_launcher_update():
     if not repo:
         return None
     try:
-        data = _modrinth_api_get("https://api.github.com/repos/%s/releases/latest" % repo, timeout=8)
-        remote_version = (data.get("tag_name") or "").lstrip("vV")
-        if not remote_version:
-            return None
-        if _version_tuple(remote_version) > _version_tuple(CONFIG["LAUNCHER_VERSION"]):
-            return {
-                "version": remote_version,
-                "url": data.get("html_url") or ("https://github.com/%s/releases/latest" % repo),
-            }
+        # Берём СПИСОК релизов, а не /releases/latest — потому что релиз со
+        # сборкой модов (тег "modpack") помечен как Latest и иначе перебил бы
+        # версии лаунчера. Ищем самый свежий тег-версию (v1.2.3) с .exe.
+        releases = _modrinth_api_get(
+            "https://api.github.com/repos/%s/releases?per_page=30" % repo, timeout=8)
+        if isinstance(releases, dict):
+            releases = [releases]
+        best = None
+        for rel in (releases or []):
+            if rel.get("draft") or rel.get("prerelease"):
+                continue
+            ver = (rel.get("tag_name") or "").lstrip("vV")
+            if not ver or not ver[0].isdigit():
+                continue  # пропускаем не-версионные теги вроде "modpack"
+            exe_url = None
+            for asset in (rel.get("assets") or []):
+                if (asset.get("name") or "").lower().endswith(".exe"):
+                    exe_url = asset.get("browser_download_url")
+                    break
+            vt = _version_tuple(ver)
+            if best is None or vt > best[0]:
+                best = (vt, ver, exe_url,
+                        rel.get("html_url") or ("https://github.com/%s/releases" % repo))
+        if best and best[0] > _version_tuple(CONFIG["LAUNCHER_VERSION"]):
+            return {"version": best[1], "exe_url": best[2], "url": best[3]}
     except Exception:
         pass
     return None
@@ -2856,7 +2880,7 @@ class LauncherApp:
     def _apply_update_info(self, info: dict) -> None:
         self.update_info = info
         self.update_banner_var.set(
-            "🔔  Доступна версия %s — нажмите, чтобы скачать" % info.get("version", "?")
+            "🔔  Доступна версия %s — нажмите, чтобы обновить" % info.get("version", "?")
         )
         try:
             if self.update_banner is not None and not self.update_banner.winfo_ismapped():
@@ -2868,8 +2892,71 @@ class LauncherApp:
             pass  # окно как раз перерисовывается (смена темы) — не страшно
 
     def on_open_update(self) -> None:
-        if self.update_info and self.update_info.get("url"):
-            webbrowser.open(self.update_info["url"])
+        info = self.update_info or {}
+        exe_url = info.get("exe_url")
+        # Если запущены как обычный .py (разработка) или у релиза нет .exe —
+        # ведём себя как раньше: открываем страницу релиза в браузере.
+        if not exe_url or not getattr(sys, "frozen", False):
+            if info.get("url"):
+                webbrowser.open(info["url"])
+            return
+        if getattr(self, "_updating", False):
+            return  # уже качаем — второй клик игнорируем
+        self._updating = True
+
+        def worker():
+            try:
+                cur_exe = Path(sys.executable)
+                new_exe = cur_exe.with_name(cur_exe.stem + "_new.exe")
+
+                def prog(pct):
+                    self.root.after(0, lambda: self.update_banner_var.set(
+                        "⬇  Скачивание обновления %s… %d%%"
+                        % (info.get("version", "?"), pct)))
+
+                download_file(exe_url, new_exe, prog)
+                self.root.after(0, self._apply_downloaded_update, cur_exe, new_exe)
+            except Exception:
+                self._updating = False
+                # при ошибке откатываемся к «открыть сайт»
+                if isinstance(self.update_info, dict):
+                    self.update_info["exe_url"] = None
+                self.root.after(0, lambda: self.update_banner_var.set(
+                    "⚠  Не удалось скачать — нажмите, чтобы открыть страницу"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _apply_downloaded_update(self, cur_exe: Path, new_exe: Path) -> None:
+        """Пишет .bat рядом с .exe: он ждёт, пока лаунчер закроется, заменяет
+        старый .exe новым и запускает обновлённую версию. Все имена файлов —
+        латиница (Launcher.exe), а путь берётся через %~dp0, поэтому кириллица
+        в пути пользователя не ломает скрипт."""
+        self.update_banner_var.set("✅  Обновление загружено, перезапуск…")
+        name, new_name = cur_exe.name, new_exe.name
+        bat = cur_exe.with_name("_update.bat")
+        script = (
+            "@echo off\r\n"
+            'cd /d "%~dp0"\r\n'
+            ":wait\r\n"
+            "ping -n 2 127.0.0.1 >nul\r\n"
+            'del "{n}" >nul 2>&1\r\n'
+            'if exist "{n}" goto wait\r\n'
+            'move /y "{nn}" "{n}" >nul\r\n'
+            'start "" "{n}"\r\n'
+            'del "%~f0" >nul 2>&1\r\n'
+        ).format(n=name, nn=new_name)
+        try:
+            bat.write_text(script, encoding="ascii")
+            DETACHED = 0x00000008 | 0x00000200  # DETACHED_PROCESS | NEW_PROCESS_GROUP
+            subprocess.Popen(["cmd", "/c", str(bat)], creationflags=DETACHED,
+                             close_fds=True)
+            self.root.after(300, self.root.destroy)
+        except Exception:
+            self._updating = False
+            self.update_banner_var.set(
+                "⚠  Не удалось применить обновление — нажмите, чтобы открыть страницу")
+            if isinstance(self.update_info, dict):
+                self.update_info["exe_url"] = None
 
 
 # Храним хэндл mutex'а в переменной модуля, чтобы Windows не освободила
