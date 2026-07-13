@@ -232,12 +232,12 @@ CONFIG = {
     # (то есть содержимое, которое нужно положить прямо в папку .minecraft
     # экземпляра). Заливать можно на GitHub Releases, Яндекс.Диск (с прямой
     # ссылкой на скачивание), собственный сервер и т.д.
-    "MODPACK_URL": "https://www.dropbox.com/scl/fi/ofnyn4kc34zo49t48lzc2/modpack.zip?rlkey=6d27apdv588kymgseylv1c8gh&st=1l0sjqs4&dl=1",
+    "MODPACK_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/modpack.zip",
 
     # Версия сборки модов "по умолчанию" — используется, только если ниже
     # НЕ указана MODPACK_VERSION_URL. Если её увеличить, тоже нужно заново
     # собирать .exe (см. MODPACK_VERSION_URL — так делать не обязательно).
-    "MODPACK_VERSION": 1,
+    "MODPACK_VERSION": 2,
 
     # (необязательно, но удобно) Ссылка на маленький текстовый файл, в
     # котором лежит только число — версия сборки. Если её указать, лаунчер
@@ -269,7 +269,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.4.4",
+    "LAUNCHER_VERSION": "1.4.5",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -281,6 +281,14 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.4.5",
+            "date": "13 июля 2026",
+            "changes": [
+                "Сборка модов переехала с Dropbox на GitHub (быстрее и надёжнее). "
+                "Состав модов не изменился.",
+            ],
+        },
         {
             "version": "1.4.4",
             "date": "12 июля 2026",
