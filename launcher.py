@@ -278,7 +278,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.5.0",
+    "LAUNCHER_VERSION": "1.5.1",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -290,6 +290,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.5.1",
+            "date": "13 июля 2026",
+            "changes": [
+                "Надёжное обновление: убрал мелькавшее чёрное окно и автоперезапуск "
+                "(из-за него новая версия иногда падала с ошибкой python-DLL). "
+                "Теперь обновление молча ставится, а лаунчер просит открыть его снова.",
+            ],
+        },
         {
             "version": "1.5.0",
             "date": "13 июля 2026",
@@ -3080,11 +3089,13 @@ class LauncherApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _apply_downloaded_update(self, cur_exe: Path, new_exe: Path) -> None:
-        """Пишет .bat рядом с .exe: он ждёт, пока лаунчер закроется, заменяет
-        старый .exe новым и запускает обновлённую версию. Все имена файлов —
-        латиница (Launcher.exe), а путь берётся через %~dp0, поэтому кириллица
-        в пути пользователя не ломает скрипт."""
-        self.update_banner_var.set("✅  Обновление загружено, перезапуск…")
+        """Пишет невидимый .bat рядом с .exe: он ждёт, пока лаунчер закроется,
+        и заменяет старый .exe новым. НЕ перезапускает игру автоматически —
+        иначе PyInstaller-onefile не успевает распаковать python-DLL сразу
+        после замены (мешает антивирус) и новая копия падает. Вместо этого
+        лаунчер просит открыть его снова: обычный двойной клик по .exe работает
+        стабильно. Все имена файлов — латиница (Launcher.exe), а путь берётся
+        через %~dp0, поэтому кириллица в пути пользователя не ломает скрипт."""
         name, new_name = cur_exe.name, new_exe.name
         bat = cur_exe.with_name("_update.bat")
         script = (
@@ -3095,16 +3106,19 @@ class LauncherApp:
             'del "{n}" >nul 2>&1\r\n'
             'if exist "{n}" goto wait\r\n'
             'move /y "{nn}" "{n}" >nul\r\n'
-            "ping -n 3 127.0.0.1 >nul\r\n"
-            'start "" "{n}"\r\n'
             'del "%~f0" >nul 2>&1\r\n'
         ).format(n=name, nn=new_name)
         try:
             bat.write_text(script, encoding="ascii")
-            DETACHED = 0x00000008 | 0x00000200  # DETACHED_PROCESS | NEW_PROCESS_GROUP
-            subprocess.Popen(["cmd", "/c", str(bat)], creationflags=DETACHED,
-                             close_fds=True)
-            self.root.after(300, self.root.destroy)
+            CREATE_NO_WINDOW = 0x08000000  # скрипт работает без чёрного окна
+            subprocess.Popen(["cmd", "/c", str(bat)],
+                             creationflags=CREATE_NO_WINDOW, close_fds=True)
+            self.update_banner_var.set("✅  Обновление установлено")
+            messagebox.showinfo(
+                "Обновление установлено",
+                "Новая версия установлена.\n\nЛаунчер сейчас закроется — "
+                "просто откройте его снова, чтобы запустить обновлённую версию.")
+            self.root.after(200, self.root.destroy)
         except Exception:
             self._updating = False
             self.update_banner_var.set(
