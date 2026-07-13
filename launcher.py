@@ -269,7 +269,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.4.8",
+    "LAUNCHER_VERSION": "1.4.9",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -281,6 +281,14 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.4.9",
+            "date": "13 июля 2026",
+            "changes": [
+                "Полировка интерфейса: убрал лишние вертикальные отступы, вернул "
+                "строку версии внизу окна.",
+            ],
+        },
         {
             "version": "1.4.8",
             "date": "13 июля 2026",
@@ -2051,7 +2059,7 @@ class LauncherApp:
         )
 
         inner = tk.Frame(content, bg=colors["bg_panel"])
-        inner.pack(fill="both", expand=True, padx=40, pady=26)
+        inner.pack(fill="both", expand=True, padx=48, pady=22)
 
         # Заголовок
         header_row = tk.Frame(inner, bg=colors["bg_panel"])
@@ -2083,17 +2091,17 @@ class LauncherApp:
         theme_btn.pack(side="right", anchor="n")
         self._add_tooltip(theme_btn, "Светлая/тёмная тема", colors)
 
-        tk.Frame(inner, bg=colors["accent_dim"], height=1).pack(fill="x", pady=(16, 12))
+        tk.Frame(inner, bg=colors["accent_dim"], height=1).pack(fill="x", pady=(14, 10))
 
         self.server_status_label = tk.Label(
             inner, textvariable=self.server_status_var, font=("Segoe UI", 9, "bold"),
             bg=colors["bg_panel"], fg=colors[self.server_status_color_key], anchor="w",
         )
-        self.server_status_label.pack(fill="x", pady=(0, 10))
+        self.server_status_label.pack(fill="x", pady=(0, 8))
 
         # Панель кнопок: Папка / Discord / Моды / Список модов / Починить
         toolbar = tk.Frame(inner, bg=colors["bg_panel"])
-        toolbar.pack(anchor="w", pady=(0, 20))
+        toolbar.pack(anchor="w", pady=(0, 14))
 
         folder_btn = self._make_icon_button(toolbar, self.icons["folder"], colors, self.on_open_folder)
         folder_btn.pack(side="left")
@@ -2127,7 +2135,7 @@ class LauncherApp:
             relief="flat", highlightthickness=1,
             highlightbackground=colors["border"], highlightcolor=colors["accent"],
         )
-        nick_entry.pack(fill="x", ipady=7, pady=(5, 18))
+        nick_entry.pack(fill="x", ipady=7, pady=(5, 12))
 
         # Ползунок ОЗУ
         ram_row = tk.Frame(inner, bg=colors["bg_panel"])
@@ -2151,7 +2159,7 @@ class LauncherApp:
         self.ram_scale.pack(fill="x", pady=(6, 4))
 
         range_row = tk.Frame(inner, bg=colors["bg_panel"])
-        range_row.pack(fill="x", pady=(0, 20))
+        range_row.pack(fill="x", pady=(0, 14))
         tk.Label(range_row, text=self._format_gb(self.memory_min), font=("Segoe UI", 8),
                  bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(side="left")
         tk.Label(range_row, text=self._format_gb(self.memory_max), font=("Segoe UI", 8),
@@ -2166,7 +2174,7 @@ class LauncherApp:
             activeforeground=colors["fg"], selectcolor=colors["bg_field"],
             highlightthickness=0, bd=0, cursor="hand2", anchor="w", justify="left",
         )
-        low_end_cb.pack(fill="x", pady=(0, 18))
+        low_end_cb.pack(fill="x", pady=(0, 12))
 
         # Кнопка играть — золотая "пилюля" на Canvas
         self.play_button = self._make_pill_button(
@@ -2175,7 +2183,7 @@ class LauncherApp:
             disabled_bg=colors["accent_dim"], fg=colors["accent_text"],
             height=50, font_size=14,
         )
-        self.play_button.pack(fill="x", pady=(2, 8))
+        self.play_button.pack(fill="x", pady=(2, 6))
 
         # Вторая кнопка — быстрый заход на локальный тестовый сервер (localhost).
         self.play_test_button = self._make_pill_button(
@@ -2184,7 +2192,7 @@ class LauncherApp:
             disabled_bg=colors["accent_dim"], fg=colors["fg"],
             height=38, font_size=11,
         )
-        self.play_test_button.pack(fill="x", pady=(0, 18))
+        self.play_test_button.pack(fill="x", pady=(0, 14))
 
         # Статус + прогрессбар
         tk.Label(inner, textvariable=self.status_var, font=("Segoe UI", 9),
@@ -2208,7 +2216,7 @@ class LauncherApp:
 
         # Версия лаунчера + "что нового"
         version_row = tk.Frame(inner, bg=colors["bg_panel"])
-        version_row.pack(fill="x", pady=(14, 0))
+        version_row.pack(fill="x", pady=(10, 0))
         self.version_row = version_row
 
         tk.Label(
