@@ -14,6 +14,7 @@
 Больше нигде в коде ничего менять не нужно.
 """
 
+import io
 import json
 import os
 import shutil
@@ -44,7 +45,7 @@ except ImportError:
 # Modrinth бывают в формате webp, который штатный tkinter не умеет). Если
 # библиотеки нет — иконки просто не покажутся, а меню продолжит работать.
 try:
-    from PIL import Image, ImageTk
+    from PIL import Image, ImageDraw, ImageTk
     _PIL_OK = True
 except Exception:
     _PIL_OK = False
@@ -285,7 +286,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.6.0",
+    "LAUNCHER_VERSION": "1.7.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -297,6 +298,19 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.7.0",
+            "date": "14 июля 2026",
+            "changes": [
+                "Появился менеджер ресурс-паков: установка из ZIP, превью и "
+                "название пака, включение, отключение и удаление.",
+                "Лаунчер снова полностью скрывается на время игры и возвращается "
+                "сам, когда вы закрываете Minecraft.",
+                "После обновления лаунчер открывается сам.",
+                "Обновление сборки модов больше не удаляет ваши ресурс-паки "
+                "и шейдеры.",
+            ],
+        },
         {
             "version": "1.6.0",
             "date": "14 июля 2026",
@@ -1055,7 +1069,8 @@ def resource_path(filename: str) -> Path:
     return base / filename
 
 
-ICON_NAMES = ["folder", "chat", "grid", "wrench", "list", "sun", "moon", "gauge", "gear"]
+ICON_NAMES = ["folder", "chat", "grid", "wrench", "list", "sun", "moon", "gauge", "gear",
+              "image", "shader"]
 
 
 def load_icons(theme_name: str) -> dict:
@@ -1209,8 +1224,11 @@ def install_modpack(status_cb, progress_cb) -> None:
     status_cb("Скачивание сборки модов — 0%")
     download_file(CONFIG["MODPACK_URL"], zip_path, download_progress)
 
-    # Чистим старые моды/конфиги, чтобы не оставалось "мусора" от старой версии
-    for folder in ("mods", "config", "resourcepacks", "shaderpacks", "kubejs"):
+    # Чистим старые моды/конфиги, чтобы не оставалось "мусора" от старой версии.
+    # resourcepacks и shaderpacks НЕ трогаем: там лежат паки, которые игрок
+    # поставил сам через менеджеры — обновление сборки модов не должно их
+    # удалять.
+    for folder in ("mods", "config", "kubejs"):
         target = INSTANCE_DIR / folder
         if target.exists():
             shutil.rmtree(target)
@@ -1450,6 +1468,225 @@ def apply_optional_mods(status_cb=None, progress_cb=None) -> list:
         if progress_cb:
             progress_cb(int(index * 100 / total))
     return failed
+
+
+# ============ Ресурс-паки и шейдеры (общая механика) ============
+# Оба менеджера устроены одинаково: паки — это zip-архивы (или папки) внутри
+# resourcepacks/ и shaderpacks/. Отличается только то, как игра узнаёт, какой
+# пак включён, — это описано в функциях ниже.
+
+def _read_options_value(key: str, default: str = "") -> str:
+    """Читает одну строку из options.txt (файл настроек Minecraft)."""
+    path = INSTANCE_DIR / "options.txt"
+    if not path.exists():
+        return default
+    try:
+        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            name, _, value = line.partition(":")
+            if name == key:
+                return value
+    except OSError:
+        pass
+    return default
+
+
+def _write_options_value(key: str, value: str) -> None:
+    """Меняет одну строку в options.txt, не трогая остальные настройки игрока."""
+    path = INSTANCE_DIR / "options.txt"
+    lines = []
+    if path.exists():
+        try:
+            lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except OSError:
+            lines = []
+    replaced = False
+    for index, line in enumerate(lines):
+        if line.partition(":")[0] == key:
+            lines[index] = "%s:%s" % (key, value)
+            replaced = True
+            break
+    if not replaced:
+        lines.append("%s:%s" % (key, value))
+    INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def load_pack_preview(pack_path, size: int = 64):
+    """Возвращает PIL.Image превью пака (файл pack.png внутри архива или папки)
+    или None, если картинки нет. Используется и для ресурс-паков, и для
+    шейдеров."""
+    if not _PIL_OK:
+        return None
+    path = Path(pack_path)
+    try:
+        if path.is_dir():
+            icon = path / "pack.png"
+            if not icon.exists():
+                return None
+            img = Image.open(icon)
+        else:
+            with zipfile.ZipFile(path) as zf:
+                names = zf.namelist()
+                # pack.png обычно в корне, но у некоторых паков лежит в подпапке
+                candidates = [n for n in names if n.endswith("pack.png")]
+                if not candidates:
+                    return None
+                icon_name = min(candidates, key=lambda n: n.count("/"))
+                raw = zf.read(icon_name)
+            img = Image.open(io.BytesIO(raw))
+        return img.convert("RGBA").resize((size, size))
+    except Exception:
+        return None
+
+
+def make_pack_placeholder(kind: str, size: int, bg_color: str, glyph_color: str):
+    """Красивая стандартная картинка для пака без своего превью: скруглённый
+    квадрат с простым глифом — «фото» для ресурс-паков и «искра» для шейдеров."""
+    if not _PIL_OK:
+        return None
+    try:
+        scale = 4
+        big = size * scale
+        img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle([0, 0, big - 1, big - 1], radius=big // 6, fill=bg_color)
+        width = max(2, big // 18)
+        if kind == "shader":
+            for cx, cy, r in ((big * 0.40, big * 0.40, big * 0.19),
+                              (big * 0.68, big * 0.68, big * 0.11)):
+                draw.line([(cx, cy - r), (cx, cy + r)], fill=glyph_color, width=width)
+                draw.line([(cx - r, cy), (cx + r, cy)], fill=glyph_color, width=width)
+                r2 = r * 0.62
+                draw.line([(cx - r2, cy - r2), (cx + r2, cy + r2)], fill=glyph_color, width=width)
+                draw.line([(cx + r2, cy - r2), (cx - r2, cy + r2)], fill=glyph_color, width=width)
+        else:
+            draw.rounded_rectangle([big * 0.17, big * 0.23, big * 0.83, big * 0.77],
+                                   radius=big // 14, outline=glyph_color, width=width)
+            draw.ellipse([big * 0.29, big * 0.33, big * 0.41, big * 0.45],
+                         outline=glyph_color, width=width)
+            draw.line([(big * 0.23, big * 0.71), (big * 0.44, big * 0.47), (big * 0.58, big * 0.64)],
+                      fill=glyph_color, width=width, joint="curve")
+            draw.line([(big * 0.52, big * 0.57), (big * 0.66, big * 0.41), (big * 0.79, big * 0.71)],
+                      fill=glyph_color, width=width, joint="curve")
+        return img.resize((size, size), Image.LANCZOS)
+    except Exception:
+        return None
+
+
+def read_pack_description(pack_path) -> str:
+    """Достаёт описание пака из pack.mcmeta (у шейдеров его обычно нет)."""
+    path = Path(pack_path)
+    try:
+        if path.is_dir():
+            raw = (path / "pack.mcmeta").read_text(encoding="utf-8", errors="ignore")
+        else:
+            with zipfile.ZipFile(path) as zf:
+                names = [n for n in zf.namelist() if n.endswith("pack.mcmeta")]
+                if not names:
+                    return ""
+                raw = zf.read(min(names, key=lambda n: n.count("/"))).decode("utf-8", "ignore")
+        description = json.loads(raw).get("pack", {}).get("description", "")
+        # Описание бывает строкой, объектом или списком текстовых кусков.
+        if isinstance(description, dict):
+            description = description.get("text", "")
+        elif isinstance(description, list):
+            description = "".join(
+                part.get("text", "") if isinstance(part, dict) else str(part)
+                for part in description)
+        return " ".join(str(description).split())
+    except Exception:
+        return ""
+
+
+def _list_packs_in(folder: Path) -> list:
+    """Общий обход папки с паками: zip-архивы и распакованные папки."""
+    if not folder.exists():
+        return []
+    packs = []
+    for path in sorted(folder.iterdir(), key=lambda p: p.name.lower()):
+        if path.name.startswith("."):
+            continue
+        if path.is_file() and path.suffix.lower() != ".zip":
+            continue
+        packs.append(path)
+    return packs
+
+
+# ---------------------------- Ресурс-паки ----------------------------
+# Игра хранит список включённых ресурс-паков прямо в options.txt, в строке
+# resourcePacks:["vanilla","file/Название.zip"]. Поэтому "включить" — это
+# добавить пак в этот список, а не просто положить файл в папку.
+
+def get_resourcepacks_dir() -> Path:
+    return INSTANCE_DIR / "resourcepacks"
+
+
+def get_enabled_resource_packs() -> list:
+    raw = _read_options_value("resourcePacks", "[]")
+    try:
+        value = json.loads(raw)
+        return value if isinstance(value, list) else []
+    except Exception:
+        return []
+
+
+def set_enabled_resource_packs(items: list) -> None:
+    _write_options_value("resourcePacks", json.dumps(items, ensure_ascii=False))
+
+
+def list_resource_packs() -> list:
+    """Список установленных ресурс-паков с признаком "включён"."""
+    enabled = get_enabled_resource_packs()
+    packs = []
+    for path in _list_packs_in(get_resourcepacks_dir()):
+        entry = "file/%s" % path.name
+        packs.append({
+            "name": path.stem if path.is_file() else path.name,
+            "path": path,
+            "entry": entry,
+            "enabled": entry in enabled,
+            "description": read_pack_description(path),
+        })
+    return packs
+
+
+def set_resource_pack_enabled(pack: dict, enabled: bool) -> None:
+    items = get_enabled_resource_packs()
+    if not items:
+        items = ["vanilla"]  # ванильные ресурсы всегда должны быть в списке
+    entry = pack["entry"]
+    if enabled:
+        if entry not in items:
+            items.append(entry)
+    else:
+        items = [item for item in items if item != entry]
+    set_enabled_resource_packs(items)
+
+
+def install_resource_pack(zip_path) -> str:
+    """Ставит ресурс-пак из ZIP. Возвращает имя установленного файла.
+    Если пак с таким именем уже есть — заменяет его."""
+    src = Path(zip_path)
+    if not zipfile.is_zipfile(src):
+        raise RuntimeError("Это не ZIP-архив: %s" % src.name)
+    with zipfile.ZipFile(src) as zf:
+        if not any(n.endswith("pack.mcmeta") for n in zf.namelist()):
+            raise RuntimeError(
+                "В архиве нет pack.mcmeta — похоже, это не ресурс-пак:\n%s" % src.name)
+    dst_dir = get_resourcepacks_dir()
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst_dir / src.name)
+    return src.name
+
+
+def delete_resource_pack(pack: dict) -> None:
+    """Удаляет пак и убирает его из списка включённых."""
+    set_resource_pack_enabled(pack, False)
+    path = Path(pack["path"])
+    if path.is_dir():
+        shutil.rmtree(path, ignore_errors=True)
+    else:
+        path.unlink(missing_ok=True)
 
 
 def ensure_pinned_server(status_cb=None) -> None:
@@ -2463,6 +2700,11 @@ class LauncherApp:
             showcase_btn.pack(side="left", padx=(8, 0))
             self._add_tooltip(showcase_btn, "Список модов сборки", colors)
 
+        packs_btn = self._make_icon_button(
+            toolbar, self.icons["image"], colors, self.on_open_resource_packs)
+        packs_btn.pack(side="left", padx=(8, 0))
+        self._add_tooltip(packs_btn, "Ресурс-паки (текстуры)", colors)
+
         repair_btn = self._make_icon_button(toolbar, self.icons["wrench"], colors, self.on_repair)
         repair_btn.pack(side="left", padx=(8, 0))
         self._add_tooltip(repair_btn, "Починить / переустановить", colors)
@@ -2716,6 +2958,176 @@ class LauncherApp:
             webbrowser.open(url)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Не удалось открыть Discord", str(exc))
+
+    def _open_pack_manager(self, title, subtitle, empty_hint, kind,
+                           list_fn, toggle_fn, delete_fn, install_fn) -> None:
+        """Общее окно менеджера паков — используется и для ресурс-паков, и для
+        шейдеров. Отличаются только функции работы с файлами, которые
+        передаются аргументами."""
+        colors = THEMES[self.theme_name]
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title(title)
+        dialog.configure(bg=colors["bg_panel"])
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.geometry("640x640")
+        set_titlebar_dark(dialog, self.theme_name == "dark")
+
+        outer = tk.Frame(dialog, bg=colors["bg_panel"])
+        outer.pack(fill="both", expand=True, padx=16, pady=16)
+
+        head = tk.Frame(outer, bg=colors["bg_panel"])
+        head.pack(fill="x")
+        tk.Label(head, text=title, font=("Segoe UI", 14, "bold"),
+                 bg=colors["bg_panel"], fg=colors["fg"]).pack(side="left")
+
+        tk.Label(outer, text=subtitle, font=("Segoe UI", 9), justify="left",
+                 bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(anchor="w", pady=(2, 12))
+
+        list_container = tk.Frame(outer, bg=colors["bg_panel"],
+                                  highlightbackground=colors["border"], highlightthickness=1)
+        list_container.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(list_container, bg=colors["bg_panel"], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=canvas.yview)
+        scroll_frame = tk.Frame(canvas, bg=colors["bg_panel"])
+        scroll_frame.bind("<Configure>",
+                          lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        def on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        canvas.bind_all("<MouseWheel>", on_mousewheel)
+        dialog.bind("<Destroy>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+        # Ссылки на картинки держим на self, иначе tkinter не хранит их сам.
+        self._pack_icon_refs = {}
+
+        def build_row(pack):
+            card = tk.Frame(scroll_frame, bg=colors["bg_field"],
+                            highlightbackground=colors["border"], highlightthickness=1)
+            card.pack(fill="x", padx=8, pady=4)
+            body = tk.Frame(card, bg=colors["bg_field"])
+            body.pack(fill="x", padx=10, pady=8)
+
+            # Превью пака (pack.png) или красивая стандартная картинка.
+            holder = tk.Frame(body, bg=colors["bg_panel"], width=64, height=64)
+            holder.pack(side="left", padx=(0, 12))
+            holder.pack_propagate(False)
+            preview = load_pack_preview(pack["path"], 64)
+            if preview is None:
+                preview = make_pack_placeholder(kind, 64, colors["bg_panel"], colors["accent"])
+            icon_label = tk.Label(holder, bg=colors["bg_panel"])
+            if preview is not None and _PIL_OK:
+                try:
+                    photo = ImageTk.PhotoImage(preview)
+                    self._pack_icon_refs[str(pack["path"])] = photo
+                    icon_label.configure(image=photo)
+                except Exception:
+                    icon_label.configure(text=pack["name"][:1].upper(),
+                                         fg=colors["accent"], font=("Segoe UI", 20, "bold"))
+            else:
+                icon_label.configure(text=pack["name"][:1].upper(),
+                                     fg=colors["accent"], font=("Segoe UI", 20, "bold"))
+            icon_label.pack(fill="both", expand=True)
+
+            actions = tk.Frame(body, bg=colors["bg_field"])
+            actions.pack(side="right")
+
+            def on_delete(p=pack):
+                if not messagebox.askyesno(
+                        "Удалить", "Удалить «%s»?\n\nФайл будет удалён с диска." % p["name"],
+                        parent=dialog):
+                    return
+                try:
+                    delete_fn(p)
+                except Exception as exc:  # noqa: BLE001
+                    messagebox.showerror("Не удалось удалить", str(exc), parent=dialog)
+                refresh()
+
+            tk.Button(actions, text="Удалить", command=on_delete,
+                      font=("Segoe UI", 9), bg=colors["bg_panel"], fg=colors["status_offline"],
+                      activebackground=colors["border"], activeforeground=colors["status_offline"],
+                      relief="flat", cursor="hand2", bd=0, padx=10, pady=4).pack(side="right")
+
+            var = tk.BooleanVar(value=pack["enabled"])
+
+            def on_toggle(p=pack, v=var):
+                try:
+                    toggle_fn(p, v.get())
+                except Exception as exc:  # noqa: BLE001
+                    v.set(not v.get())
+                    messagebox.showerror("Не удалось переключить", str(exc), parent=dialog)
+
+            tk.Checkbutton(actions, text="Включён", variable=var, command=on_toggle,
+                           font=("Segoe UI", 9), bg=colors["bg_field"], fg=colors["fg"],
+                           activebackground=colors["bg_field"], activeforeground=colors["fg"],
+                           selectcolor=colors["bg_panel"], highlightthickness=0, bd=0,
+                           cursor="hand2").pack(side="right", padx=(0, 8))
+
+            mid = tk.Frame(body, bg=colors["bg_field"])
+            mid.pack(side="left", fill="x", expand=True)
+            tk.Label(mid, text=pack["name"], font=("Segoe UI", 11, "bold"),
+                     bg=colors["bg_field"], fg=colors["fg"], anchor="w").pack(anchor="w")
+            if pack.get("description"):
+                tk.Label(mid, text=pack["description"], font=("Segoe UI", 8),
+                         bg=colors["bg_field"], fg=colors["fg_muted"], anchor="w",
+                         justify="left", wraplength=330).pack(anchor="w")
+
+        def refresh():
+            for child in scroll_frame.winfo_children():
+                child.destroy()
+            self._pack_icon_refs = {}
+            packs = list_fn()
+            if not packs:
+                tk.Label(scroll_frame, text=empty_hint, font=("Segoe UI", 9),
+                         bg=colors["bg_panel"], fg=colors["fg_muted"],
+                         justify="left", wraplength=560).pack(anchor="w", padx=14, pady=18)
+                return
+            for pack in packs:
+                build_row(pack)
+
+        def on_install():
+            paths = filedialog.askopenfilenames(
+                title="Выберите ZIP-архив(ы)",
+                filetypes=[("ZIP-архивы", "*.zip"), ("Все файлы", "*.*")],
+                parent=dialog)
+            installed = 0
+            for path in paths:
+                try:
+                    install_fn(path)
+                    installed += 1
+                except Exception as exc:  # noqa: BLE001
+                    messagebox.showerror("Не удалось установить", str(exc), parent=dialog)
+            if installed:
+                refresh()
+
+        tk.Button(head, text="Установить из ZIP...", command=on_install,
+                  font=("Segoe UI", 10), bg=colors["accent"], fg=colors["accent_text"],
+                  activebackground=colors["accent_hover"], activeforeground=colors["accent_text"],
+                  relief="flat", cursor="hand2", bd=0, padx=14, pady=6).pack(side="right")
+
+        refresh()
+        dialog.grab_set()
+
+    def on_open_resource_packs(self) -> None:
+        self._open_pack_manager(
+            title="Ресурс-паки",
+            subtitle="Установите ZIP-архив с текстурами — он появится в списке.\n"
+                     "Галочка «Включён» сразу включает пак в самой игре.",
+            empty_hint="Пока ничего не установлено.\n\n"
+                       "Нажмите «Установить из ZIP...» и выберите архив с ресурс-паком.",
+            kind="image",
+            list_fn=list_resource_packs,
+            toggle_fn=set_resource_pack_enabled,
+            delete_fn=delete_resource_pack,
+            install_fn=install_resource_pack,
+        )
 
     def on_open_install_settings(self) -> None:
         """Окно выбора папки установки: показывает текущий путь и позволяет
@@ -3108,21 +3520,24 @@ class LauncherApp:
         # Сворачиваем в панель задач, а НЕ прячем полностью (withdraw):
         # раньше окно исчезало отовсюду и вернуть его было нечем — со стороны
         # это и выглядело как "процесс есть, окна нет".
-        self._minimize_to_taskbar()
-        # Окно игры в этот момент как раз перехватывает фокус, и Windows может
-        # проигнорировать сворачивание — поэтому повторяем ещё пару раз, пока
-        # игра точно запущена.
-        self.root.after(700, self._minimize_to_taskbar)
-        self.root.after(2000, self._minimize_to_taskbar)
+        self._hide_during_game()
+        # Окно игры в этот момент перехватывает фокус, и Windows может
+        # проигнорировать наше сворачивание — поэтому повторяем ещё пару раз,
+        # пока игра точно запущена.
+        self.root.after(700, self._hide_during_game)
+        self.root.after(2500, self._hide_during_game)
 
-    def _minimize_to_taskbar(self) -> None:
-        """Сворачивает окно, но только пока игра действительно работает —
-        иначе повторный вызов мог бы свернуть уже вернувшийся лаунчер."""
+    def _hide_during_game(self) -> None:
+        """Полностью убирает окно с экрана на время игры. Раньше это было
+        опасно (вернуть окно было нечем), но теперь оно возвращается само при
+        закрытии игры и по клику на ярлык — поэтому прячем целиком, как и
+        ожидается. Скрываем только пока игра реально работает, иначе повторный
+        вызов спрятал бы уже вернувшийся лаунчер."""
         process = self.game_process
         if process is None or process.poll() is not None:
             return
         try:
-            self.root.iconify()
+            self.root.withdraw()
         except tk.TclError:
             pass
 
@@ -3496,12 +3911,15 @@ class LauncherApp:
 
     def _apply_downloaded_update(self, cur_exe: Path, new_exe: Path) -> None:
         """Пишет невидимый .bat рядом с .exe: он ждёт, пока лаунчер закроется,
-        и заменяет старый .exe новым. НЕ перезапускает игру автоматически —
-        иначе PyInstaller-onefile не успевает распаковать python-DLL сразу
-        после замены (мешает антивирус) и новая копия падает. Вместо этого
-        лаунчер просит открыть его снова: обычный двойной клик по .exe работает
-        стабильно. Все имена файлов — латиница (Launcher.exe), а путь берётся
-        через %~dp0, поэтому кириллица в пути пользователя не ломает скрипт."""
+        заменяет старый .exe новым и запускает обновлённую версию.
+
+        Важная деталь: между заменой файла и его запуском выдержана пауза в
+        8 секунд. Раньше новый .exe стартовал сразу после записи, и антивирус,
+        ещё проверявший свежий файл, мешал PyInstaller распаковать python-DLL —
+        новая копия падала с ошибкой. Пауза даёт проверке спокойно завершиться.
+
+        Все имена файлов — латиница (Launcher.exe), а путь берётся через
+        %~dp0, поэтому кириллица в пути пользователя не ломает скрипт."""
         name, new_name = cur_exe.name, new_exe.name
         bat = cur_exe.with_name("_update.bat")
         script = (
@@ -3512,6 +3930,8 @@ class LauncherApp:
             'del "{n}" >nul 2>&1\r\n'
             'if exist "{n}" goto wait\r\n'
             'move /y "{nn}" "{n}" >nul\r\n'
+            "ping -n 9 127.0.0.1 >nul\r\n"
+            'start "" "{n}"\r\n'
             'del "%~f0" >nul 2>&1\r\n'
         ).format(n=name, nn=new_name)
         try:
@@ -3522,8 +3942,9 @@ class LauncherApp:
             self.update_banner_var.set("✅  Обновление установлено")
             messagebox.showinfo(
                 "Обновление установлено",
-                "Новая версия установлена.\n\nЛаунчер сейчас закроется — "
-                "просто откройте его снова, чтобы запустить обновлённую версию.")
+                "Новая версия установлена.\n\nЛаунчер закроется и сам откроется "
+                "снова через несколько секунд.\n\nЕсли этого не произойдёт — "
+                "просто запустите его с ярлыка.")
             self.root.after(200, self.root.destroy)
         except Exception:
             self._updating = False
