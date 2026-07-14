@@ -22,6 +22,7 @@ import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import tkinter as tk
@@ -286,7 +287,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.9.1",
+    "LAUNCHER_VERSION": "1.9.2",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -298,6 +299,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.9.2",
+            "date": "14 июля 2026",
+            "changes": [
+                "Обновление больше не оставляет файл _update.bat на рабочем столе.",
+                "Убрана ошибка python-DLL после обновления: лаунчер просто "
+                "просит открыть его заново.",
+            ],
+        },
         {
             "version": "1.9.1",
             "date": "14 июля 2026",
@@ -4411,41 +4421,38 @@ class LauncherApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _apply_downloaded_update(self, cur_exe: Path, new_exe: Path) -> None:
-        """Пишет невидимый .bat рядом с .exe: он ждёт, пока лаунчер закроется,
-        заменяет старый .exe новым и запускает обновлённую версию.
+        """Заменяет .exe новым после закрытия лаунчера.
 
-        Важная деталь: между заменой файла и его запуском выдержана пауза в
-        8 секунд. Раньше новый .exe стартовал сразу после записи, и антивирус,
-        ещё проверявший свежий файл, мешал PyInstaller распаковать python-DLL —
-        новая копия падала с ошибкой. Пауза даёт проверке спокойно завершиться.
+        Скрипт кладём во ВРЕМЕННУЮ папку системы, а не рядом с .exe: лаунчер
+        часто лежит на рабочем столе, и файл _update.bat мозолил там глаза.
+        Пути передаём скрипту аргументами (%1/%2), а не вписываем в текст —
+        тогда кириллица в пути пользователя не ломает .bat.
 
-        Все имена файлов — латиница (Launcher.exe), а путь берётся через
-        %~dp0, поэтому кириллица в пути пользователя не ломает скрипт."""
-        name, new_name = cur_exe.name, new_exe.name
-        bat = cur_exe.with_name("_update.bat")
+        Автозапуск новой копии убран намеренно. Трижды повторялось одно и то
+        же: onefile-exe распаковывает себя в temp, антивирус мешает свежему
+        файлу, и запущенная сразу после замены копия падала с ошибкой
+        python-DLL. Сама замена при этом проходила успешно. Обычный запуск с
+        ярлыка работает всегда — поэтому просим открыть лаунчер заново."""
+        bat = Path(tempfile.gettempdir()) / ("checkpoint_update_%d.bat" % os.getpid())
         script = (
             "@echo off\r\n"
-            'cd /d "%~dp0"\r\n'
             ":wait\r\n"
             "ping -n 2 127.0.0.1 >nul\r\n"
-            'del "{n}" >nul 2>&1\r\n'
-            'if exist "{n}" goto wait\r\n'
-            'move /y "{nn}" "{n}" >nul\r\n'
-            "ping -n 9 127.0.0.1 >nul\r\n"
-            'start "" "{n}"\r\n'
+            'del %1 >nul 2>&1\r\n'
+            'if exist %1 goto wait\r\n'
+            'move /y %2 %1 >nul\r\n'
             'del "%~f0" >nul 2>&1\r\n'
-        ).format(n=name, nn=new_name)
+        )
         try:
             bat.write_text(script, encoding="ascii")
             CREATE_NO_WINDOW = 0x08000000  # скрипт работает без чёрного окна
-            subprocess.Popen(["cmd", "/c", str(bat)],
+            subprocess.Popen(["cmd", "/c", str(bat), str(cur_exe), str(new_exe)],
                              creationflags=CREATE_NO_WINDOW, close_fds=True)
             self.update_banner_var.set("✅  Обновление установлено")
             messagebox.showinfo(
                 "Обновление установлено",
-                "Новая версия установлена.\n\nЛаунчер закроется и сам откроется "
-                "снова через несколько секунд.\n\nЕсли этого не произойдёт — "
-                "просто запустите его с ярлыка.")
+                "Новая версия установлена.\n\nЛаунчер сейчас закроется — "
+                "откройте его снова с ярлыка.")
             self.root.after(200, self.root.destroy)
         except Exception:
             self._updating = False
