@@ -288,7 +288,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.13.1",
+    "LAUNCHER_VERSION": "1.14.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -300,6 +300,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.14.0",
+            "date": "15 июля 2026",
+            "changes": [
+                "Больше не будет ошибки «Failed to load Python DLL» после "
+                "обновления — лаунчер перестал распаковывать себя при каждом "
+                "запуске, теперь он просто установлен, как обычная программа.",
+                "Запускается заметно быстрее, и антивирусы ругаются меньше.",
+                "Обновления ставятся сами и тихо, лаунчер сам перезапускается.",
+            ],
+        },
         {
             "version": "1.13.1",
             "date": "14 июля 2026",
@@ -2412,9 +2423,14 @@ def check_for_launcher_update():
             ver = (rel.get("tag_name") or "").lstrip("vV")
             if not ver or not ver[0].isdigit():
                 continue  # пропускаем не-версионные теги вроде "modpack"
+            # Нужен именно установщик (CheckpointSetup.exe). Раньше брали любой
+            # .exe и подменяли им себя — с этим и была вечная беда с
+            # python312.dll. Если установщика в релизе нет, оставляем None:
+            # лаунчер просто предложит открыть страницу.
             exe_url = None
             for asset in (rel.get("assets") or []):
-                if (asset.get("name") or "").lower().endswith(".exe"):
+                name = (asset.get("name") or "").lower()
+                if name.endswith(".exe") and "setup" in name:
                     exe_url = asset.get("browser_download_url")
                     break
             vt = _version_tuple(ver)
@@ -5530,7 +5546,7 @@ class LauncherApp:
                 # Качаем во временную папку, а не рядом с .exe: иначе у
                 # пользователя на рабочем столе на время обновления появлялся
                 # второй ярлык лаунчера и тут же пропадал.
-                new_exe = Path(tempfile.gettempdir()) / (cur_exe.stem + "_new.exe")
+                new_exe = Path(tempfile.gettempdir()) / "CheckpointSetup_new.exe"
 
                 def prog(pct):
                     self.root.after(0, lambda: self.update_banner_var.set(
@@ -5556,28 +5572,11 @@ class LauncherApp:
                         pass
                     raise RuntimeError("скачанный файл повреждён")
 
-                # Пробный запуск новой версии ДО замены. Решает главную беду
-                # прошлых обновлений: раньше свежий .exe запускался сразу после
-                # записи, антивирус ещё проверял его и мешал распаковке —
-                # копия падала с ошибкой python-DLL. Здесь мы и убеждаемся, что
-                # версия рабочая, и даём антивирусу проверить файл заранее:
-                # к моменту замены он ему уже знаком.
-                self.root.after(0, lambda: self.update_banner_var.set(
-                    "🔍  Проверяю новую версию…"))
-                try:
-                    result = subprocess.run(
-                        [str(new_exe), "--selftest"], timeout=120,
-                        creationflags=0x08000000, close_fds=True)
-                    started_ok = (result.returncode == 0)
-                except Exception:
-                    started_ok = False
-                if not started_ok:
-                    try:
-                        new_exe.unlink()
-                    except Exception:
-                        pass
-                    raise RuntimeError("новая версия не запускается на этом компьютере")
-
+                # Пробного запуска тут больше нет. Он был костылём против
+                # "Failed to load Python DLL": грел антивирус, чтобы тот успел
+                # проверить свежий .exe до подмены. Костыль не работал (ошибка
+                # возвращалась), а теперь и не нужен: обновление ставит
+                # установщик, лаунчер лежит папкой и ничего не распаковывает.
                 self.root.after(0, self._apply_downloaded_update, cur_exe, new_exe)
             except Exception:
                 self._updating = False
@@ -5590,32 +5589,34 @@ class LauncherApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _apply_downloaded_update(self, cur_exe: Path, new_exe: Path) -> None:
-        """Заменяет .exe новым после закрытия лаунчера.
+        """Ставит обновление скачанным установщиком и перезапускает лаунчер.
 
-        Скрипт кладём во ВРЕМЕННУЮ папку системы, а не рядом с .exe: лаунчер
-        часто лежит на рабочем столе, и файл _update.bat мозолил там глаза.
-        Пути передаём скрипту аргументами (%1/%2), а не вписываем в текст —
-        тогда кириллица в пути пользователя не ломает .bat.
+        Раньше здесь .exe подменялся файлом целиком — и первый запуск после
+        подмены регулярно падал с "Failed to load Python DLL python312.dll".
+        Причина была в сборке одним файлом: при старте он распаковывал Python
+        в Temp, а антивирус в этот момент ещё проверял свежий .exe. Теперь
+        обновление ставит установщик, а лаунчер лежит обычной папкой и ничего
+        не распаковывает — падать нечему.
 
-        Новая версия уже прошла пробный запуск (см. --selftest), поэтому
-        антивирусу она знакома и запуск сразу после замены проходит спокойно —
-        лаунчер перезапускается сам, без окон и просьб."""
+        Скрипт кладём во ВРЕМЕННУЮ папку, а пути передаём аргументами (%1/%2),
+        а не вписываем в текст: иначе кириллица в пути ломает .bat."""
         bat = Path(tempfile.gettempdir()) / ("checkpoint_update_%d.bat" % os.getpid())
         script = (
             "@echo off\r\n"
-            ":wait\r\n"
-            "ping -n 2 127.0.0.1 >nul\r\n"
-            'del %1 >nul 2>&1\r\n'
-            'if exist %1 goto wait\r\n'
-            'move /y %2 %1 >nul\r\n'
+            # Ждём, пока лаунчер закроется, иначе установщик упрётся в занятые файлы.
             "ping -n 3 127.0.0.1 >nul\r\n"
-            'start "" %1\r\n'
+            # /VERYSILENT — без окон и вопросов, /NORESTART — не трогать систему.
+            "%1 /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /NOCANCEL\r\n"
+            "ping -n 2 127.0.0.1 >nul\r\n"
+            'start "" %2\r\n'
+            'del %1 >nul 2>&1\r\n'
             'del "%~f0" >nul 2>&1\r\n'
         )
         try:
             bat.write_text(script, encoding="ascii")
             CREATE_NO_WINDOW = 0x08000000  # скрипт работает без чёрного окна
-            subprocess.Popen(["cmd", "/c", str(bat), str(cur_exe), str(new_exe)],
+            # %1 — установщик, %2 — сам лаунчер (его же и запустим обратно).
+            subprocess.Popen(["cmd", "/c", str(bat), str(new_exe), str(cur_exe)],
                              creationflags=CREATE_NO_WINDOW, close_fds=True)
             self.update_banner_var.set("✅  Обновление установлено, перезапуск…")
             self.root.after(400, self.root.destroy)
