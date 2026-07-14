@@ -287,7 +287,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.9.2",
+    "LAUNCHER_VERSION": "1.9.3",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -299,6 +299,14 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.9.3",
+            "date": "14 июля 2026",
+            "changes": [
+                "Стеклянный фон: цвет мягко просвечивает сквозь панель, "
+                "появились тень и световая грань. Работает и в светлой теме.",
+            ],
+        },
         {
             "version": "1.9.2",
             "date": "14 июля 2026",
@@ -978,43 +986,61 @@ def _draw_rounded_rect(canvas: tk.Canvas, x1, y1, x2, y2, radius, **kwargs):
     return canvas.create_polygon(_rounded_rect_points(x1, y1, x2, y2, radius), smooth=True, **kwargs)
 
 
-def _render_window_backdrop(width: int, height: int, colors: dict, margin: int, radius: int):
-    """Рисует фон окна одной картинкой: мягкий градиент, едва заметное свечение
-    акцентом и матовая панель со скруглением и тонкой гранью.
+# Цветные пятна под стеклом — координаты и радиус заданы долями от размера
+# окна, цвета взяты из иконки сборки. Именно они дают «живой» цвет, который
+# просвечивает сквозь панель. Размытая фотография тут не годится: сильный блюр
+# усредняет её в грязное пятно.
+GLASS_BLOBS = {
+    "dark": [(0.22, 0.22, 0.44, "#0092ec"), (0.82, 0.79, 0.41, "#0b3f8f"),
+             (0.88, 0.18, 0.29, "#00c6ff"), (0.18, 0.88, 0.32, "#134a86")],
+    "light": [(0.22, 0.22, 0.44, "#7fcbf5"), (0.82, 0.79, 0.41, "#9dbde4"),
+              (0.88, 0.18, 0.29, "#bde7ff"), (0.18, 0.88, 0.32, "#aecaea")],
+}
+# Насколько панель прозрачна: чем меньше, тем сильнее сквозь неё виден цвет.
+GLASS_PANEL_ALPHA = {"dark": 162, "light": 188}
 
-    Сам tkinter не умеет ни размытие, ни полупрозрачность, поэтому всё это
-    собирается через Pillow и кладётся подложкой, а виджеты ложатся поверх.
-    Если Pillow недоступен — возвращаем None, и рисуется простой градиент."""
+
+def _render_window_backdrop(width: int, height: int, colors: dict, margin: int,
+                            radius: int, theme_name: str = "dark"):
+    """Рисует фон окна одной картинкой: цветные размытые пятна, мягкая тень под
+    панелью, полупрозрачная матовая панель и световая грань сверху.
+
+    Так получается эффект стекла: цвет снизу мягко просвечивает сквозь панель.
+    Настоящее системное размытие (Acrylic) в tkinter не использовать — для него
+    окно надо делать прозрачным, а прозрачные места становятся «сквозными» для
+    мышки. Если Pillow недоступен — возвращаем None и рисуем простой градиент."""
     if not _PIL_OK:
         return None
     try:
-        top = _hex_to_rgb(colors["bg_grad_top"])
-        bottom = _hex_to_rgb(colors["bg_grad_bottom"])
-        base = Image.new("RGB", (width, height), top)
-        draw = ImageDraw.Draw(base)
-        for y in range(height):
-            t = y / max(1, height - 1)
-            draw.line([(0, y), (width, y)],
-                      fill=tuple(int(top[i] + (bottom[i] - top[i]) * t) for i in range(3)))
+        layer = Image.new("RGB", (width, height), _hex_to_rgb(colors["bg_grad_top"]))
+        draw = ImageDraw.Draw(layer)
+        for fx, fy, fr, color in GLASS_BLOBS.get(theme_name, GLASS_BLOBS["dark"]):
+            cx, cy, r = width * fx, height * fy, width * fr
+            draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=_hex_to_rgb(color))
+        base = layer.filter(ImageFilter.GaussianBlur(max(12, width // 4))).convert("RGBA")
 
-        # Два мягких пятна акцентом по углам. Интенсивность намеренно низкая —
-        # фон должен оставаться спокойным, а не светиться неоном.
-        mask = Image.new("L", (width, height), 0)
-        mask_draw = ImageDraw.Draw(mask)
-        mask_draw.ellipse([-width * 0.30, -height * 0.35, width * 0.55, height * 0.30], fill=46)
-        mask_draw.ellipse([width * 0.55, height * 0.72, width * 1.35, height * 1.40], fill=34)
-        mask = mask.filter(ImageFilter.GaussianBlur(max(8, width // 6)))
-        base.paste(Image.new("RGB", (width, height), _hex_to_rgb(colors["accent"])), (0, 0), mask)
+        # Тень под панелью — она отделяет «стекло» от фона и даёт глубину.
+        shadow = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        ImageDraw.Draw(shadow).rounded_rectangle(
+            [margin, margin + 8, width - margin, height - margin + 8],
+            radius=radius, fill=(0, 0, 0, 120))
+        base = Image.alpha_composite(base, shadow.filter(ImageFilter.GaussianBlur(18)))
 
-        # Матовая панель: чуть прозрачная, поэтому свечение мягко просвечивает
-        # сквозь неё — это и даёт эффект стекла.
         panel = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-        panel_draw = ImageDraw.Draw(panel)
-        panel_draw.rounded_rectangle(
+        ImageDraw.Draw(panel).rounded_rectangle(
             [margin, margin, width - margin, height - margin], radius=radius,
-            fill=_hex_to_rgb(colors["bg_panel"]) + (236,),
-            outline=_hex_to_rgb(colors["border"]) + (255,), width=1)
-        return Image.alpha_composite(base.convert("RGBA"), panel)
+            fill=_hex_to_rgb(colors["bg_panel"]) + (GLASS_PANEL_ALPHA.get(theme_name, 170),))
+        base = Image.alpha_composite(base, panel)
+
+        # Тонкая грань + блик по верхнему краю — то, что читается как стекло.
+        edge = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        edge_draw = ImageDraw.Draw(edge)
+        edge_draw.rounded_rectangle(
+            [margin, margin, width - margin, height - margin], radius=radius,
+            outline=(255, 255, 255, 90), width=1)
+        edge_draw.arc([margin + 2, margin + 2, width - margin - 2, margin + radius * 2],
+                      start=195, end=345, fill=(255, 255, 255, 150), width=2)
+        return Image.alpha_composite(base, edge)
     except Exception:
         return None
 
@@ -2911,7 +2937,8 @@ class LauncherApp:
                               bg=colors["bg_grad_top"])
         bg_canvas.place(x=0, y=0, width=width, height=height)
 
-        backdrop = _render_window_backdrop(width, height, colors, margin, radius)
+        backdrop = _render_window_backdrop(width, height, colors, margin, radius,
+                                           self.theme_name)
         if backdrop is not None:
             # Ссылку держим на self, иначе картинку соберёт сборщик мусора.
             self._backdrop_photo = ImageTk.PhotoImage(backdrop)
