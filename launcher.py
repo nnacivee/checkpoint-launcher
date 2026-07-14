@@ -287,7 +287,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.10.0",
+    "LAUNCHER_VERSION": "1.10.1",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -299,6 +299,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.10.1",
+            "date": "14 июля 2026",
+            "changes": [
+                "Готовые шейдеры в один клик, с картинками: MakeUp Ultra Fast, "
+                "Complementary Reimagined, BSL, Complementary Unbound и "
+                "Rethinking Voxels.",
+                "У каждого шейдера видно, насколько он прожорливый — от "
+                "«Лёгкий» до «Тяжёлый».",
+            ],
+        },
         {
             "version": "1.10.0",
             "date": "14 июля 2026",
@@ -827,6 +838,42 @@ CONFIG = {
             "description": "Красивая трава без потери FPS. Включается сам вместе "
                            "с режимом для слабых ПК",
             "low_end": True,
+        },
+    ],
+
+    # Готовые шейдеры с Modrinth. weight — честная пометка о прожорливости:
+    # шейдеры сильнее всего бьют по FPS, и человек должен понимать это ДО
+    # установки, а не после.
+    "RECOMMENDED_SHADER_PACKS": [
+        {
+            "slug": "makeup-ultra-fast-shaders",
+            "name": "MakeUp — Ultra Fast",
+            "weight": "Лёгкий",
+            "description": "Пойдёт даже на слабом ПК. Лучшее соотношение красоты и FPS",
+        },
+        {
+            "slug": "complementary-reimagined",
+            "name": "Complementary Reimagined",
+            "weight": "Средний",
+            "description": "Ванильный вид с тенями и мягким светом. Самый популярный выбор",
+        },
+        {
+            "slug": "bsl-shaders",
+            "name": "BSL Shaders",
+            "weight": "Средний",
+            "description": "Яркий, красочный, с бликами и объёмным светом",
+        },
+        {
+            "slug": "complementary-unbound",
+            "name": "Complementary Unbound",
+            "weight": "Тяжеловат",
+            "description": "Красивее Reimagined, но заметно требовательнее к видеокарте",
+        },
+        {
+            "slug": "rethinking-voxels",
+            "name": "Rethinking Voxels",
+            "weight": "Тяжёлый",
+            "description": "Цветное освещение и чёткие тени. Нужна хорошая видеокарта",
         },
     ],
 
@@ -1979,21 +2026,34 @@ def is_recommended_pack_installed(pack_cfg: dict) -> bool:
     return bool(filename) and (get_resourcepacks_dir() / filename).exists()
 
 
-def install_recommended_resource_pack(pack_cfg: dict, status_cb=None) -> str:
-    """Скачивает готовый ресурс-пак с Modrinth по slug и кладёт в resourcepacks."""
+def _install_recommended_pack(pack_cfg: dict, dst_dir: Path, loaders: list,
+                              status_cb=None) -> str:
+    """Общая закачка готового пака с Modrinth по slug. Отличаются только папка
+    назначения и loaders (у ресурс-паков это minecraft, у шейдеров — iris)."""
     if status_cb:
-        status_cb("Скачиваю ресурс-пак: %s" % pack_cfg["name"])
+        status_cb("Скачиваю: %s" % pack_cfg["name"])
     filename, url = _find_modrinth_download(
-        pack_cfg["slug"], CONFIG["MC_VERSION"], ["minecraft"])
+        pack_cfg["slug"], CONFIG["MC_VERSION"], loaders)
     if not url:
         raise RuntimeError("Не удалось найти «%s» для Minecraft %s"
                            % (pack_cfg["name"], CONFIG["MC_VERSION"]))
-    dst_dir = get_resourcepacks_dir()
     dst_dir.mkdir(parents=True, exist_ok=True)
     target = dst_dir / (filename or (pack_cfg["slug"] + ".zip"))
     download_file(url, target)
     _remember_recommended_pack(pack_cfg["slug"], target.name)
     return target.name
+
+
+def install_recommended_resource_pack(pack_cfg: dict, status_cb=None) -> str:
+    """Скачивает готовый ресурс-пак с Modrinth по slug и кладёт в resourcepacks."""
+    return _install_recommended_pack(
+        pack_cfg, get_resourcepacks_dir(), ["minecraft"], status_cb)
+
+
+def install_recommended_shader_pack(pack_cfg: dict, status_cb=None) -> str:
+    """Скачивает готовый шейдер с Modrinth по slug и кладёт в shaderpacks."""
+    return _install_recommended_pack(
+        pack_cfg, get_shaderpacks_dir(), ["iris"], status_cb)
 
 
 def _apply_low_end_resource_pack(enabled: bool, status_cb=None) -> None:
@@ -3565,7 +3625,7 @@ class LauncherApp:
 
     def _open_pack_manager(self, title, subtitle, empty_hint, kind,
                            list_fn, toggle_fn, delete_fn, install_fn,
-                           show_recommended=False) -> None:
+                           recommended=None, install_recommended_fn=None) -> None:
         """Общее окно менеджера паков — используется и для ресурс-паков, и для
         шейдеров. Отличаются только функции работы с файлами, которые
         передаются аргументами."""
@@ -3728,7 +3788,7 @@ class LauncherApp:
 
                 def worker():
                     try:
-                        install_recommended_resource_pack(
+                        install_recommended_fn(
                             c, status_cb=lambda t: dialog.after(0, lambda: var.set(t)))
                     except Exception as exc:  # noqa: BLE001
                         dialog.after(0, lambda e=exc: var.set("Ошибка: %s" % e))
@@ -3751,8 +3811,20 @@ class LauncherApp:
             title_row.pack(anchor="w", fill="x")
             tk.Label(title_row, text=cfg["name"], font=("Segoe UI", 11, "bold"),
                      bg=colors["bg_panel"], fg=colors["fg"]).pack(side="left")
-            tk.Label(title_row, text="  готовый пак", font=("Segoe UI", 8),
-                     bg=colors["bg_panel"], fg=colors["accent"]).pack(side="left")
+            # Пометка нагрузки — только у шейдеров: они сильнее всего бьют по FPS,
+            # и это надо видеть ДО установки.
+            weight = cfg.get("weight")
+            if weight:
+                weight_colors = {"Лёгкий": colors["status_online"],
+                                 "Средний": colors["accent"],
+                                 "Тяжеловат": "#e0a33c",
+                                 "Тяжёлый": colors["status_offline"]}
+                tk.Label(title_row, text="  ● %s" % weight, font=("Segoe UI", 8, "bold"),
+                         bg=colors["bg_panel"],
+                         fg=weight_colors.get(weight, colors["fg_muted"])).pack(side="left")
+            else:
+                tk.Label(title_row, text="  готовый пак", font=("Segoe UI", 8),
+                         bg=colors["bg_panel"], fg=colors["accent"]).pack(side="left")
             tk.Label(mid, text=cfg.get("description", ""), font=("Segoe UI", 8),
                      bg=colors["bg_panel"], fg=colors["fg_muted"], anchor="w",
                      justify="left", wraplength=330).pack(anchor="w")
@@ -3769,18 +3841,18 @@ class LauncherApp:
 
             # Готовые паки показываем сразу в этом же списке — отдельное окно
             # для них не нужно.
-            if show_recommended:
+            if recommended:
                 installed = {p["path"].name for p in packs}
-                available = [cfg for cfg in CONFIG.get("RECOMMENDED_RESOURCE_PACKS", [])
+                available = [cfg for cfg in recommended
                              if (_recommended_pack_filename(cfg["slug"]) or "") not in installed]
                 if available:
-                    tk.Label(scroll_frame, text="ГОТОВЫЕ ПАКИ — СТАВЯТСЯ В ОДИН КЛИК",
+                    tk.Label(scroll_frame, text="ГОТОВЫЕ — СТАВЯТСЯ В ОДИН КЛИК",
                              font=("Segoe UI", 8, "bold"), bg=colors["bg_panel"],
                              fg=colors["fg_muted"]).pack(anchor="w", padx=14, pady=(12, 4))
                     for cfg in available:
                         build_available_row(cfg)
 
-            if not packs and not show_recommended:
+            if not packs and not recommended:
                 tk.Label(scroll_frame, text=empty_hint, font=("Segoe UI", 9),
                          bg=colors["bg_panel"], fg=colors["fg_muted"],
                          justify="left", wraplength=560).pack(anchor="w", padx=14, pady=18)
@@ -3819,21 +3891,24 @@ class LauncherApp:
             toggle_fn=set_resource_pack_enabled,
             delete_fn=delete_resource_pack,
             install_fn=install_resource_pack,
-            show_recommended=True,
+            recommended=CONFIG.get("RECOMMENDED_RESOURCE_PACKS"),
+            install_recommended_fn=install_recommended_resource_pack,
         )
 
     def on_open_shader_packs(self) -> None:
         self._open_pack_manager(
             title="Шейдеры",
-            subtitle="Установите ZIP с шейдером — он появится в списке.\n"
-                     "Включён может быть только один шейдер: новый выключит предыдущий.",
-            empty_hint="Пока ничего не установлено.\n\n"
-                       "Нажмите «Установить из ZIP...» и выберите архив с шейдером.",
+            subtitle="Готовые шейдеры ставятся в один клик прямо из списка ниже.\n"
+                     "Цветная пометка показывает, насколько шейдер прожорливый. "
+                     "Включён может быть только один — новый выключит предыдущий.",
+            empty_hint="Пока ничего не установлено.",
             kind="shader",
             list_fn=list_shader_packs,
             toggle_fn=set_shader_enabled,
             delete_fn=delete_shader_pack,
             install_fn=install_shader_pack,
+            recommended=CONFIG.get("RECOMMENDED_SHADER_PACKS"),
+            install_recommended_fn=install_recommended_shader_pack,
         )
 
     def on_open_install_settings(self) -> None:
