@@ -45,7 +45,7 @@ except ImportError:
 # Modrinth бывают в формате webp, который штатный tkinter не умеет). Если
 # библиотеки нет — иконки просто не покажутся, а меню продолжит работать.
 try:
-    from PIL import Image, ImageDraw, ImageTk
+    from PIL import Image, ImageDraw, ImageFilter, ImageTk
     _PIL_OK = True
 except Exception:
     _PIL_OK = False
@@ -286,7 +286,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.8.0",
+    "LAUNCHER_VERSION": "1.9.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -298,6 +298,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.9.0",
+            "date": "14 июля 2026",
+            "changes": [
+                "Новая иконка сборки — она же на окне и в панели задач.",
+                "Спокойный чистый интерфейс: матовая панель с мягким свечением, "
+                "синий акцент из иконки. Жёлтый убран.",
+                "Кнопка Discord теперь со своим значком.",
+                "Готовые ресурс-паки видны сразу общим списком.",
+            ],
+        },
         {
             "version": "1.8.0",
             "date": "14 июля 2026",
@@ -876,32 +887,34 @@ CONFIG = {
 # тёмный фон + золотисто-оранжевый акцент)
 THEMES = {
     "dark": {
-        "bg_grad_top": "#101216",
-        "bg_grad_bottom": "#191b20",
-        "bg_panel": "#1b1e23",
-        "bg_field": "#262a30",
-        "fg": "#eef1f5",
-        "fg_muted": "#98a0ab",
-        "accent": "#ffb02e",
-        "accent_hover": "#ffc356",
-        "accent_dim": "#5a4620",
-        "accent_text": "#161006",
-        "border": "#333942",
+        "bg_grad_top": "#0d1014",
+        "bg_grad_bottom": "#151a22",
+        "bg_panel": "#171c24",
+        "bg_field": "#212833",
+        "fg": "#e8edf4",
+        "fg_muted": "#8c99a8",
+        # Акцент взят прямо из иконки сборки (синий), только чуть спокойнее.
+        # Жёлтый/янтарный убран — он выбивался из общей гаммы.
+        "accent": "#2f9fe0",
+        "accent_hover": "#4fb4ef",
+        "accent_dim": "#1d3a4d",
+        "accent_text": "#ffffff",
+        "border": "#2a323d",
         "status_online": "#5fd48b",
         "status_offline": "#ff7a6b",
     },
     "light": {
-        "bg_grad_top": "#eef1f5",
-        "bg_grad_bottom": "#dee3ea",
+        "bg_grad_top": "#eff2f6",
+        "bg_grad_bottom": "#dfe4ec",
         "bg_panel": "#ffffff",
-        "bg_field": "#eceff4",
-        "fg": "#1b1f25",
-        "fg_muted": "#6b7280",
-        "accent": "#d1861a",
-        "accent_hover": "#b06e12",
-        "accent_dim": "#e7d4ac",
+        "bg_field": "#eef1f6",
+        "fg": "#1b1f26",
+        "fg_muted": "#66748a",
+        "accent": "#0e7fc4",
+        "accent_hover": "#0a6aa6",
+        "accent_dim": "#cfe4f3",
         "accent_text": "#ffffff",
-        "border": "#d6dbe2",
+        "border": "#d5dce5",
         "status_online": "#2f9e52",
         "status_offline": "#c94a3d",
     },
@@ -944,6 +957,47 @@ def _rounded_rect_points(x1, y1, x2, y2, radius):
 
 def _draw_rounded_rect(canvas: tk.Canvas, x1, y1, x2, y2, radius, **kwargs):
     return canvas.create_polygon(_rounded_rect_points(x1, y1, x2, y2, radius), smooth=True, **kwargs)
+
+
+def _render_window_backdrop(width: int, height: int, colors: dict, margin: int, radius: int):
+    """Рисует фон окна одной картинкой: мягкий градиент, едва заметное свечение
+    акцентом и матовая панель со скруглением и тонкой гранью.
+
+    Сам tkinter не умеет ни размытие, ни полупрозрачность, поэтому всё это
+    собирается через Pillow и кладётся подложкой, а виджеты ложатся поверх.
+    Если Pillow недоступен — возвращаем None, и рисуется простой градиент."""
+    if not _PIL_OK:
+        return None
+    try:
+        top = _hex_to_rgb(colors["bg_grad_top"])
+        bottom = _hex_to_rgb(colors["bg_grad_bottom"])
+        base = Image.new("RGB", (width, height), top)
+        draw = ImageDraw.Draw(base)
+        for y in range(height):
+            t = y / max(1, height - 1)
+            draw.line([(0, y), (width, y)],
+                      fill=tuple(int(top[i] + (bottom[i] - top[i]) * t) for i in range(3)))
+
+        # Два мягких пятна акцентом по углам. Интенсивность намеренно низкая —
+        # фон должен оставаться спокойным, а не светиться неоном.
+        mask = Image.new("L", (width, height), 0)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.ellipse([-width * 0.30, -height * 0.35, width * 0.55, height * 0.30], fill=46)
+        mask_draw.ellipse([width * 0.55, height * 0.72, width * 1.35, height * 1.40], fill=34)
+        mask = mask.filter(ImageFilter.GaussianBlur(max(8, width // 6)))
+        base.paste(Image.new("RGB", (width, height), _hex_to_rgb(colors["accent"])), (0, 0), mask)
+
+        # Матовая панель: чуть прозрачная, поэтому свечение мягко просвечивает
+        # сквозь неё — это и даёт эффект стекла.
+        panel = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        panel_draw = ImageDraw.Draw(panel)
+        panel_draw.rounded_rectangle(
+            [margin, margin, width - margin, height - margin], radius=radius,
+            fill=_hex_to_rgb(colors["bg_panel"]) + (236,),
+            outline=_hex_to_rgb(colors["border"]) + (255,), width=1)
+        return Image.alpha_composite(base.convert("RGBA"), panel)
+    except Exception:
+        return None
 
 
 
@@ -1113,7 +1167,7 @@ def resource_path(filename: str) -> Path:
 
 
 ICON_NAMES = ["folder", "chat", "grid", "wrench", "list", "sun", "moon", "gauge", "gear",
-              "image", "shader"]
+              "image", "shader", "discord"]
 
 
 def load_icons(theme_name: str) -> dict:
@@ -2785,18 +2839,28 @@ class LauncherApp:
         set_titlebar_dark(root, self.theme_name == "dark")
         self._setup_style(colors)
 
-        # Градиентный фон на всё окно
-        bg_canvas = tk.Canvas(root, width=width, height=height, highlightthickness=0, bd=0)
-        bg_canvas.place(x=0, y=0, width=width, height=height)
-        _draw_vertical_gradient(bg_canvas, width, height, colors["bg_grad_top"], colors["bg_grad_bottom"])
-
-        # Скруглённая карточка поверх градиента
+        # Фон окна: мягкий градиент + лёгкое свечение + матовая панель.
+        # Всё это одна картинка, отрисованная Pillow (см. _render_window_backdrop) —
+        # сам tkinter размытие и полупрозрачность не умеет.
         margin = 20
         radius = 30
-        _draw_rounded_rect(
-            bg_canvas, margin, margin, width - margin, height - margin, radius,
-            fill=colors["bg_panel"], outline=colors["border"], width=2,
-        )
+        bg_canvas = tk.Canvas(root, width=width, height=height, highlightthickness=0, bd=0,
+                              bg=colors["bg_grad_top"])
+        bg_canvas.place(x=0, y=0, width=width, height=height)
+
+        backdrop = _render_window_backdrop(width, height, colors, margin, radius)
+        if backdrop is not None:
+            # Ссылку держим на self, иначе картинку соберёт сборщик мусора.
+            self._backdrop_photo = ImageTk.PhotoImage(backdrop)
+            bg_canvas.create_image(0, 0, image=self._backdrop_photo, anchor="nw")
+        else:
+            # Запасной вариант без Pillow — как было раньше.
+            _draw_vertical_gradient(bg_canvas, width, height,
+                                    colors["bg_grad_top"], colors["bg_grad_bottom"])
+            _draw_rounded_rect(
+                bg_canvas, margin, margin, width - margin, height - margin, radius,
+                fill=colors["bg_panel"], outline=colors["border"], width=1,
+            )
 
         content = tk.Frame(bg_canvas, bg=colors["bg_panel"])
         bg_canvas.create_window(
@@ -2854,7 +2918,9 @@ class LauncherApp:
         self._add_tooltip(folder_btn, "Папка с игрой", colors)
 
         if CONFIG.get("DISCORD_URL"):
-            discord_btn = self._make_icon_button(toolbar, self.icons["chat"], colors, self.on_open_discord)
+            discord_btn = self._make_icon_button(
+                toolbar, self.icons.get("discord") or self.icons["chat"],
+                colors, self.on_open_discord)
             discord_btn.pack(side="left", padx=(8, 0))
             self._add_tooltip(discord_btn, "Discord", colors)
 
@@ -3325,18 +3391,106 @@ class LauncherApp:
                          bg=colors["bg_field"], fg=colors["fg_muted"], anchor="w",
                          justify="left", wraplength=330).pack(anchor="w")
 
+        def build_available_row(cfg):
+            """Строка готового пака, который ещё не установлен: превью с
+            Modrinth, описание и кнопка «Установить»."""
+            card = tk.Frame(scroll_frame, bg=colors["bg_panel"],
+                            highlightbackground=colors["border"], highlightthickness=1)
+            card.pack(fill="x", padx=8, pady=4)
+            body = tk.Frame(card, bg=colors["bg_panel"])
+            body.pack(fill="x", padx=10, pady=8)
+
+            holder = tk.Frame(body, bg=colors["bg_field"], width=64, height=64)
+            holder.pack(side="left", padx=(0, 12))
+            holder.pack_propagate(False)
+            icon_label = tk.Label(holder, bg=colors["bg_field"],
+                                  text=cfg["name"][:1].upper(), fg=colors["accent"],
+                                  font=("Segoe UI", 20, "bold"))
+            icon_label.pack(fill="both", expand=True)
+
+            # Картинку пака тянем с Modrinth в фоне, чтобы окно не подвисало.
+            if _PIL_OK and cfg.get("slug"):
+                def load_icon(c=cfg, label=icon_label):
+                    pil = _load_mod_icon_image(c["slug"], 64)
+                    if pil is None:
+                        return
+                    def show():
+                        try:
+                            photo = ImageTk.PhotoImage(pil)
+                            self._pack_icon_refs["rec:" + c["slug"]] = photo
+                            label.configure(image=photo, text="")
+                        except Exception:
+                            pass
+                    dialog.after(0, show)
+                threading.Thread(target=load_icon, daemon=True).start()
+
+            state = tk.StringVar(value="")
+            btn_holder = tk.Frame(body, bg=colors["bg_panel"])
+            btn_holder.pack(side="right")
+
+            def on_get(c=cfg, var=state, box=btn_holder):
+                for child in box.winfo_children():
+                    child.configure(state="disabled")
+                var.set("Скачиваю...")
+
+                def worker():
+                    try:
+                        install_recommended_resource_pack(
+                            c, status_cb=lambda t: dialog.after(0, lambda: var.set(t)))
+                    except Exception as exc:  # noqa: BLE001
+                        dialog.after(0, lambda e=exc: var.set("Ошибка: %s" % e))
+                        dialog.after(0, lambda: [w.configure(state="normal")
+                                                 for w in box.winfo_children()])
+                    else:
+                        dialog.after(0, refresh)
+
+                threading.Thread(target=worker, daemon=True).start()
+
+            tk.Button(btn_holder, text="Установить", command=on_get, font=("Segoe UI", 9),
+                      bg=colors["accent"], fg=colors["accent_text"],
+                      activebackground=colors["accent_hover"],
+                      activeforeground=colors["accent_text"],
+                      relief="flat", cursor="hand2", bd=0, padx=12, pady=4).pack()
+
+            mid = tk.Frame(body, bg=colors["bg_panel"])
+            mid.pack(side="left", fill="x", expand=True)
+            title_row = tk.Frame(mid, bg=colors["bg_panel"])
+            title_row.pack(anchor="w", fill="x")
+            tk.Label(title_row, text=cfg["name"], font=("Segoe UI", 11, "bold"),
+                     bg=colors["bg_panel"], fg=colors["fg"]).pack(side="left")
+            tk.Label(title_row, text="  готовый пак", font=("Segoe UI", 8),
+                     bg=colors["bg_panel"], fg=colors["accent"]).pack(side="left")
+            tk.Label(mid, text=cfg.get("description", ""), font=("Segoe UI", 8),
+                     bg=colors["bg_panel"], fg=colors["fg_muted"], anchor="w",
+                     justify="left", wraplength=330).pack(anchor="w")
+            tk.Label(mid, textvariable=state, font=("Segoe UI", 8),
+                     bg=colors["bg_panel"], fg=colors["fg_muted"], anchor="w").pack(anchor="w")
+
         def refresh():
             for child in scroll_frame.winfo_children():
                 child.destroy()
             self._pack_icon_refs = {}
             packs = list_fn()
-            if not packs:
+            for pack in packs:
+                build_row(pack)
+
+            # Готовые паки показываем сразу в этом же списке — отдельное окно
+            # для них не нужно.
+            if show_recommended:
+                installed = {p["path"].name for p in packs}
+                available = [cfg for cfg in CONFIG.get("RECOMMENDED_RESOURCE_PACKS", [])
+                             if (_recommended_pack_filename(cfg["slug"]) or "") not in installed]
+                if available:
+                    tk.Label(scroll_frame, text="ГОТОВЫЕ ПАКИ — СТАВЯТСЯ В ОДИН КЛИК",
+                             font=("Segoe UI", 8, "bold"), bg=colors["bg_panel"],
+                             fg=colors["fg_muted"]).pack(anchor="w", padx=14, pady=(12, 4))
+                    for cfg in available:
+                        build_available_row(cfg)
+
+            if not packs and not show_recommended:
                 tk.Label(scroll_frame, text=empty_hint, font=("Segoe UI", 9),
                          bg=colors["bg_panel"], fg=colors["fg_muted"],
                          justify="left", wraplength=560).pack(anchor="w", padx=14, pady=18)
-                return
-            for pack in packs:
-                build_row(pack)
 
         def on_install():
             paths = filedialog.askopenfilenames(
@@ -3358,25 +3512,15 @@ class LauncherApp:
                   activebackground=colors["accent_hover"], activeforeground=colors["accent_text"],
                   relief="flat", cursor="hand2", bd=0, padx=14, pady=6).pack(side="right")
 
-        if show_recommended:
-            tk.Button(head, text="Готовые паки",
-                      command=lambda: self._open_recommended_packs(dialog, refresh),
-                      font=("Segoe UI", 10), bg=colors["bg_field"], fg=colors["fg"],
-                      activebackground=colors["border"], activeforeground=colors["fg"],
-                      relief="flat", cursor="hand2", bd=0,
-                      padx=14, pady=6).pack(side="right", padx=(0, 8))
-
         refresh()
         dialog.grab_set()
 
     def on_open_resource_packs(self) -> None:
         self._open_pack_manager(
             title="Ресурс-паки",
-            subtitle="Нажмите «Готовые паки», чтобы поставить проверенные паки в один клик,\n"
-                     "или добавьте свой ZIP. Галочка «Включён» сразу включает пак в игре.",
-            empty_hint="Пока ничего не установлено.\n\n"
-                       "Нажмите «Готовые паки» — там есть Faithful 32x и другие,\n"
-                       "или «Установить из ZIP...» для своего архива.",
+            subtitle="Готовые паки ставятся в один клик прямо из списка ниже.\n"
+                     "Галочка «Включён» сразу включает пак в самой игре.",
+            empty_hint="Пока ничего не установлено.",
             kind="image",
             list_fn=list_resource_packs,
             toggle_fn=set_resource_pack_enabled,
