@@ -295,7 +295,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.17.0",
+    "LAUNCHER_VERSION": "1.17.1",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -307,6 +307,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.17.1",
+            "date": "15 июля 2026",
+            "changes": [
+                "Список модов больше не тормозит, и поиск наконец работает.",
+                "Моды разбиты по категориям: технологии, магия, оптимизация и так далее.",
+                "У каждого мода — ссылка «подробнее» на его страницу.",
+            ],
+        },
         {
             "version": "1.17.0",
             "date": "15 июля 2026",
@@ -2805,7 +2814,8 @@ def scan_installed_mods(status_cb=None) -> list:
                 cache[h] = {"title": p.get("title") or "",
                             "description": (p.get("description") or "")[:160],
                             "icon": p.get("icon_url") or "",
-                            "slug": p.get("slug") or ""}
+                            "slug": p.get("slug") or "",
+                            "categories": p.get("categories") or []}
         except Exception:  # noqa: BLE001
             pass       # нет сети — покажем то, что вытащим из самих jar
         for h in unknown:
@@ -2819,16 +2829,59 @@ def scan_installed_mods(status_cb=None) -> list:
     mods = []
     for h, jar in by_hash.items():
         info = cache.get(h) or {}
+        slug = info.get("slug") or ""
         mods.append({
             "title": info.get("title") or _jar_display_name(jar),
             "description": info.get("description") or "",
             "icon": info.get("icon") or "",
-            "slug": info.get("slug") or "",
+            "slug": slug,
+            "url": ("https://modrinth.com/mod/" + slug) if slug else "",
+            "category": _mod_category_ru(info.get("categories") or []),
             "file": jar.name,
             "hash": h,
         })
     mods.sort(key=lambda m: m["title"].lower())
     return mods
+
+
+# Категории Modrinth -> человеческие названия. Загрузчики (neoforge/fabric)
+# сюда не входят: это не тема мода, а способ его запуска.
+MOD_CATEGORIES_RU = {
+    "technology": "Технологии",
+    "magic": "Магия",
+    "adventure": "Приключения",
+    "worldgen": "Генерация мира",
+    "mobs": "Мобы",
+    "equipment": "Экипировка",
+    "storage": "Хранение",
+    "transportation": "Транспорт",
+    "food": "Еда и фермы",
+    "decoration": "Декор",
+    "optimization": "Оптимизация",
+    "utility": "Утилиты",
+    "management": "Управление",
+    "social": "Общение",
+    "game-mechanics": "Механики игры",
+    "library": "Библиотеки",
+    "minigame": "Мини-игры",
+    "cursed": "Странное",
+}
+# Порядок важен: у мода обычно несколько категорий, берём первую подходящую
+# по этому списку — от «о чём мод» к «как он устроен».
+MOD_CATEGORY_ORDER = [
+    "technology", "magic", "adventure", "worldgen", "mobs", "equipment",
+    "storage", "transportation", "food", "decoration", "optimization",
+    "utility", "management", "social", "game-mechanics", "minigame",
+    "cursed", "library",
+]
+
+
+def _mod_category_ru(categories) -> str:
+    lowered = {str(c).lower() for c in categories}
+    for key in MOD_CATEGORY_ORDER:
+        if key in lowered:
+            return MOD_CATEGORIES_RU[key]
+    return "Прочее"
 
 
 def load_mod_icon_by_url(url: str, hash_key: str, size: int = 40):
@@ -5714,8 +5767,13 @@ class LauncherApp:
         dialog.minsize(720, 520)
         set_titlebar_dark(dialog, True)
 
+        # Картинки и подписи держим ЗДЕСЬ, а не создаём заново при каждом
+        # поиске: раньше на каждое нажатие клавиши перерисовывались все 170
+        # карточек и запускалось 170 потоков за иконками. Окно колом вставало,
+        # и выглядело так, будто поиск не работает.
         self._modlist_refs = {}
-        state = {"mods": [], "query": ""}
+        self._modlist_labels = {}
+        state = {"mods": [], "query": "", "category": "Все", "after": None}
 
         outer = tk.Frame(dialog, bg=colors["bg_panel"])
         outer.pack(fill="both", expand=True, padx=16, pady=16)
@@ -5728,7 +5786,7 @@ class LauncherApp:
                  bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(anchor="w", pady=(2, 10))
 
         head = tk.Frame(outer, bg=colors["bg_panel"])
-        head.pack(fill="x", pady=(0, 10))
+        head.pack(fill="x", pady=(0, 6))
         search_var = tk.StringVar()
         entry = tk.Entry(head, textvariable=search_var, font=("Segoe UI", 10),
                          bg=colors["bg_field"], fg=colors["fg"], insertbackground=colors["fg"],
@@ -5737,6 +5795,18 @@ class LauncherApp:
         entry.pack(side="right", ipady=4)
         tk.Label(head, text="Поиск", font=("Segoe UI", 9), bg=colors["bg_panel"],
                  fg=colors["fg_muted"]).pack(side="right", padx=(0, 6))
+
+        chips_row = tk.Frame(outer, bg=colors["bg_panel"])
+        chips_row.pack(fill="x", pady=(0, 10))
+        chip_buttons = {}
+
+        def select_category(name):
+            state["category"] = name
+            for key, b in chip_buttons.items():
+                active = key == name
+                b.configure(bg=colors["accent"] if active else colors["bg_field"],
+                            fg=colors["accent_text"] if active else colors["fg_muted"])
+            render()
 
         box = tk.Frame(outer, bg=colors["bg_panel"],
                        highlightbackground=colors["border"], highlightthickness=1)
@@ -5758,52 +5828,63 @@ class LauncherApp:
                          highlightbackground=colors["border"], highlightthickness=1)
             c.grid(row=row, column=column, padx=6, pady=6, sticky="nsew")
             body = tk.Frame(c, bg=colors["bg_field"])
-            body.pack(fill="x", padx=10, pady=9)
+            body.pack(fill="both", expand=True, padx=10, pady=9)
 
             holder = tk.Frame(body, bg=colors["bg_panel"], width=40, height=40)
-            holder.pack(side="left", padx=(0, 10))
+            holder.pack(side="left", padx=(0, 10), anchor="n")
             holder.pack_propagate(False)
             img = tk.Label(holder, bg=colors["bg_panel"], text=mod["title"][:1].upper(),
                            fg=colors["accent"], font=("Segoe UI", 14, "bold"))
             img.pack(fill="both", expand=True)
+            # Готовая картинка ставится сразу; если ещё качается — её поставит
+            # единственный фоновый поток, найдя ярлык вот здесь.
+            photo = self._modlist_refs.get(mod["hash"])
+            if photo is not None:
+                img.configure(image=photo, text="")
+            self._modlist_labels[mod["hash"]] = img
 
             text = tk.Frame(body, bg=colors["bg_field"])
-            text.pack(side="left", fill="x", expand=True)
+            text.pack(side="left", fill="both", expand=True)
             tk.Label(text, text=mod["title"], font=("Segoe UI", 10, "bold"),
                      bg=colors["bg_field"], fg=colors["fg"], anchor="w",
-                     wraplength=220, justify="left").pack(anchor="w")
+                     wraplength=210, justify="left").pack(anchor="w")
+            tk.Label(text, text=mod["category"], font=("Segoe UI", 8),
+                     bg=colors["bg_field"], fg=colors["accent"], anchor="w").pack(anchor="w")
             if mod["description"]:
                 tk.Label(text, text=mod["description"], font=("Segoe UI", 8),
                          bg=colors["bg_field"], fg=colors["fg_muted"], anchor="w",
-                         wraplength=220, justify="left").pack(anchor="w")
+                         wraplength=210, justify="left").pack(anchor="w", pady=(2, 0))
+            tk.Label(text, text=mod["file"], font=("Segoe UI", 7),
+                     bg=colors["bg_field"], fg=colors["border"], anchor="w",
+                     wraplength=210, justify="left").pack(anchor="w", pady=(3, 0))
 
-            if mod["icon"]:
-                def load(m=mod, label=img):
-                    image = load_mod_icon_by_url(m["icon"], m["hash"], 40)
-                    if image is None:
-                        return
+            if mod["url"]:
+                link = tk.Label(text, text="подробнее ↗", font=("Segoe UI", 8, "underline"),
+                                bg=colors["bg_field"], fg=colors["accent"], cursor="hand2")
+                link.pack(anchor="w", pady=(3, 0))
+                link.bind("<Button-1>", lambda e, u=mod["url"]: self._open_link(u, "Modrinth"))
 
-                    def show():
-                        if not label.winfo_exists():
-                            return
-                        try:
-                            photo = ImageTk.PhotoImage(image)
-                            self._modlist_refs[m["hash"]] = photo
-                            label.configure(image=photo, text="")
-                        except Exception:  # noqa: BLE001
-                            pass
-                    dialog.after(0, show)
-                threading.Thread(target=load, daemon=True).start()
+        def visible():
+            q = state["query"].strip().lower()
+            cat = state["category"]
+            out = []
+            for m in state["mods"]:
+                if cat != "Все" and m["category"] != cat:
+                    continue
+                if q and q not in m["title"].lower() and q not in m["description"].lower() \
+                        and q not in m["file"].lower():
+                    continue
+                out.append(m)
+            return out
 
         def render():
             for ch in grid.winfo_children():
                 ch.destroy()
-            q = state["query"].strip().lower()
-            items = [m for m in state["mods"]
-                     if q in m["title"].lower() or q in m["description"].lower()]
+            self._modlist_labels.clear()
+            items = visible()
             if not items:
-                tk.Label(grid, text="Ничего не найдено." if q else "Моды не найдены — "
-                         "сборка ещё не установлена.",
+                tk.Label(grid, text="Ничего не найдено." if state["query"] else
+                         "Моды не найдены — сборка ещё не установлена.",
                          font=("Segoe UI", 10), bg=colors["bg_panel"],
                          fg=colors["fg_muted"]).grid(row=0, column=0, padx=16, pady=16)
                 return
@@ -5812,20 +5893,70 @@ class LauncherApp:
                 card(m, i // columns, i % columns)
             for c in range(columns):
                 grid.grid_columnconfigure(c, weight=1)
+            canvas.yview_moveto(0)
 
-        search_var.trace_add("write",
-                             lambda *a: (state.update(query=search_var.get()), render()))
+        def on_type(*_a):
+            # Перерисовываем не на каждую букву, а через паузу: перебор 170
+            # карточек на каждый символ и был тем самым «поиск не работает».
+            state["query"] = search_var.get()
+            if state["after"] is not None:
+                try:
+                    dialog.after_cancel(state["after"])
+                except Exception:  # noqa: BLE001
+                    pass
+            state["after"] = dialog.after(220, render)
+
+        search_var.trace_add("write", on_type)
+
+        def load_icons(mods):
+            """Один поток на все иконки. Раньше их было по потоку на карточку,
+            и они плодились заново при каждом нажатии клавиши."""
+            for m in mods:
+                if not m["icon"] or m["hash"] in self._modlist_refs:
+                    continue
+                image = load_mod_icon_by_url(m["icon"], m["hash"], 40)
+                if image is None:
+                    continue
+
+                def apply(mm=m, im=image):
+                    try:
+                        photo = ImageTk.PhotoImage(im)
+                        self._modlist_refs[mm["hash"]] = photo
+                        label = self._modlist_labels.get(mm["hash"])
+                        if label is not None and label.winfo_exists():
+                            label.configure(image=photo, text="")
+                    except Exception:  # noqa: BLE001
+                        pass
+                try:
+                    dialog.after(0, apply)
+                except tk.TclError:
+                    return      # окно закрыли — заканчиваем
 
         def worker():
             mods = scan_installed_mods(lambda t: dialog.after(0, lambda: status_var.set(t)))
 
             def done():
                 state["mods"] = mods
-                known = sum(1 for m in mods if m["icon"])
+                cats = ["Все"] + sorted({m["category"] for m in mods})
+                for name in cats:
+                    count = len(mods) if name == "Все" else sum(
+                        1 for m in mods if m["category"] == name)
+                    b = tk.Button(chips_row, text="%s (%d)" % (name, count),
+                                  font=("Segoe UI", 8, "bold"),
+                                  bg=colors["accent"] if name == "Все" else colors["bg_field"],
+                                  fg=colors["accent_text"] if name == "Все" else colors["fg_muted"],
+                                  activebackground=colors["accent_hover"],
+                                  relief="flat", bd=0, padx=10, pady=4, cursor="hand2",
+                                  command=lambda n=name: select_category(n))
+                    b.pack(side="left", padx=(0, 5), pady=2)
+                    chip_buttons[name] = b
                 title_var.set("Моды сборки — %d шт" % len(mods))
-                status_var.set("С картинками: %d. Остальные лаунчер прочитал прямо из jar."
-                               % known if mods else "Папка mods пуста.")
+                known = sum(1 for m in mods if m["url"])
+                status_var.set(
+                    "%d с описанием и ссылкой на Modrinth, остальные прочитаны из jar."
+                    % known if mods else "Папка mods пуста — сборка ещё не установлена.")
                 render()
+                threading.Thread(target=lambda: load_icons(mods), daemon=True).start()
             dialog.after(0, done)
 
         threading.Thread(target=worker, daemon=True).start()
