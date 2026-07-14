@@ -11,6 +11,10 @@ on:
       - "window_icon.png"
       - "background.png"
       - "icons/**"
+      # Сам файл сборки тоже отслеживаем. Без этой строки правка build.yml
+      # не запускала пересборку: однажды из-за этого вышла версия, куда не
+      # попал фон — лаунчер показывал чёрное окно вместо арта.
+      - ".github/workflows/build.yml"
   workflow_dispatch: {}
 
 permissions:
@@ -81,6 +85,17 @@ jobs:
           $dll = Get-ChildItem -Path "dist\Launcher" -Recurse -Filter "python3*.dll"
           if (-not $dll) { throw "python3xx.dll is missing from the app folder" }
           echo "OK: $($dll[0].FullName)"
+          # Ресурсы должны реально лежать в сборке. Один раз фон не попал в exe,
+          # и это заметил только пользователь — окно было чёрным.
+          foreach ($res in @("background.png", "icon.ico", "window_icon.png")) {
+            if (Test-Path $res) {
+              $found = Get-ChildItem -Path "dist\Launcher" -Recurse -Filter $res
+              if (-not $found) { throw "$res is missing from the built app" }
+              echo "OK: $res -> $($found[0].FullName)"
+            }
+          }
+          $icons = Get-ChildItem -Path "dist\Launcher" -Recurse -Filter "discord_dark.png"
+          if (-not $icons) { throw "icons/ are missing from the built app" }
 
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
