@@ -288,7 +288,12 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.14.1",
+    # Заголовок окна. Внутренние имена (папка установки, CheckpointSetup.exe)
+    # намеренно остались Checkpoint: переименуешь — у всех, кто уже поставил,
+    # рядом останется вторая копия, которую придётся сносить руками.
+    "WINDOW_TITLE": "Industrial Horizon",
+
+    "LAUNCHER_VERSION": "1.15.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -300,6 +305,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.15.0",
+            "date": "15 июля 2026",
+            "changes": [
+                "Новый вид лаунчера: широкое окно с артом Industrial Horizon.",
+                "Кнопки теперь с подписями — видно, что каждая делает, "
+                "без наведения мышкой.",
+                "Иконки заменены на нормальные, значок Discord — настоящий.",
+            ],
+        },
         {
             "version": "1.14.1",
             "date": "15 июля 2026",
@@ -1160,6 +1175,168 @@ def _draw_rounded_rect(canvas: tk.Canvas, x1, y1, x2, y2, radius, **kwargs):
 # окна, цвета взяты из иконки сборки. Именно они дают «живой» цвет, который
 # просвечивает сквозь панель. Размытая фотография тут не годится: сильный блюр
 # усредняет её в грязное пятно.
+# ================== Главное окно: размеры и отрисовка ==================
+# Окно широкое, потому что фоновый арт 16:9. В прежнее квадратное 680x680
+# он не влезал: приходилось резать бока, а там весь смысл картинки — завод
+# слева и ракета справа.
+MAIN_W, MAIN_H = 1080, 640
+BAR_H = 138          # высота нижней полосы с ником и кнопкой «Играть»
+BAR_FEATHER = 34     # мягкий край полосы
+
+
+def _cover_fit(img, width: int, height: int):
+    """Вписать картинку «по заполнению»: масштаб по большей стороне и обрезка.
+    Не «растянуть» — иначе арт поплывёт, и не «вписать» — иначе будут поля."""
+    k = max(width / img.width, height / img.height)
+    scaled = img.resize((max(1, round(img.width * k)), max(1, round(img.height * k))),
+                        Image.LANCZOS)
+    x = (scaled.width - width) // 2
+    y = (scaled.height - height) // 2
+    return scaled.crop((x, y, x + width, y + height))
+
+
+def render_main_background(width: int, height: int, colors: dict):
+    """Фон главного окна: арт + внизу тёмная полоса под интерфейс.
+
+    Полоса с МЯГКИМ краем: ровная линия резала картинку пополам и выглядела
+    как наклейка. Градиент при этом короткий — длинный затемнял пол-арта, и
+    ракету с лунной базой становилось не видно.
+    """
+    if not _PIL_OK:
+        return None
+    path = resource_path("background.png")
+    try:
+        art = Image.open(path).convert("RGB")
+    except Exception:  # noqa: BLE001
+        return None
+    base = _cover_fit(art, width, height).convert("RGBA")
+
+    top = height - BAR_H - BAR_FEATHER
+    strip = base.crop((0, top, width, height)).filter(ImageFilter.GaussianBlur(14))
+    tint = Image.new("RGBA", (width, BAR_H + BAR_FEATHER), (10, 14, 20, 255))
+    ramp = Image.new("L", (1, BAR_H + BAR_FEATHER))
+    for i in range(BAR_H + BAR_FEATHER):
+        t = min(1.0, i / BAR_FEATHER)
+        ramp.putpixel((0, i), int(216 * t * t))   # квадратично: край мягкий, дальше плотно
+    tint.putalpha(ramp.resize((width, BAR_H + BAR_FEATHER)))
+    base.paste(Image.alpha_composite(strip.convert("RGBA"), tint), (0, top))
+    return base.convert("RGB")
+
+
+def render_rounded(width: int, height: int, radius: int, fill, outline=None,
+                   glow=None):
+    """Скруглённый прямоугольник картинкой. tkinter такое не умеет: у него
+    все прямоугольники честно прямоугольные."""
+    if not _PIL_OK:
+        return None
+    pad = 30 if glow else 0
+    img = Image.new("RGBA", (width + 2 * pad, height + 2 * pad), (0, 0, 0, 0))
+    if glow:
+        g = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        ImageDraw.Draw(g).rounded_rectangle(
+            [pad, pad, pad + width, pad + height], radius=radius, fill=glow)
+        img.alpha_composite(g.filter(ImageFilter.GaussianBlur(14)))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([pad, pad, pad + width, pad + height], radius=radius,
+                        fill=fill, outline=outline, width=1 if outline else 0)
+    return img
+
+
+BG_FALLBACK = "#0a0e14"   # если арт не загрузился — окно всё равно тёмное, а не белое
+
+
+class _CanvasText:
+    """Текст на холсте, притворяющийся Label.
+
+    Нужен, чтобы остальной код (смена статуса сервера, баннер обновления) не
+    знал, что интерфейс переехал с виджетов на холст, и продолжал работать
+    через .configure(fg=...), как раньше.
+    """
+
+    def __init__(self, canvas, item):
+        self.canvas, self.item = canvas, item
+
+    def set_text(self, text):
+        try:
+            self.canvas.itemconfig(self.item, text=text)
+        except tk.TclError:
+            pass
+
+    def configure(self, **kw):
+        try:
+            if "fg" in kw:
+                self.canvas.itemconfig(self.item, fill=kw["fg"])
+            if "text" in kw:
+                self.canvas.itemconfig(self.item, text=kw["text"])
+        except tk.TclError:
+            pass
+
+    def winfo_ismapped(self):
+        return True
+
+
+class _CanvasPill:
+    """Кнопка-«пилюля», нарисованная на холсте.
+
+    Обычная tk.Button на картинке даёт серый прямоугольник вокруг себя:
+    прозрачного фона у виджетов нет. Поэтому кнопка — это три картинки
+    (обычная/наведение/выключена) и текст поверх.
+    """
+
+    def __init__(self, canvas, x, y, w, h, label, colors, command, refs):
+        self.canvas, self.command, self.enabled = canvas, command, True
+        self.tag = "pill_%d" % id(self)
+        accent = _hex_to_rgb(colors["accent"])
+        hover = _hex_to_rgb(colors["accent_hover"])
+        dim = _hex_to_rgb(colors["accent_dim"])
+        pad = 30
+        self._imgs = {}
+        for key, rgb, glow in (("normal", accent, accent + (140,)),
+                               ("hover", hover, hover + (170,)),
+                               ("off", dim, None)):
+            img = render_rounded(w, h, h // 2, rgb + (255,), glow=glow)
+            if img is not None:
+                self._imgs[key] = ImageTk.PhotoImage(img)
+                refs["pill_" + key + self.tag] = self._imgs[key]
+        if self._imgs:
+            self.bg = canvas.create_image(x - pad, y - pad, image=self._imgs["normal"],
+                                          anchor="nw", tags=(self.tag,))
+        else:
+            self.bg = canvas.create_rectangle(x, y, x + w, y + h, fill=colors["accent"],
+                                              outline="", tags=(self.tag,))
+        self.text = canvas.create_text(x + w // 2, y + h // 2, text=label,
+                                       font=("Segoe UI", 17, "bold"),
+                                       fill=colors["accent_text"], tags=(self.tag,))
+        canvas.tag_bind(self.tag, "<Button-1>", self._click)
+        canvas.tag_bind(self.tag, "<Enter>", self._enter)
+        canvas.tag_bind(self.tag, "<Leave>", self._leave)
+
+    def _swap(self, key):
+        if self._imgs:
+            try:
+                self.canvas.itemconfig(self.bg, image=self._imgs[key])
+            except tk.TclError:
+                pass
+
+    def _click(self, _e):
+        if self.enabled:
+            self.command()
+
+    def _enter(self, _e):
+        if self.enabled:
+            self._swap("hover")
+            self.canvas.configure(cursor="hand2")
+
+    def _leave(self, _e):
+        if self.enabled:
+            self._swap("normal")
+        self.canvas.configure(cursor="")
+
+    def set_enabled(self, value: bool):
+        self.enabled = bool(value)
+        self._swap("normal" if value else "off")
+
+
 GLASS_BLOBS = {
     "dark": [(0.22, 0.22, 0.44, "#0092ec"), (0.82, 0.79, 0.41, "#0b3f8f"),
              (0.88, 0.18, 0.29, "#00c6ff"), (0.18, 0.88, 0.32, "#134a86")],
@@ -3460,7 +3637,13 @@ class LauncherApp:
         self.update_banner_var = tk.StringVar(value="")
         self.update_info = None
         self.update_banner = None
-        self.version_row = None
+        # Сводка настроек больше не показывается в главном окне (она уехала
+        # в окно настроек), но переменная нужна: её обновляет тот же код,
+        # что и раньше.
+        self.settings_summary_var = tk.StringVar(value="")
+        self.canvas = None
+        self.play_button = None
+        self._img_refs = {}
 
         # Закрытие окна крестиком должно гарантированно завершать процесс.
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -3585,10 +3768,10 @@ class LauncherApp:
         # Python соберёт их мусором и иконки пропадут с экрана.
         self.icons = load_icons(self.theme_name)
 
-        width, height = 680, 680
-        root.title(CONFIG["PACK_NAME"])
+        width, height = MAIN_W, MAIN_H
+        root.title(CONFIG.get("WINDOW_TITLE") or CONFIG["PACK_NAME"])
+        root.resizable(False, False)
         if getattr(self, "_geometry_set", False):
-            # Перестройка интерфейса (смена темы) — позицию окна не трогаем.
             root.geometry("%dx%d" % (width, height))
         else:
             # Позицию считаем ЗАРАНЕЕ и ставим одним вызовом вместе с размером.
@@ -3598,218 +3781,184 @@ class LauncherApp:
             y = max(0, (root.winfo_screenheight() - height) // 3)
             root.geometry("%dx%d+%d+%d" % (width, height, x, y))
             self._geometry_set = True
-        root.configure(bg=colors["bg_grad_top"])
-        set_titlebar_dark(root, self.theme_name == "dark")
+        root.configure(bg=BG_FALLBACK)
+        set_titlebar_dark(root, True)
         self._setup_style(colors)
 
-        # Фон окна: мягкий градиент + лёгкое свечение + матовая панель.
-        # Всё это одна картинка, отрисованная Pillow (см. _render_window_backdrop) —
-        # сам tkinter размытие и полупрозрачность не умеет.
-        margin = 20
-        radius = 30
-        bg_canvas = tk.Canvas(root, width=width, height=height, highlightthickness=0, bd=0,
-                              bg=colors["bg_grad_top"])
-        bg_canvas.place(x=0, y=0, width=width, height=height)
+        # ВЕСЬ интерфейс рисуется на одном холсте, а не собирается из виджетов.
+        # Причина: в tkinter у любого виджета непрозрачный фон — положишь кнопку
+        # на картинку, и вокруг неё будет серый прямоугольник. На холсте же
+        # текст и картинки ложатся поверх арта без подложки. Настоящим виджетом
+        # остаётся только поле ника: там нужен ввод с клавиатуры.
+        cv = tk.Canvas(root, width=width, height=height, highlightthickness=0, bd=0,
+                       bg=BG_FALLBACK)
+        cv.pack(fill="both", expand=True)
+        self.canvas = cv
+        self._img_refs = {}      # ссылки на PhotoImage: иначе их съест сборщик мусора
 
-        backdrop = _render_window_backdrop(width, height, colors, margin, radius,
-                                           self.theme_name)
+        backdrop = render_main_background(width, height, colors)
         if backdrop is not None:
-            # Ссылку держим на self, иначе картинку соберёт сборщик мусора.
-            self._backdrop_photo = ImageTk.PhotoImage(backdrop)
-            bg_canvas.create_image(0, 0, image=self._backdrop_photo, anchor="nw")
+            self._img_refs["bg"] = ImageTk.PhotoImage(backdrop)
+            cv.create_image(0, 0, image=self._img_refs["bg"], anchor="nw")
         else:
-            # Запасной вариант без Pillow — как было раньше.
-            _draw_vertical_gradient(bg_canvas, width, height,
-                                    colors["bg_grad_top"], colors["bg_grad_bottom"])
-            _draw_rounded_rect(
-                bg_canvas, margin, margin, width - margin, height - margin, radius,
-                fill=colors["bg_panel"], outline=colors["border"], width=1,
-            )
+            # Без Pillow или без файла арта — просто тёмный фон, окно рабочее.
+            cv.create_rectangle(0, 0, width, height, fill=BG_FALLBACK, outline="")
 
-        content = tk.Frame(bg_canvas, bg=colors["bg_panel"])
-        bg_canvas.create_window(
-            margin + 2, margin + 2, window=content, anchor="nw",
-            width=width - 2 * margin - 4, height=height - 2 * margin - 4,
-        )
+        self._build_tiles(cv, width, height, colors)
+        self._build_bottom_bar(cv, width, height, colors)
 
-        inner = tk.Frame(content, bg=colors["bg_panel"])
-        inner.pack(fill="both", expand=True, padx=48, pady=22)
+    # ------------------------------------------------------------------
+    # Плитки быстрого доступа над нижней полосой
+    # ------------------------------------------------------------------
+    def _build_tiles(self, cv, width, height, colors) -> None:
+        tiles = [("skin", "Скины", self.on_open_skins),
+                 ("image", "Текстуры", self.on_open_resource_packs),
+                 ("shader", "Шейдеры", self.on_open_shader_packs),
+                 ("grid", "Моды", self.on_open_optional_mods),
+                 ("list", "Список", self.on_show_mod_list),
+                 ("folder", "Папка", self.on_open_folder),
+                 ("discord", "Discord", self.on_open_discord),
+                 ("wrench", "Починить", self.on_repair),
+                 ("gear", "Настройки", self.on_open_install_settings)]
+        if not CONFIG.get("DISCORD_URL"):
+            tiles = [t for t in tiles if t[0] != "discord"]
+        if not CONFIG.get("MOD_SHOWCASE"):
+            tiles = [t for t in tiles if t[0] != "list"]
+        if not CONFIG.get("OPTIONAL_MODS"):
+            tiles = [t for t in tiles if t[0] != "grid"]
 
-        # Заголовок
-        header_row = tk.Frame(inner, bg=colors["bg_panel"])
-        header_row.pack(fill="x")
+        tw, th, gap = 76, 66, 12
+        total = len(tiles) * tw + (len(tiles) - 1) * gap
+        sx = (width - total) // 2
+        sy = height - BAR_H - 84
 
-        title_col = tk.Frame(header_row, bg=colors["bg_panel"])
-        title_col.pack(side="left", anchor="w")
+        normal = render_rounded(tw, th, 12, (40, 49, 63, 215), (255, 255, 255, 38))
+        hover = render_rounded(tw, th, 12, (58, 72, 92, 235), (255, 255, 255, 90))
+        if normal is not None:
+            self._img_refs["tile"] = ImageTk.PhotoImage(normal)
+            self._img_refs["tile_hover"] = ImageTk.PhotoImage(hover)
 
-        title_line = tk.Frame(title_col, bg=colors["bg_panel"])
-        title_line.pack(anchor="w")
-        if self.icons.get("gear"):
-            tk.Label(title_line, image=self.icons["gear"], bg=colors["bg_panel"]).pack(side="left", padx=(0, 8))
-        tk.Label(title_line, text=CONFIG["PACK_NAME"].upper(), font=("Segoe UI", 23, "bold"),
-                 bg=colors["bg_panel"], fg=colors["fg"]).pack(side="left")
-        if self.icons.get("gear"):
-            tk.Label(title_line, image=self.icons["gear"], bg=colors["bg_panel"]).pack(side="left", padx=(8, 0))
+        for i, (icon, label, command) in enumerate(tiles):
+            x = sx + i * (tw + gap)
+            tag = "tile%d" % i
+            if normal is not None:
+                bg_id = cv.create_image(x, sy, image=self._img_refs["tile"],
+                                        anchor="nw", tags=(tag,))
+            else:
+                bg_id = cv.create_rectangle(x, sy, x + tw, sy + th,
+                                            fill="#28313f", outline="#3a4658", tags=(tag,))
+            if self.icons.get(icon):
+                cv.create_image(x + tw // 2, sy + 23, image=self.icons[icon], tags=(tag,))
+            cv.create_text(x + tw // 2, sy + 50, text=label, font=("Segoe UI", 8),
+                           fill=colors["fg"], tags=(tag,))
 
-        tk.Label(
-            title_col,
-            text="MINECRAFT %s  ·  %s" % (
-                CONFIG["MC_VERSION"],
-                LOADER_DISPLAY_NAMES.get(CONFIG["MOD_LOADER"], CONFIG["MOD_LOADER"].capitalize()).upper(),
-            ),
-            font=("Segoe UI", 8, "bold"), bg=colors["bg_panel"], fg=colors["accent"],
-        ).pack(anchor="w", pady=(4, 0))
+            def enter(_e, i=bg_id, has=normal is not None):
+                if has:
+                    cv.itemconfig(i, image=self._img_refs["tile_hover"])
+                cv.configure(cursor="hand2")
 
-        theme_icon_img = self.icons["sun"] if self.theme_name == "dark" else self.icons["moon"]
-        theme_btn = self._make_icon_button(header_row, theme_icon_img, colors, self.on_toggle_theme)
-        theme_btn.pack(side="right", anchor="n")
-        self._add_tooltip(theme_btn, "Светлая/тёмная тема", colors)
+            def leave(_e, i=bg_id, has=normal is not None):
+                if has:
+                    cv.itemconfig(i, image=self._img_refs["tile"])
+                cv.configure(cursor="")
 
-        tk.Frame(inner, bg=colors["accent_dim"], height=1).pack(fill="x", pady=(14, 10))
+            cv.tag_bind(tag, "<Enter>", enter)
+            cv.tag_bind(tag, "<Leave>", leave)
+            cv.tag_bind(tag, "<Button-1>", lambda _e, c=command: c())
 
-        self.server_status_label = tk.Label(
-            inner, textvariable=self.server_status_var, font=("Segoe UI", 9, "bold"),
-            bg=colors["bg_panel"], fg=colors[self.server_status_color_key], anchor="w",
-        )
-        self.server_status_label.pack(fill="x", pady=(0, 8))
+    # ------------------------------------------------------------------
+    # Нижняя полоса: ник слева, «Играть» справа
+    # ------------------------------------------------------------------
+    def _build_bottom_bar(self, cv, width, height, colors) -> None:
+        top = height - BAR_H
+        left = 36
+        muted = colors["fg_muted"]
 
-        # Панель кнопок: Папка / Discord / Моды / Список модов / Починить
-        toolbar = tk.Frame(inner, bg=colors["bg_panel"])
-        toolbar.pack(anchor="w", pady=(0, 14))
+        # --- слева: ник и сведения о сборке ---
+        cv.create_text(left, top + 10, text="ВАШ НИК", font=("Segoe UI", 8, "bold"),
+                       fill=muted, anchor="nw")
 
-        folder_btn = self._make_icon_button(toolbar, self.icons["folder"], colors, self.on_open_folder)
-        folder_btn.pack(side="left")
-        self._add_tooltip(folder_btn, "Папка с игрой", colors)
-
-        if CONFIG.get("DISCORD_URL"):
-            discord_btn = self._make_icon_button(
-                toolbar, self.icons.get("discord") or self.icons["chat"],
-                colors, self.on_open_discord)
-            discord_btn.pack(side="left", padx=(8, 0))
-            self._add_tooltip(discord_btn, "Discord", colors)
-
-        if CONFIG.get("OPTIONAL_MODS"):
-            mods_btn = self._make_icon_button(toolbar, self.icons["grid"], colors, self.on_open_optional_mods)
-            mods_btn.pack(side="left", padx=(8, 0))
-            self._add_tooltip(mods_btn, "Опциональные моды", colors)
-
-        if CONFIG.get("MOD_SHOWCASE"):
-            showcase_btn = self._make_icon_button(toolbar, self.icons["list"], colors, self.on_show_mod_list)
-            showcase_btn.pack(side="left", padx=(8, 0))
-            self._add_tooltip(showcase_btn, "Список модов сборки", colors)
-
-        packs_btn = self._make_icon_button(
-            toolbar, self.icons["image"], colors, self.on_open_resource_packs)
-        packs_btn.pack(side="left", padx=(8, 0))
-        self._add_tooltip(packs_btn, "Ресурс-паки (текстуры)", colors)
-
-        shaders_btn = self._make_icon_button(
-            toolbar, self.icons["shader"], colors, self.on_open_shader_packs)
-        shaders_btn.pack(side="left", padx=(8, 0))
-        self._add_tooltip(shaders_btn, "Шейдеры", colors)
-
-        if CONFIG.get("SKINS_ROOT_URL"):
-            skins_btn = self._make_icon_button(
-                toolbar, self.icons.get("skin") or self.icons["image"],
-                colors, self.on_open_skins)
-            skins_btn.pack(side="left", padx=(8, 0))
-            self._add_tooltip(skins_btn, "Скины и плащи", colors)
-
-        repair_btn = self._make_icon_button(toolbar, self.icons["wrench"], colors, self.on_repair)
-        repair_btn.pack(side="left", padx=(8, 0))
-        self._add_tooltip(repair_btn, "Починить / переустановить", colors)
-
-        settings_btn = self._make_icon_button(
-            toolbar, self.icons["gear"], colors, self.on_open_install_settings)
-        settings_btn.pack(side="left", padx=(8, 0))
-        self._add_tooltip(settings_btn, "Папка установки игры", colors)
-
-        # Ник
-        tk.Label(inner, text="ВАШ НИК", font=("Segoe UI", 8, "bold"),
-                 bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(anchor="w")
+        field = render_rounded(300, 38, 9, (26, 33, 44, 240), (255, 255, 255, 50))
+        if field is not None:
+            self._img_refs["field"] = ImageTk.PhotoImage(field)
+            cv.create_image(left, top + 25, image=self._img_refs["field"], anchor="nw")
         nick_entry = tk.Entry(
-            inner, textvariable=self.nick_var, font=("Segoe UI", 13),
-            bg=colors["bg_field"], fg=colors["fg"], insertbackground=colors["fg"],
-            relief="flat", highlightthickness=1,
-            highlightbackground=colors["border"], highlightcolor=colors["accent"],
+            cv, textvariable=self.nick_var, font=("Segoe UI", 13),
+            bg="#1a2230", fg=colors["fg"], insertbackground=colors["fg"],
+            relief="flat", highlightthickness=0, bd=0,
         )
-        nick_entry.pack(fill="x", ipady=7, pady=(5, 12))
+        cv.create_window(left + 12, top + 44, window=nick_entry, anchor="w", width=276, height=24)
 
-        # Ползунок ОЗУ и «слабый режим» переехали в окно настроек (шестерёнка),
-        # чтобы главное окно оставалось простым. Здесь — только короткая сводка
-        # текущих значений, кликом открывается то же окно настроек.
-        self.ram_value_label = None
-        summary = tk.Frame(inner, bg=colors["bg_panel"], cursor="hand2")
-        summary.pack(fill="x", pady=(0, 12))
-        self.settings_summary_var = tk.StringVar(value=self._settings_summary_text())
-        summary_label = tk.Label(
-            summary, textvariable=self.settings_summary_var, font=("Segoe UI", 9),
-            bg=colors["bg_panel"], fg=colors["fg_muted"], anchor="w", cursor="hand2",
-        )
-        summary_label.pack(side="left")
-        change_link = tk.Label(
-            summary, text="настроить", font=("Segoe UI", 9, "underline"),
-            bg=colors["bg_panel"], fg=colors["accent"], cursor="hand2",
-        )
-        change_link.pack(side="right")
-        for widget in (summary, summary_label, change_link):
-            widget.bind("<Button-1>", lambda e: self.on_open_install_settings())
+        cv.create_text(left, top + 72, anchor="nw", font=("Segoe UI", 8, "bold"),
+                       fill=colors["accent"],
+                       text="MINECRAFT %s  ·  %s  ·  ВЕРСИЯ ЛАУНЧЕРА %s" % (
+                           CONFIG["MC_VERSION"],
+                           LOADER_DISPLAY_NAMES.get(CONFIG["MOD_LOADER"],
+                                                    CONFIG["MOD_LOADER"].capitalize()).upper(),
+                           CONFIG.get("LAUNCHER_VERSION", "?")))
+        self.server_status_label = _CanvasText(
+            cv, cv.create_text(left, top + 89, anchor="nw", font=("Segoe UI", 9, "bold"),
+                               fill=colors[self.server_status_color_key],
+                               text=self.server_status_var.get()))
+        self.server_status_var.trace_add(
+            "write", lambda *a: self.server_status_label.set_text(self.server_status_var.get()))
 
-        # Кнопка играть — золотая "пилюля" на Canvas
-        self.play_button = self._make_pill_button(
-            inner, "ИГРАТЬ", colors, self.on_play,
-            bg=colors["accent"], hover_bg=colors["accent_hover"],
-            disabled_bg=colors["accent_dim"], fg=colors["accent_text"],
-            height=50, font_size=14,
-        )
-        self.play_button.pack(fill="x", pady=(2, 6))
-
-        # Вторая кнопка — быстрый заход на локальный тестовый сервер (localhost).
-        self.play_test_button = self._make_pill_button(
-            inner, "ИГРАТЬ (ТЕСТ — localhost)", colors, self.on_play_test,
-            bg=colors["bg_field"], hover_bg=colors["accent_hover"],
-            disabled_bg=colors["accent_dim"], fg=colors["fg"],
-            height=38, font_size=11,
-        )
-        self.play_test_button.pack(fill="x", pady=(0, 14))
-
-        # Статус + прогрессбар
-        tk.Label(inner, textvariable=self.status_var, font=("Segoe UI", 9),
-                 bg=colors["bg_panel"], fg=colors["fg_muted"], wraplength=540, justify="left",
-                 anchor="w").pack(fill="x")
-
-        self.progress = ttk.Progressbar(inner, mode="determinate", maximum=100,
-                                         variable=self.progress_var,
-                                         style="Accent.Horizontal.TProgressbar")
-        self.progress.pack(fill="x", pady=(8, 0))
-
-        # Баннер "вышла новая версия лаунчера" — виден, только если
-        # check_for_launcher_update() уже что-то нашёл к этому моменту
-        self.update_banner = tk.Label(
-            inner, textvariable=self.update_banner_var, font=("Segoe UI", 9, "bold"),
-            bg=colors["bg_panel"], fg=colors["accent"], cursor="hand2", anchor="w",
-        )
-        self.update_banner.bind("<Button-1>", lambda e: self.on_open_update())
-        if self.update_info:
-            self.update_banner.pack(fill="x", pady=(10, 0))
-
-        # Версия лаунчера + "что нового"
-        version_row = tk.Frame(inner, bg=colors["bg_panel"])
-        version_row.pack(fill="x", pady=(10, 0))
-        self.version_row = version_row
-
-        tk.Label(
-            version_row, text="%s launcher v%s" % (CONFIG["PACK_NAME"], CONFIG.get("LAUNCHER_VERSION", "?")),
-            font=("Segoe UI", 8), bg=colors["bg_panel"], fg=colors["fg_muted"],
-        ).pack(side="left")
-
+        links = []
         if CONFIG.get("LAUNCHER_CHANGELOG"):
-            changelog_link = tk.Label(
-                version_row, text="что нового", font=("Segoe UI", 8, "underline"),
-                bg=colors["bg_panel"], fg=colors["accent"], cursor="hand2",
-            )
-            changelog_link.pack(side="right")
-            changelog_link.bind("<Button-1>", lambda e: self.on_show_changelog())
+            links.append(("что нового", self.on_show_changelog))
+        if CONFIG.get("TEST_SERVER_ADDRESS"):
+            links.append(("тест localhost", self.on_play_test))
+        lx = left
+        for text, command in links:
+            item = cv.create_text(lx, top + 108, anchor="nw", font=("Segoe UI", 8, "underline"),
+                                  fill=muted, text=text, tags=("lnk%d" % len(cv.find_all()),))
+            tag = cv.gettags(item)[0]
+            cv.tag_bind(tag, "<Button-1>", lambda _e, c=command: c())
+            cv.tag_bind(tag, "<Enter>", lambda _e, i=item: (cv.itemconfig(i, fill=colors["accent"]),
+                                                            cv.configure(cursor="hand2")))
+            cv.tag_bind(tag, "<Leave>", lambda _e, i=item: (cv.itemconfig(i, fill=muted),
+                                                            cv.configure(cursor="")))
+            lx += int(cv.bbox(item)[2] - cv.bbox(item)[0]) + 18
+
+        # --- справа: «Играть», статус, прогресс ---
+        pw, ph = 330, 58
+        px = width - 36 - pw
+        py = top + 10
+        self.play_button = _CanvasPill(cv, px, py, pw, ph, "ИГРАТЬ", colors,
+                                       self.on_play, self._img_refs)
+
+        self.status_item = cv.create_text(px, top + 78, anchor="nw", font=("Segoe UI", 9),
+                                          fill=muted, text=self.status_var.get(), width=pw)
+        self.status_var.trace_add(
+            "write", lambda *a: cv.itemconfig(self.status_item, text=self.status_var.get()))
+
+        cv.create_rectangle(px, top + 95, px + pw, top + 101, fill="#2b3543", outline="")
+        self.progress_item = cv.create_rectangle(px, top + 95, px, top + 101,
+                                                 fill=colors["accent"], outline="")
+        self._progress_geom = (px, top + 95, pw, top + 101)
+        self.progress_var.trace_add("write", lambda *a: self._redraw_progress())
+        self._redraw_progress()
+
+        # Баннер обновления живёт над плитками, чтобы не толкать нижнюю полосу.
+        self.update_banner = _CanvasText(
+            cv, cv.create_text(width // 2, height - BAR_H - 104, anchor="center",
+                               font=("Segoe UI", 10, "bold"), fill=colors["accent"],
+                               text=self.update_banner_var.get(), tags=("upd",)))
+        self.update_banner_var.trace_add(
+            "write", lambda *a: self.update_banner.set_text(self.update_banner_var.get()))
+        cv.tag_bind("upd", "<Button-1>", lambda _e: self.on_open_update())
+        cv.tag_bind("upd", "<Enter>", lambda _e: cv.configure(cursor="hand2"))
+        cv.tag_bind("upd", "<Leave>", lambda _e: cv.configure(cursor=""))
+
+    def _redraw_progress(self) -> None:
+        """Прогресс рисуем сами прямоугольником: обычный ttk-виджет на арте
+        выглядел бы серой плашкой со своим фоном."""
+        try:
+            x, y0, w, y1 = self._progress_geom
+            pct = max(0, min(100, int(self.progress_var.get())))
+            self.canvas.coords(self.progress_item, x, y0, x + w * pct / 100.0, y1)
+        except (tk.TclError, AttributeError):
+            pass
 
     def _make_icon_button(self, parent, image, colors, command, size=40):
         # Кнопку оборачиваем в Frame фиксированного пиксельного размера
@@ -5525,14 +5674,8 @@ class LauncherApp:
         self.update_banner_var.set(
             "🔔  Доступна версия %s — нажмите, чтобы обновить" % info.get("version", "?")
         )
-        try:
-            if self.update_banner is not None and not self.update_banner.winfo_ismapped():
-                if self.version_row is not None:
-                    self.update_banner.pack(fill="x", pady=(10, 0), before=self.version_row)
-                else:
-                    self.update_banner.pack(fill="x", pady=(10, 0))
-        except tk.TclError:
-            pass  # окно как раз перерисовывается (смена темы) — не страшно
+        # Баннер — текст на холсте, он уже на месте: достаточно, что в
+        # update_banner_var появился текст (пустая строка = баннера не видно).
 
     def on_open_update(self) -> None:
         info = self.update_info or {}
