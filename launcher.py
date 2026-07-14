@@ -31,7 +31,7 @@ import uuid
 import webbrowser
 import zipfile
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 try:
     import minecraft_launcher_lib as mll
@@ -285,7 +285,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.5.4",
+    "LAUNCHER_VERSION": "1.6.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -297,6 +297,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.6.0",
+            "date": "14 июля 2026",
+            "changes": [
+                "Появился выбор папки установки (кнопка с шестерёнкой): игру "
+                "можно поставить на любой диск, например D:\\Games\\IC3.",
+                "Перенос игры в другую папку сохраняет все миры, настройки и "
+                "скриншоты.",
+            ],
+        },
         {
             "version": "1.5.4",
             "date": "14 июля 2026",
@@ -880,12 +890,21 @@ def _draw_rounded_rect(canvas: tk.Canvas, x1, y1, x2, y2, radius, **kwargs):
 
 
 
+# Домашняя папка лаунчера (всегда на системном диске): здесь лежат настройки
+# и кэши. Она должна быть в фиксированном месте — именно из неё мы узнаём,
+# куда пользователь поставил саму игру.
 APP_DATA_DIR = Path.home() / (".%s_launcher" % CONFIG["PACK_NAME"].lower())
-INSTANCE_DIR = APP_DATA_DIR / "instance"
 SETTINGS_FILE = APP_DATA_DIR / "settings.json"
-MODPACK_VERSION_FILE = INSTANCE_DIR / ".modpack_version"
 OPTIONAL_CACHE_DIR = APP_DATA_DIR / "optional_mods_cache"
 MOD_ICONS_DIR = APP_DATA_DIR / "mod_icons"
+
+# Папка с самой игрой. По умолчанию — на диске C рядом с настройками, но
+# пользователь может перенести её куда угодно (например, D:\Games\IC3).
+# Пути ниже меняются функцией set_install_dir() — поэтому все места в коде
+# обращаются к INSTANCE_DIR во время вызова, а не сохраняют его копию.
+DEFAULT_INSTANCE_DIR = APP_DATA_DIR / "instance"
+INSTANCE_DIR = DEFAULT_INSTANCE_DIR
+MODPACK_VERSION_FILE = INSTANCE_DIR / ".modpack_version"
 INSTALL_MARKER_FILE = INSTANCE_DIR / ".install_complete.json"
 
 
@@ -901,6 +920,68 @@ def load_settings() -> dict:
 def save_settings(data: dict) -> None:
     APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
     SETTINGS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def set_install_dir(path) -> None:
+    """Переключает лаунчер на другую папку установки: пересчитывает пути,
+    которые от неё зависят. Вызывается при старте и после переноса игры."""
+    global INSTANCE_DIR, MODPACK_VERSION_FILE, INSTALL_MARKER_FILE
+    INSTANCE_DIR = Path(path)
+    MODPACK_VERSION_FILE = INSTANCE_DIR / ".modpack_version"
+    INSTALL_MARKER_FILE = INSTANCE_DIR / ".install_complete.json"
+
+
+def get_saved_install_dir() -> Path:
+    """Папка установки из настроек (или папка по умолчанию на диске C)."""
+    saved = load_settings().get("install_dir")
+    if saved:
+        try:
+            return Path(saved)
+        except Exception:
+            pass
+    return DEFAULT_INSTANCE_DIR
+
+
+def _is_inside(child, parent) -> bool:
+    """True, если child лежит внутри parent."""
+    try:
+        Path(child).resolve().relative_to(Path(parent).resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def move_installation(new_dir, status_cb=None) -> None:
+    """Переносит игру в новую папку вместе со всеми пользовательскими данными
+    (миры, настройки, скриншоты, ресурспаки). Если игра ещё не установлена —
+    просто запоминает новое место. Бросает RuntimeError с понятным текстом,
+    если перенос невозможен."""
+    old_dir = INSTANCE_DIR
+    new_dir = Path(new_dir)
+    if new_dir == old_dir:
+        return
+    if _is_inside(new_dir, old_dir):
+        raise RuntimeError("Нельзя перенести игру внутрь её собственной папки.")
+    if new_dir.exists() and any(new_dir.iterdir()):
+        raise RuntimeError(
+            "Папка не пустая:\n%s\n\nВыберите пустую или новую папку." % new_dir)
+
+    new_dir.parent.mkdir(parents=True, exist_ok=True)
+    if old_dir.exists():
+        # Пустую папку-приёмник убираем: иначе shutil.move положит игру
+        # ВНУТРЬ неё, а не на её место.
+        if new_dir.exists():
+            new_dir.rmdir()
+        if status_cb:
+            status_cb("Переношу игру в %s — это может занять несколько минут..." % new_dir)
+        shutil.move(str(old_dir), str(new_dir))
+    else:
+        new_dir.mkdir(parents=True, exist_ok=True)
+
+    update_settings(install_dir=str(new_dir))
+    set_install_dir(new_dir)
+    if status_cb:
+        status_cb("Готово. Игра теперь в папке: %s" % new_dir)
 
 
 def get_system_ram_mb():
@@ -2386,6 +2467,11 @@ class LauncherApp:
         repair_btn.pack(side="left", padx=(8, 0))
         self._add_tooltip(repair_btn, "Починить / переустановить", colors)
 
+        settings_btn = self._make_icon_button(
+            toolbar, self.icons["gear"], colors, self.on_open_install_settings)
+        settings_btn.pack(side="left", padx=(8, 0))
+        self._add_tooltip(settings_btn, "Папка установки игры", colors)
+
         # Ник
         tk.Label(inner, text="ВАШ НИК", font=("Segoe UI", 8, "bold"),
                  bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(anchor="w")
@@ -2630,6 +2716,134 @@ class LauncherApp:
             webbrowser.open(url)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Не удалось открыть Discord", str(exc))
+
+    def on_open_install_settings(self) -> None:
+        """Окно выбора папки установки: показывает текущий путь и позволяет
+        перенести игру в другое место вместе со всеми данными."""
+        colors = THEMES[self.theme_name]
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Папка установки")
+        dialog.configure(bg=colors["bg_panel"])
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.geometry("560x330")
+        set_titlebar_dark(dialog, self.theme_name == "dark")
+
+        outer = tk.Frame(dialog, bg=colors["bg_panel"])
+        outer.pack(fill="both", expand=True, padx=18, pady=18)
+
+        tk.Label(outer, text="Папка установки игры", font=("Segoe UI", 14, "bold"),
+                 bg=colors["bg_panel"], fg=colors["fg"]).pack(anchor="w")
+        tk.Label(
+            outer,
+            text="Здесь лежат Minecraft, моды и ваши миры. Игру можно перенести на\n"
+                 "другой диск — все миры, настройки и скриншоты переедут вместе с ней.",
+            font=("Segoe UI", 9), bg=colors["bg_panel"], fg=colors["fg_muted"],
+            justify="left",
+        ).pack(anchor="w", pady=(2, 14))
+
+        tk.Label(outer, text="ТЕКУЩАЯ ПАПКА", font=("Segoe UI", 8, "bold"),
+                 bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(anchor="w")
+        path_var = tk.StringVar(value=str(INSTANCE_DIR))
+        path_box = tk.Entry(
+            outer, textvariable=path_var, font=("Segoe UI", 10), state="readonly",
+            readonlybackground=colors["bg_field"], fg=colors["fg"],
+            relief="flat", highlightthickness=1,
+            highlightbackground=colors["border"], highlightcolor=colors["accent"],
+        )
+        path_box.pack(fill="x", ipady=6, pady=(5, 14))
+
+        status_var = tk.StringVar(value="")
+        status_label = tk.Label(
+            outer, textvariable=status_var, font=("Segoe UI", 9), wraplength=510,
+            justify="left", bg=colors["bg_panel"], fg=colors["fg_muted"], anchor="w")
+        status_label.pack(fill="x", pady=(0, 12))
+
+        buttons = tk.Frame(outer, bg=colors["bg_panel"])
+        buttons.pack(fill="x")
+
+        def set_busy(busy: bool):
+            state = "disabled" if busy else "normal"
+            change_btn.configure(state=state)
+            default_btn.configure(state=state)
+
+        def do_move(target: Path):
+            set_busy(True)
+
+            def worker():
+                try:
+                    move_installation(
+                        target,
+                        status_cb=lambda text: dialog.after(0, lambda t=text: status_var.set(t)),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    dialog.after(0, lambda e=exc: status_var.set("Не удалось: %s" % e))
+                    dialog.after(0, lambda e=exc: messagebox.showerror(
+                        "Не удалось перенести", str(e), parent=dialog))
+                else:
+                    dialog.after(0, lambda: path_var.set(str(INSTANCE_DIR)))
+                finally:
+                    dialog.after(0, lambda: set_busy(False))
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        def pick_target(target: Path):
+            if self.game_process is not None and self.game_process.poll() is None:
+                messagebox.showinfo(
+                    "Игра запущена",
+                    "Закройте Minecraft, прежде чем переносить игру.", parent=dialog)
+                return
+            if target == INSTANCE_DIR:
+                status_var.set("Игра уже находится в этой папке.")
+                return
+            if not messagebox.askyesno(
+                    "Перенос игры",
+                    "Перенести игру сюда?\n\n%s\n\nВсе миры и настройки сохранятся.\n"
+                    "Перенос на другой диск может занять несколько минут." % target,
+                    parent=dialog):
+                return
+            do_move(target)
+
+        def on_change():
+            chosen = filedialog.askdirectory(
+                title="Выберите папку для установки игры", parent=dialog)
+            if not chosen:
+                return
+            target = Path(chosen)
+            # В чужую непустую папку не мусорим — создаём внутри неё подпапку
+            # с названием сборки.
+            if target.exists() and any(target.iterdir()) and target != INSTANCE_DIR:
+                target = target / CONFIG["PACK_NAME"]
+            pick_target(target)
+
+        def on_default():
+            pick_target(DEFAULT_INSTANCE_DIR)
+
+        change_btn = tk.Button(
+            buttons, text="Выбрать другую папку...", command=on_change,
+            font=("Segoe UI", 10), bg=colors["accent"], fg=colors["accent_text"],
+            activebackground=colors["accent_hover"], activeforeground=colors["accent_text"],
+            relief="flat", cursor="hand2", bd=0, padx=14, pady=7,
+        )
+        change_btn.pack(side="left")
+
+        default_btn = tk.Button(
+            buttons, text="Вернуть на диск C", command=on_default,
+            font=("Segoe UI", 10), bg=colors["bg_field"], fg=colors["fg"],
+            activebackground=colors["border"], activeforeground=colors["fg"],
+            relief="flat", cursor="hand2", bd=0, padx=14, pady=7,
+        )
+        default_btn.pack(side="left", padx=(8, 0))
+
+        tk.Button(
+            buttons, text="Открыть папку", command=lambda: open_folder(INSTANCE_DIR),
+            font=("Segoe UI", 10), bg=colors["bg_field"], fg=colors["fg"],
+            activebackground=colors["border"], activeforeground=colors["fg"],
+            relief="flat", cursor="hand2", bd=0, padx=14, pady=7,
+        ).pack(side="right")
+
+        dialog.grab_set()
 
     def on_open_optional_mods(self) -> None:
         colors = THEMES[self.theme_name]
@@ -3373,6 +3587,10 @@ def main():
     if not acquire_single_instance_lock():
         # Лаунчер уже открыт: мы попросили его показать окно и просто уходим.
         return
+
+    # Игра может стоять не на диске C — подхватываем выбранную папку до того,
+    # как что-либо начнёт обращаться к файлам установки.
+    set_install_dir(get_saved_install_dir())
 
     root = tk.Tk()
     LauncherApp(root)
