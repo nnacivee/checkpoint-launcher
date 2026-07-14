@@ -288,7 +288,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.12.0",
+    "LAUNCHER_VERSION": "1.13.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -300,6 +300,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.13.0",
+            "date": "14 июля 2026",
+            "changes": [
+                "Кнопка «Скины и плащи»: 57 скинов и 12 плащей на выбор — "
+                "видно сразу, как выглядит персонаж, а не развёртку текстуры.",
+                "Выбор применяется мгновенно, перезаходить в игру не нужно.",
+                "Можно загрузить и свой PNG — лаунчер сам проверит, что формат "
+                "подойдёт, и подскажет, если нет.",
+            ],
+        },
         {
             "version": "1.12.0",
             "date": "14 июля 2026",
@@ -1182,6 +1193,7 @@ APP_DATA_DIR = Path.home() / (".%s_launcher" % CONFIG["PACK_NAME"].lower())
 SETTINGS_FILE = APP_DATA_DIR / "settings.json"
 OPTIONAL_CACHE_DIR = APP_DATA_DIR / "optional_mods_cache"
 MOD_ICONS_DIR = APP_DATA_DIR / "mod_icons"
+SKIN_CACHE_DIR = APP_DATA_DIR / "skin_pack_cache"
 
 # Папка с самой игрой. По умолчанию — на диске C рядом с настройками, но
 # пользователь может перенести её куда угодно (например, D:\Games\IC3).
@@ -1341,7 +1353,7 @@ def resource_path(filename: str) -> Path:
 
 
 ICON_NAMES = ["folder", "chat", "grid", "wrench", "list", "sun", "moon", "gauge", "gear",
-              "image", "shader", "discord"]
+              "image", "shader", "discord", "skin"]
 
 
 def load_icons(theme_name: str) -> dict:
@@ -2624,6 +2636,153 @@ def install_skin_config(status_cb=None) -> None:
         pass  # не критично: мод создаст свой конфиг сам
 
 
+def _skin_pack_base(kind: str) -> str:
+    """Адрес папки пака в репозитории: .../skins/pack/ или .../capes/pack/."""
+    root = CONFIG.get("SKINS_ROOT_URL") or ""
+    return "%s%s/pack/" % (root, "skins" if kind == "skins" else "capes")
+
+
+def _skin_pack_url(kind: str, filename: str, preview: bool = False) -> str:
+    """Ссылка на файл пака. quote() обязателен: в именах есть пробелы,
+    кириллица и даже эмодзи («Я ❤ Майнкрафт.png») — без кодирования GitHub
+    такую ссылку не отдаст."""
+    base = _skin_pack_base(kind) + ("previews/" if preview else "")
+    return base + urllib.parse.quote(filename)
+
+
+def _safe_cache_name(filename: str) -> str:
+    """Имя для кэша на диске. Кириллица и эмодзи в NTFS законны, а вот
+    \\ / : * ? " < > | — нет, их и меняем."""
+    return re.sub(r'[\\/:*?"<>|]', "_", filename)
+
+
+def fetch_skin_pack_index(kind: str) -> list:
+    """Список пака: [{"file": ..., "name": ...}]. Кладём на диск, чтобы окно
+    открывалось и без интернета (пусть и с прошлым списком)."""
+    cache = SKIN_CACHE_DIR / kind / "index.json"
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        download_file(_skin_pack_base(kind) + "index.json", cache)
+    except Exception:  # noqa: BLE001
+        pass  # нет сети — ниже попробуем прошлый список
+    try:
+        data = json.loads(cache.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return []
+    items = []
+    for entry in data:
+        if isinstance(entry, dict) and entry.get("file"):
+            items.append({"file": entry["file"],
+                          "name": entry.get("name") or entry["file"]})
+    return items
+
+
+def load_skin_pack_preview(kind: str, filename: str, height: int = 96):
+    """PIL-картинка превью (уже отрисованная фигурка/плащ, не развёртка).
+    Кэшируется на диск. Вызывать только из фонового потока — тут сеть."""
+    if not _PIL_OK:
+        return None
+    cached = SKIN_CACHE_DIR / kind / "previews" / _safe_cache_name(filename)
+    try:
+        if not cached.exists():
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            download_file(_skin_pack_url(kind, filename, preview=True), cached)
+        image = Image.open(cached).convert("RGBA")
+        if image.height != height:
+            scale = height / image.height
+            image = image.resize((max(1, int(image.width * scale)), height),
+                                 Image.NEAREST)
+        return image
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def get_localskin_dir() -> Path:
+    """Папка, откуда CustomSkinLoader берёт локальные скины (источник
+    LocalSkin в loadlist)."""
+    return INSTANCE_DIR / "CustomSkinLoader" / "LocalSkin"
+
+
+def _validate_skin_png(path: Path, kind: str) -> None:
+    """Проверяем, что это действительно PNG-скин: и обычный 64×64, и старый
+    64×32 годятся, у плаща пропорции 2:1. Иначе игра просто не покажет
+    ничего, а игрок будет думать, что лаунчер сломался."""
+    if not _PIL_OK:
+        return
+    with Image.open(path) as image:
+        width, height = image.size
+    if width < 32 or height < 16:
+        raise ValueError("Картинка слишком маленькая (%d×%d)." % (width, height))
+    if kind == "capes":
+        if width != height * 2:
+            raise ValueError(
+                "Для плаща нужны пропорции 2:1 (например 64×32), а тут %d×%d."
+                % (width, height))
+    elif width not in (height, height * 2):
+        raise ValueError(
+            "Скин должен быть 64×64 или 64×32 (можно HD-кратно), а тут %d×%d."
+            % (width, height))
+
+
+def apply_pack_skin(kind: str, filename: str, username: str) -> None:
+    """Ставит игроку выбранный скин/плащ: кладёт PNG в LocalSkin под его
+    ником. Скачиваем во временный файл и только потом подменяем — иначе при
+    обрыве связи затёрли бы рабочий скин половинкой файла."""
+    username = (username or "").strip()
+    if not username:
+        raise ValueError("Сначала впишите ник в главном окне.")
+    folder = get_localskin_dir() / ("skins" if kind == "skins" else "capes")
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / (username + ".png")
+    staging = folder / (username + ".png.part")
+    try:
+        download_file(_skin_pack_url(kind, filename), staging)
+        _validate_skin_png(staging, kind)
+        staging.replace(target)
+    finally:
+        if staging.exists():
+            try:
+                staging.unlink()
+            except OSError:
+                pass
+    update_settings(**{_skin_choice_key(kind): filename})
+
+
+def install_own_skin_file(kind: str, source, username: str) -> None:
+    """То же самое, но из файла игрока («Загрузить свой…»)."""
+    username = (username or "").strip()
+    if not username:
+        raise ValueError("Сначала впишите ник в главном окне.")
+    source = Path(source)
+    _validate_skin_png(source, kind)
+    folder = get_localskin_dir() / ("skins" if kind == "skins" else "capes")
+    folder.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, folder / (username + ".png"))
+    update_settings(**{_skin_choice_key(kind): "custom:" + source.name})
+
+
+def clear_pack_skin(kind: str, username: str) -> None:
+    """Убирает локальный выбор — игрок снова получает то, что выдал владелец
+    сборки (или стандартного Стива)."""
+    username = (username or "").strip()
+    folder = get_localskin_dir() / ("skins" if kind == "skins" else "capes")
+    target = folder / (username + ".png")
+    if target.exists():
+        try:
+            target.unlink()
+        except OSError as exc:
+            raise ValueError("Не удалось убрать файл: %s" % exc)
+    update_settings(**{_skin_choice_key(kind): ""})
+
+
+def _skin_choice_key(kind: str) -> str:
+    return "skin_choice" if kind == "skins" else "cape_choice"
+
+
+def get_skin_choice(kind: str) -> str:
+    return load_settings().get(_skin_choice_key(kind), "") or ""
+
+
 def install_game_window_icon(status_cb=None) -> None:
     """Скачивает мод Custom Window Title и настраивает его на нашу иконку —
     это меняет то, что показывается в панели задач и заголовке окна, когда
@@ -3478,6 +3637,13 @@ class LauncherApp:
         shaders_btn.pack(side="left", padx=(8, 0))
         self._add_tooltip(shaders_btn, "Шейдеры", colors)
 
+        if CONFIG.get("SKINS_ROOT_URL"):
+            skins_btn = self._make_icon_button(
+                toolbar, self.icons.get("skin") or self.icons["image"],
+                colors, self.on_open_skins)
+            skins_btn.pack(side="left", padx=(8, 0))
+            self._add_tooltip(skins_btn, "Скины и плащи", colors)
+
         repair_btn = self._make_icon_button(toolbar, self.icons["wrench"], colors, self.on_repair)
         repair_btn.pack(side="left", padx=(8, 0))
         self._add_tooltip(repair_btn, "Починить / переустановить", colors)
@@ -4119,6 +4285,288 @@ class LauncherApp:
             recommended=CONFIG.get("RECOMMENDED_SHADER_PACKS"),
             install_recommended_fn=install_recommended_shader_pack,
         )
+
+    def on_open_skins(self) -> None:
+        """Окно выбора скина и плаща. Показываем не голую развёртку текстуры,
+        а отрисованную фигурку — по развёртке выбрать невозможно."""
+        colors = THEMES[self.theme_name]
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Скины и плащи")
+        dialog.configure(bg=colors["bg_panel"])
+        dialog.transient(self.root)
+        screen_w = dialog.winfo_screenwidth()
+        screen_h = dialog.winfo_screenheight()
+        width = max(780, min(1060, screen_w - 220))
+        height = max(580, min(780, screen_h - 200))
+        dialog.geometry("%dx%d+%d+%d" % (
+            width, height, (screen_w - width) // 2, (screen_h - height) // 3))
+        dialog.minsize(720, 520)
+        set_titlebar_dark(dialog, self.theme_name == "dark")
+
+        # Ссылки на картинки держим сами: tkinter их не удерживает и
+        # превью просто исчезнут.
+        self._skin_photo_refs = {}
+        state = {"kind": "skins", "query": "", "items": [], "busy": False}
+
+        outer = tk.Frame(dialog, bg=colors["bg_panel"])
+        outer.pack(fill="both", expand=True, padx=16, pady=16)
+
+        tk.Label(outer, text="Скины и плащи", font=("Segoe UI", 14, "bold"),
+                 bg=colors["bg_panel"], fg=colors["fg"]).pack(anchor="w")
+        tk.Label(outer,
+                 text="Выберите картинку — она применится сразу, перезаходить в игру не нужно.",
+                 font=("Segoe UI", 9), justify="left",
+                 bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(anchor="w", pady=(2, 10))
+
+        # ---- Шапка: разделы, поиск, свой файл ----
+        head = tk.Frame(outer, bg=colors["bg_panel"])
+        head.pack(fill="x", pady=(0, 10))
+
+        tabs = tk.Frame(head, bg=colors["bg_panel"])
+        tabs.pack(side="left")
+        tab_buttons = {}
+
+        search_var = tk.StringVar()
+        search_entry = tk.Entry(
+            head, textvariable=search_var, font=("Segoe UI", 10),
+            bg=colors["bg_field"], fg=colors["fg"], insertbackground=colors["fg"],
+            relief="flat", highlightthickness=1, width=22,
+            highlightbackground=colors["border"], highlightcolor=colors["accent"])
+        search_entry.pack(side="right", ipady=4)
+        tk.Label(head, text="Поиск", font=("Segoe UI", 9),
+                 bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(side="right", padx=(0, 6))
+
+        status_var = tk.StringVar(value="")
+        status_label = tk.Label(outer, textvariable=status_var, font=("Segoe UI", 9),
+                                bg=colors["bg_panel"], fg=colors["fg_muted"],
+                                anchor="w", justify="left")
+        status_label.pack(fill="x", pady=(0, 6))
+
+        # ---- Сетка ----
+        list_container = tk.Frame(outer, bg=colors["bg_panel"],
+                                  highlightbackground=colors["border"], highlightthickness=1)
+        list_container.pack(fill="both", expand=True)
+        canvas = tk.Canvas(list_container, bg=colors["bg_panel"], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=canvas.yview)
+        grid_frame = tk.Frame(canvas, bg=colors["bg_panel"])
+        grid_frame.bind("<Configure>",
+                        lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=grid_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        def on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        canvas.bind_all("<MouseWheel>", on_mousewheel)
+        dialog.bind("<Destroy>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+        def current_nick():
+            return (self.nick_var.get() or "").strip()
+
+        # ---- Применение выбора ----
+        def choose(item):
+            if state["busy"]:
+                return
+            nick = current_nick()
+            if not nick:
+                messagebox.showwarning(
+                    "Нужен ник",
+                    "Сначала впишите ник в главном окне — скин сохраняется под ним.",
+                    parent=dialog)
+                return
+            state["busy"] = True
+            status_var.set("Применяю «%s»…" % item["name"])
+            kind = state["kind"]
+
+            def worker():
+                try:
+                    apply_pack_skin(kind, item["file"], nick)
+                    error = ""
+                except Exception as exc:  # noqa: BLE001
+                    error = str(exc)
+
+                def done():
+                    state["busy"] = False
+                    if error:
+                        status_var.set("Не получилось: %s" % error)
+                    else:
+                        status_var.set("Готово: «%s» — виден вам в игре." % item["name"])
+                        render()
+                dialog.after(0, done)
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        def on_own_file():
+            path = filedialog.askopenfilename(
+                parent=dialog, title="Выберите PNG",
+                filetypes=[("Картинка PNG", "*.png")])
+            if not path:
+                return
+            try:
+                install_own_skin_file(state["kind"], path, current_nick())
+            except Exception as exc:  # noqa: BLE001
+                messagebox.showerror("Не подошло", str(exc), parent=dialog)
+                return
+            status_var.set("Свой файл применён.")
+            render()
+
+        def on_clear():
+            try:
+                clear_pack_skin(state["kind"], current_nick())
+            except Exception as exc:  # noqa: BLE001
+                messagebox.showerror("Не получилось", str(exc), parent=dialog)
+                return
+            status_var.set("Выбор убран.")
+            render()
+
+        # ---- Карточка ----
+        def build_card(item, row, column, selected):
+            border = colors["accent"] if selected else colors["border"]
+            card = tk.Frame(grid_frame, bg=colors["bg_field"],
+                            highlightbackground=border,
+                            highlightthickness=2 if selected else 1,
+                            cursor="hand2")
+            card.grid(row=row, column=column, padx=6, pady=6, sticky="nsew")
+
+            holder = tk.Frame(card, bg=colors["bg_panel"], width=104, height=104)
+            holder.pack(padx=10, pady=(10, 6))
+            holder.pack_propagate(False)
+            image_label = tk.Label(holder, bg=colors["bg_panel"],
+                                   text="…", fg=colors["fg_muted"],
+                                   font=("Segoe UI", 9))
+            image_label.pack(fill="both", expand=True)
+
+            name_label = tk.Label(
+                card, text=item["name"], font=("Segoe UI", 9,
+                                               "bold" if selected else "normal"),
+                bg=colors["bg_field"],
+                fg=colors["accent"] if selected else colors["fg"],
+                wraplength=120, justify="center")
+            name_label.pack(padx=8, pady=(0, 4))
+
+            mark = tk.Label(card, text="Выбрано" if selected else "",
+                            font=("Segoe UI", 8), bg=colors["bg_field"],
+                            fg=colors["accent"])
+            mark.pack(pady=(0, 8))
+
+            for widget in (card, holder, image_label, name_label, mark):
+                widget.bind("<Button-1>", lambda e, it=item: choose(it))
+
+            # Превью тянем из сети в фоне, иначе окно замрёт на 70 картинок.
+            kind = state["kind"]
+
+            def load(it=item, label=image_label, k=kind):
+                image = load_skin_pack_preview(k, it["file"], 96)
+                if image is None:
+                    return
+
+                def show():
+                    if not label.winfo_exists() or state["kind"] != k:
+                        return
+                    try:
+                        photo = ImageTk.PhotoImage(image)
+                        self._skin_photo_refs[k + ":" + it["file"]] = photo
+                        label.configure(image=photo, text="")
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                dialog.after(0, show)
+
+            threading.Thread(target=load, daemon=True).start()
+
+        def render():
+            for child in grid_frame.winfo_children():
+                child.destroy()
+            query = state["query"].strip().lower()
+            items = [i for i in state["items"] if query in i["name"].lower()]
+            chosen = get_skin_choice(state["kind"])
+
+            if not items:
+                tk.Label(grid_frame,
+                         text="Ничего не найдено." if query else
+                              "Список пуст — похоже, нет связи с интернетом.",
+                         font=("Segoe UI", 10), bg=colors["bg_panel"],
+                         fg=colors["fg_muted"]).grid(row=0, column=0, padx=16, pady=16)
+                return
+
+            columns = max(2, (width - 80) // 150)
+            for index, item in enumerate(items):
+                build_card(item, index // columns, index % columns,
+                           selected=(item["file"] == chosen))
+            for column in range(columns):
+                grid_frame.grid_columnconfigure(column, weight=1)
+
+        def load_index():
+            status_var.set("Загружаю список…")
+
+            def worker(k=state["kind"]):
+                items = fetch_skin_pack_index(k)
+
+                def done():
+                    if state["kind"] != k:
+                        return
+                    state["items"] = items
+                    tab_buttons[k].configure(
+                        text=("Скины" if k == "skins" else "Плащи") + " (%d)" % len(items))
+                    status_var.set("" if items else
+                                   "Не удалось загрузить список — проверьте интернет.")
+                    render()
+
+                dialog.after(0, done)
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        def select_kind(kind):
+            if state["kind"] == kind:
+                return
+            state["kind"] = kind
+            state["items"] = []
+            for key, button in tab_buttons.items():
+                active = key == kind
+                button.configure(
+                    bg=colors["accent"] if active else colors["bg_field"],
+                    fg=colors["accent_text"] if active else colors["fg_muted"])
+            render()
+            load_index()
+
+        for key, label in (("skins", "Скины"), ("capes", "Плащи")):
+            active = key == state["kind"]
+            button = tk.Button(
+                tabs, text=label, font=("Segoe UI", 9, "bold"),
+                bg=colors["accent"] if active else colors["bg_field"],
+                fg=colors["accent_text"] if active else colors["fg_muted"],
+                activebackground=colors["accent_hover"],
+                relief="flat", bd=0, padx=14, pady=5, cursor="hand2",
+                command=lambda k=key: select_kind(k))
+            button.pack(side="left", padx=(0, 6))
+            tab_buttons[key] = button
+
+        search_var.trace_add(
+            "write", lambda *a: (state.update(query=search_var.get()), render()))
+
+        # ---- Низ окна ----
+        footer = tk.Frame(outer, bg=colors["bg_panel"])
+        footer.pack(fill="x", pady=(10, 0))
+        tk.Button(footer, text="Загрузить свой…", font=("Segoe UI", 9),
+                  bg=colors["bg_field"], fg=colors["fg"], relief="flat", bd=0,
+                  padx=12, pady=6, cursor="hand2",
+                  activebackground=colors["accent_dim"],
+                  command=on_own_file).pack(side="left")
+        tk.Button(footer, text="Убрать выбор", font=("Segoe UI", 9),
+                  bg=colors["bg_field"], fg=colors["fg_muted"], relief="flat", bd=0,
+                  padx=12, pady=6, cursor="hand2",
+                  activebackground=colors["accent_dim"],
+                  command=on_clear).pack(side="left", padx=(8, 0))
+        tk.Button(footer, text="Закрыть", font=("Segoe UI", 9, "bold"),
+                  bg=colors["accent"], fg=colors["accent_text"], relief="flat", bd=0,
+                  padx=18, pady=6, cursor="hand2",
+                  activebackground=colors["accent_hover"],
+                  command=dialog.destroy).pack(side="right")
+
+        load_index()
 
     def on_open_install_settings(self) -> None:
         """Окно выбора папки установки: показывает текущий путь и позволяет
