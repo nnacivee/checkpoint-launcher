@@ -288,7 +288,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.10.2",
+    "LAUNCHER_VERSION": "1.10.3",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -300,6 +300,18 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.10.3",
+            "date": "14 июля 2026",
+            "changes": [
+                "Лаунчер снова перезапускается сам после обновления — окно с "
+                "просьбой открыть его заново убрано.",
+                "Перед заменой новая версия проверяется пробным запуском, "
+                "поэтому обновление больше не падает с ошибкой python-DLL.",
+                "Во время обновления рядом с лаунчером больше не появляется "
+                "второй ярлык.",
+            ],
+        },
         {
             "version": "1.10.2",
             "date": "14 июля 2026",
@@ -4772,7 +4784,10 @@ class LauncherApp:
         def worker():
             try:
                 cur_exe = Path(sys.executable)
-                new_exe = cur_exe.with_name(cur_exe.stem + "_new.exe")
+                # Качаем во временную папку, а не рядом с .exe: иначе у
+                # пользователя на рабочем столе на время обновления появлялся
+                # второй ярлык лаунчера и тут же пропадал.
+                new_exe = Path(tempfile.gettempdir()) / (cur_exe.stem + "_new.exe")
 
                 def prog(pct):
                     self.root.after(0, lambda: self.update_banner_var.set(
@@ -4797,6 +4812,29 @@ class LauncherApp:
                     except Exception:
                         pass
                     raise RuntimeError("скачанный файл повреждён")
+
+                # Пробный запуск новой версии ДО замены. Решает главную беду
+                # прошлых обновлений: раньше свежий .exe запускался сразу после
+                # записи, антивирус ещё проверял его и мешал распаковке —
+                # копия падала с ошибкой python-DLL. Здесь мы и убеждаемся, что
+                # версия рабочая, и даём антивирусу проверить файл заранее:
+                # к моменту замены он ему уже знаком.
+                self.root.after(0, lambda: self.update_banner_var.set(
+                    "🔍  Проверяю новую версию…"))
+                try:
+                    result = subprocess.run(
+                        [str(new_exe), "--selftest"], timeout=120,
+                        creationflags=0x08000000, close_fds=True)
+                    started_ok = (result.returncode == 0)
+                except Exception:
+                    started_ok = False
+                if not started_ok:
+                    try:
+                        new_exe.unlink()
+                    except Exception:
+                        pass
+                    raise RuntimeError("новая версия не запускается на этом компьютере")
+
                 self.root.after(0, self._apply_downloaded_update, cur_exe, new_exe)
             except Exception:
                 self._updating = False
@@ -4816,11 +4854,9 @@ class LauncherApp:
         Пути передаём скрипту аргументами (%1/%2), а не вписываем в текст —
         тогда кириллица в пути пользователя не ломает .bat.
 
-        Автозапуск новой копии убран намеренно. Трижды повторялось одно и то
-        же: onefile-exe распаковывает себя в temp, антивирус мешает свежему
-        файлу, и запущенная сразу после замены копия падала с ошибкой
-        python-DLL. Сама замена при этом проходила успешно. Обычный запуск с
-        ярлыка работает всегда — поэтому просим открыть лаунчер заново."""
+        Новая версия уже прошла пробный запуск (см. --selftest), поэтому
+        антивирусу она знакома и запуск сразу после замены проходит спокойно —
+        лаунчер перезапускается сам, без окон и просьб."""
         bat = Path(tempfile.gettempdir()) / ("checkpoint_update_%d.bat" % os.getpid())
         script = (
             "@echo off\r\n"
@@ -4829,6 +4865,8 @@ class LauncherApp:
             'del %1 >nul 2>&1\r\n'
             'if exist %1 goto wait\r\n'
             'move /y %2 %1 >nul\r\n'
+            "ping -n 3 127.0.0.1 >nul\r\n"
+            'start "" %1\r\n'
             'del "%~f0" >nul 2>&1\r\n'
         )
         try:
@@ -4836,12 +4874,8 @@ class LauncherApp:
             CREATE_NO_WINDOW = 0x08000000  # скрипт работает без чёрного окна
             subprocess.Popen(["cmd", "/c", str(bat), str(cur_exe), str(new_exe)],
                              creationflags=CREATE_NO_WINDOW, close_fds=True)
-            self.update_banner_var.set("✅  Обновление установлено")
-            messagebox.showinfo(
-                "Обновление установлено",
-                "Новая версия установлена.\n\nЛаунчер сейчас закроется — "
-                "откройте его снова с ярлыка.")
-            self.root.after(200, self.root.destroy)
+            self.update_banner_var.set("✅  Обновление установлено, перезапуск…")
+            self.root.after(400, self.root.destroy)
         except Exception:
             self._updating = False
             self.update_banner_var.set(
@@ -4901,6 +4935,13 @@ def acquire_single_instance_lock() -> bool:
 
 
 def main():
+    # Самопроверка. С этим флагом скачанную новую версию запускает сам лаунчер
+    # ПЕРЕД заменой: если она стартовала и вышла с кодом 0 — значит файл целый
+    # и антивирус её уже проверил. Именно из-за непроверенного файла обновление
+    # раньше падало с ошибкой python-DLL. Ничего не рисуем и сразу выходим.
+    if "--selftest" in sys.argv:
+        return
+
     if not acquire_single_instance_lock():
         # Лаунчер уже открыт: мы попросили его показать окно и просто уходим.
         return
