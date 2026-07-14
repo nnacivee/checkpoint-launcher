@@ -287,7 +287,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.9.3",
+    "LAUNCHER_VERSION": "1.9.4",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -299,6 +299,13 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.9.4",
+            "date": "14 июля 2026",
+            "changes": [
+                "Сборка качается в несколько потоков — заметно быстрее.",
+            ],
+        },
         {
             "version": "1.9.3",
             "date": "14 июля 2026",
@@ -1316,6 +1323,80 @@ def offline_uuid(username: str) -> str:
     return str(uuid.uuid3(uuid.NAMESPACE_OID, "OfflinePlayer:%s" % username))
 
 
+def _download_parallel(url: str, dest: Path, progress_cb=None,
+                       connections: int = 4, min_size: int = 8 << 20) -> bool:
+    """Качает файл в несколько потоков: каждый берёт свой кусок по HTTP Range.
+    На обычном домашнем интернете это заметно быстрее, чем один поток, — именно
+    так работают менеджеры загрузок.
+
+    Возвращает True при успехе. Если сервер не умеет отдавать куски, файл
+    маленький или что-то оборвалось — возвращает False, и вызывающий код
+    спокойно качает обычным способом (с докачкой)."""
+    part = dest.with_name(dest.name + ".part")
+    try:
+        head = urllib.request.Request(url, method="HEAD",
+                                      headers={"User-Agent": "CheckpointLauncher"})
+        with urllib.request.urlopen(head, timeout=20) as response:
+            size = int(response.headers.get("Content-Length") or 0)
+            ranges_ok = "bytes" in (response.headers.get("Accept-Ranges") or "").lower()
+    except Exception:
+        return False
+    if not size or size < min_size or not ranges_ok:
+        return False
+
+    try:
+        with open(part, "wb") as fh:
+            fh.truncate(size)  # резервируем место, чтобы потоки писали каждый в своё
+    except OSError:
+        return False
+
+    step = size // connections
+    bounds = [(i * step, size - 1 if i == connections - 1 else (i + 1) * step - 1)
+              for i in range(connections)]
+    state = {"done": 0, "failed": False}
+    lock = threading.Lock()
+
+    def worker(start, end):
+        try:
+            request = urllib.request.Request(url, headers={
+                "User-Agent": "CheckpointLauncher", "Range": "bytes=%d-%d" % (start, end)})
+            # Свой файловый дескриптор на поток: общий seek() был бы гонкой.
+            with urllib.request.urlopen(request, timeout=30) as response, open(part, "r+b") as fh:
+                fh.seek(start)
+                got = 0
+                need = end - start + 1
+                while got < need:
+                    data = response.read(65536)
+                    if not data:
+                        break
+                    fh.write(data)
+                    got += len(data)
+                    with lock:
+                        state["done"] += len(data)
+                        if progress_cb:
+                            progress_cb(min(100, int(state["done"] * 100 / size)))
+                if got != need:
+                    state["failed"] = True
+        except Exception:
+            state["failed"] = True
+
+    threads = [threading.Thread(target=worker, args=b, daemon=True) for b in bounds]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    if state["failed"] or not part.exists() or part.stat().st_size != size:
+        # Недокачанную заготовку убираем: иначе обычная докачка приняла бы её
+        # за уже скачанный кусок и продолжила с неверного места.
+        part.unlink(missing_ok=True)
+        return False
+
+    dest.unlink(missing_ok=True)
+    part.replace(dest)
+    return True
+
+
 def download_file(url: str, dest: Path, progress_cb=None, retries: int = 5) -> None:
     """Качает файл с докачкой и повторами.
 
@@ -1327,6 +1408,13 @@ def download_file(url: str, dest: Path, progress_cb=None, retries: int = 5) -> N
     кончились — .part остаётся на диске, и следующий запуск продолжит с него,
     а не начнёт заново."""
     dest.parent.mkdir(parents=True, exist_ok=True)
+
+    # Сначала пробуем в несколько потоков — так сборка качается заметно
+    # быстрее. Если сервер этого не умеет или что-то оборвалось — ниже
+    # спокойно качаем одним потоком с докачкой.
+    if _download_parallel(url, dest, progress_cb):
+        return
+
     part = dest.with_name(dest.name + ".part")
     last_error = None
 
