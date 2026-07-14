@@ -17,6 +17,7 @@
 import io
 import json
 import os
+import re
 import shutil
 import socket
 import struct
@@ -287,7 +288,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.10.1",
+    "LAUNCHER_VERSION": "1.10.2",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -299,6 +300,14 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.10.2",
+            "date": "14 июля 2026",
+            "changes": [
+                "У установленных шейдеров появились настоящие обложки вместо "
+                "одинаковых заглушек — картинка ищется на Modrinth по названию.",
+            ],
+        },
         {
             "version": "1.10.1",
             "date": "14 июля 2026",
@@ -1865,6 +1874,43 @@ def load_pack_preview(pack_path, size: int = 64):
                 raw = zf.read(icon_name)
             img = Image.open(io.BytesIO(raw))
         return img.convert("RGBA").resize((size, size))
+    except Exception:
+        return None
+
+
+def _pack_search_name(filename: str) -> str:
+    """Из имени файла делает название для поиска на Modrinth: отбрасывает
+    версию в конце. "ComplementaryReimagined_r5.8.1.zip" -> "ComplementaryReimagined",
+    "Sildur's Vibrant Shaders v2.01 Extreme.zip" -> "Sildur's Vibrant Shaders"."""
+    stem = Path(filename).stem
+    cleaned = re.sub(r"[_\-\s]*[vr]?\d+[\d.]*.*$", "", stem, flags=re.I)
+    return (cleaned.replace("_", " ").strip() or stem)
+
+
+def find_modrinth_cover(name: str, project_type: str, size: int = 64):
+    """Ищет обложку пака на Modrinth по названию и кэширует её на диск.
+
+    Нужно для шейдеров: внутри их архивов, в отличие от ресурс-паков, нет
+    pack.png — брать превью неоткуда, и все они выглядели одинаковыми
+    заглушками. Всегда вызывается из фонового потока: тут сеть."""
+    if not (_PIL_OK and name):
+        return None
+    key = "cover_%s_%s" % (project_type, "".join(c for c in name.lower() if c.isalnum()))
+    raw = MOD_ICONS_DIR / key
+    try:
+        if not raw.exists():
+            url = ("https://api.modrinth.com/v2/search?query=%s&facets=%s&limit=1" % (
+                urllib.parse.quote(name),
+                urllib.parse.quote(json.dumps([["project_type:%s" % project_type]]))))
+            hits = (_modrinth_api_get(url, timeout=8) or {}).get("hits") or []
+            if not hits:
+                return None
+            icon_url = hits[0].get("icon_url")
+            if not icon_url:
+                return None
+            MOD_ICONS_DIR.mkdir(parents=True, exist_ok=True)
+            download_file(icon_url, raw)
+        return Image.open(raw).convert("RGBA").resize((size, size))
     except Exception:
         return None
 
@@ -3700,6 +3746,29 @@ class LauncherApp:
                 icon_label.configure(text=pack["name"][:1].upper(),
                                      fg=colors["accent"], font=("Segoe UI", 20, "bold"))
             icon_label.pack(fill="both", expand=True)
+
+            # Своей картинки внутри архива нет (у шейдеров pack.png не бывает) —
+            # ищем обложку на Modrinth по названию. В фоне: тут сеть.
+            if _PIL_OK and load_pack_preview(pack["path"], 64) is None:
+                project_type = "shader" if kind == "shader" else "resourcepack"
+
+                def load_cover(p=pack, label=icon_label, ptype=project_type):
+                    cover = find_modrinth_cover(
+                        _pack_search_name(Path(p["path"]).name), ptype, 64)
+                    if cover is None:
+                        return
+
+                    def show():
+                        try:
+                            photo = ImageTk.PhotoImage(cover)
+                            self._pack_icon_refs["cover:" + str(p["path"])] = photo
+                            label.configure(image=photo, text="")
+                        except Exception:
+                            pass
+
+                    dialog.after(0, show)
+
+                threading.Thread(target=load_cover, daemon=True).start()
 
             actions = tk.Frame(body, bg=colors["bg_field"])
             actions.pack(side="right")
