@@ -288,7 +288,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.11.0",
+    "LAUNCHER_VERSION": "1.12.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -300,6 +300,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.12.0",
+            "date": "14 июля 2026",
+            "changes": [
+                "Появились скины и плащи! Раньше на сервере у всех был Стив — "
+                "теперь у каждого свой скин, в том числе HD, и плащи.",
+                "Ничего включать не нужно: мод ставится сам при запуске.",
+                "Свой скин можно сделать на ely.by — он подхватится автоматически.",
+            ],
+        },
         {
             "version": "1.11.0",
             "date": "14 июля 2026",
@@ -763,7 +773,20 @@ CONFIG = {
         {"slug": "chat-heads", "label": "Chat Heads (лицо игрока в чате)"},
         {"slug": "searchables", "label": "Searchables (библиотека для Controlling)"},
         {"slug": "controlling", "label": "Controlling (поиск по клавишам управления)"},
+        {"slug": "customskinloader", "label": "CustomSkinLoader (HD-скины и плащи)"},
     ],
+
+    # ------------------------- СКИНЫ И ПЛАЩИ -------------------------
+    # Сервер в offline-режиме, поэтому обычные скины Mojang не работают — у
+    # всех Стив. Мод CustomSkinLoader (чисто клиентский, ставится сам вместе с
+    # остальными клиентскими модами) умеет брать скины и плащи откуда угодно и
+    # рисует HD (128x128 и выше) без OptiFine.
+    #
+    # Порядок источников важен: сначала наша папка на GitHub (скин кладёт
+    # владелец сборки), потом Ely.by — кто хочет, делает себе скин сам.
+    # Чтобы выдать игроку скин или плащ, достаточно положить PNG в репозиторий:
+    #   skins/<ник>.png   и   capes/<ник>.png
+    "SKINS_ROOT_URL": "https://raw.githubusercontent.com/nnacivee/checkpoint-launcher/main/",
 
     # ------------------------- ИКОНКА ОКНА САМОЙ ИГРЫ -------------------------
     # Стандартная иконка Minecraft (травяной блок) в панели задач — это уже
@@ -2544,6 +2567,63 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> None:
 WINDOW_ICON_MOD_SLUG = "custom-window-title"
 
 
+def install_skin_config(status_cb=None) -> None:
+    """Настраивает CustomSkinLoader: откуда брать скины и плащи.
+
+    Пишем конфиг ТОЛЬКО если его ещё нет — иначе затирали бы правки игрока при
+    каждом запуске. Если формат вдруг не подойдёт, мод просто перезапишет файл
+    своими значениями: там уже есть Ely.by и локальные скины, так что скины
+    останутся рабочими в любом случае."""
+    root = CONFIG.get("SKINS_ROOT_URL")
+    if not root:
+        return
+    config_dir = INSTANCE_DIR / "CustomSkinLoader"
+    config_path = config_dir / "CustomSkinLoader.json"
+    if config_path.exists():
+        return
+    profile = {
+        "enable": True,
+        "enableCape": True,
+        "enableDynamicSkull": True,
+        "enableTransparentSkin": True,
+        "forceLoadAllTextures": True,
+        "threadPoolSize": 8,
+        "cacheExpiry": 30,
+        "loadlist": [
+            # Скины самой сборки: владелец кладёт PNG в репозиторий.
+            {
+                "name": CONFIG["PACK_NAME"],
+                "type": "Legacy",
+                "checkPNG": True,
+                "root": root,
+                "skin": "skins/{USERNAME}.png",
+                "model": "auto",
+                "cape": "capes/{USERNAME}.png",
+            },
+            # Кто хочет сам — регистрируется на Ely.by и грузит свой скин.
+            {"name": "ElyBy", "type": "ElyByAPI", "root": "http://skinsystem.ely.by/"},
+            # Локальные файлы игрока.
+            {
+                "name": "LocalSkin",
+                "type": "Legacy",
+                "checkPNG": False,
+                "root": "LocalSkin/",
+                "skin": "skins/{USERNAME}.png",
+                "model": "auto",
+                "cape": "capes/{USERNAME}.png",
+            },
+        ],
+    }
+    try:
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2),
+                               encoding="utf-8")
+        if status_cb:
+            status_cb("скины и плащи настроены")
+    except OSError:
+        pass  # не критично: мод создаст свой конфиг сам
+
+
 def install_game_window_icon(status_cb=None) -> None:
     """Скачивает мод Custom Window Title и настраивает его на нашу иконку —
     это меняет то, что показывается в панели задач и заголовке окна, когда
@@ -3061,6 +3141,7 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     install_extra_shaderpacks(extras_status, extras_progress)
     install_game_window_icon(extras_status)
     install_extra_client_mods(extras_status, extras_progress)
+    install_skin_config(extras_status)
 
     progress_cb(100)
     status_cb("Запуск игры...")
