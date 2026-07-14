@@ -9,6 +9,7 @@ on:
       - "installer.iss"
       - "icon.ico"
       - "window_icon.png"
+      - "background.png"
       - "icons/**"
   workflow_dispatch: {}
 
@@ -63,6 +64,9 @@ jobs:
           }
           if (Test-Path "window_icon.png") {
             $args += "--add-data=window_icon.png;."
+          }
+          if (Test-Path "background.png") {
+            $args += "--add-data=background.png;."
           }
           $args += "launcher.py"
           pyinstaller @args
