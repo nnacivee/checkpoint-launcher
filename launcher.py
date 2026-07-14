@@ -14,6 +14,7 @@
 Больше нигде в коде ничего менять не нужно.
 """
 
+import hashlib
 import io
 import json
 import os
@@ -280,6 +281,7 @@ CONFIG = {
     # Ссылка на ваш Discord-сервер (кнопка в лаунчере). Оставьте "", чтобы
     # кнопку не показывать.
     "DISCORD_URL": "https://discord.gg/rN22JGV9C",
+    "TELEGRAM_URL": "https://t.me/+mq769D_rHc04ZmYy",
 
     # ------------------------- ВЕРСИЯ ЛАУНЧЕРА -------------------------
     # Показывается мелким текстом внизу окна лаунчера, а по клику
@@ -293,7 +295,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.16.0",
+    "LAUNCHER_VERSION": "1.17.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -305,6 +307,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.17.0",
+            "date": "15 июля 2026",
+            "changes": [
+                "Кнопка Telegram — вступайте в группу.",
+                "Список модов теперь настоящий: все 170 с иконками и "
+                "описаниями, читается прямо из папки, а не вбит руками.",
+                "Шейдеров стало 11 вместо 5, текстур-паков 12 вместо 4.",
+                "Убрано размытие под нижней полосой.",
+            ],
+        },
         {
             "version": "1.16.0",
             "date": "15 июля 2026",
@@ -958,6 +971,50 @@ CONFIG = {
                            "с режимом для слабых ПК",
             "low_end": True,
         },
+        {
+            "slug": "faithful-64x",
+            "name": "Faithful 64x",
+            "description": "Тот же Faithful, но вчетверо детальнее. Требует видеопамяти",
+        },
+        {
+            "slug": "default-hd-128x",
+            "name": "Default HD 128x",
+            "description": "Ваниль в высоком разрешении. Самый тяжёлый из списка",
+        },
+        {
+            "slug": "bare-bones",
+            "name": "Bare Bones",
+            "description": "Чистый мультяшный стиль без лишних деталей — как в трейлерах",
+        },
+        {
+            "slug": "default-dark-mode",
+            "name": "Default Dark Mode",
+            "description": "Тёмные меню и инвентарь. Глаза скажут спасибо вечером",
+        },
+        {
+            "slug": "dramatic-skys",
+            "name": "Dramatic Skies",
+            "description": "Живое небо с объёмными облаками вместо плоской заливки",
+        },
+        {
+            "slug": "fancy-crops",
+            "name": "Fancy Crops",
+            "description": "Объёмные грядки: пшеница, морковь и свёкла перестают быть плоскими",
+        },
+        {
+            "slug": "new-glowing-ores",
+            "name": "New Glowing Ores",
+            "description": "Руда светится в темноте — заметно проще искать в шахте",
+        },
+        {
+            "slug": "simple-grass-flowers",
+            "name": "Simple Grass Flowers",
+            "description": "Трава с мелкими цветами. Мелочь, а мир живее",
+        },
+        # Fresh Animations сюда намеренно НЕ добавлен, хотя он самый
+        # популярный: ему нужны моды Entity Texture Features и Entity Model
+        # Features. Без них он просто не работает, а кнопка «поставить в один
+        # клик» обещала бы обратное.
     ],
 
     # Готовые шейдеры с Modrinth. weight — честная пометка о прожорливости:
@@ -993,6 +1050,62 @@ CONFIG = {
             "name": "Rethinking Voxels",
             "weight": "Тяжёлый",
             "description": "Цветное освещение и чёткие тени. Нужна хорошая видеокарта",
+        },
+        # Вес взят не с потолка — по категориям самих авторов на Modrinth:
+        # potato/low = Лёгкий, medium = Средний, high = Тяжёлый.
+        {
+            "slug": "miniature-shader",
+            "name": "Miniature",
+            "weight": "Лёгкий",
+            "description": "Тени и отражения почти бесплатно. Самый нетребовательный",
+        },
+        {
+            "slug": "mellow",
+            "name": "Mellow",
+            "weight": "Лёгкий",
+            "description": "Мягкая живописная картинка. Сделан для тех, кто хочет играть, а не любоваться",
+        },
+        {
+            "slug": "shrimple",
+            "name": "Shrimple",
+            "weight": "Лёгкий",
+            "description": "Ваниль плюс тени и цветной свет. Ничего лишнего",
+        },
+        {
+            "slug": "super-duper-vanilla",
+            "name": "Super Duper Vanilla",
+            "weight": "Средний",
+            "description": "Тот самый отменённый Super Duper Graphics Pack, но живой",
+        },
+        {
+            "slug": "solas-shader",
+            "name": "Solas",
+            "weight": "Средний",
+            "description": "Фэнтезийная картинка с цветным освещением",
+        },
+        {
+            "slug": "nostalgia-shader",
+            "name": "Nostalgia",
+            "weight": "Средний",
+            "description": "Стиль старых шейдеров, но собран по-современному",
+        },
+        {
+            "slug": "photon-shader",
+            "name": "Photon",
+            "weight": "Тяжеловат",
+            "description": "Полуреализм с упором на игру, а не на скриншоты",
+        },
+        {
+            "slug": "bliss-shader",
+            "name": "Bliss",
+            "weight": "Тяжеловат",
+            "description": "Фэнтези с огромным количеством настроек",
+        },
+        {
+            "slug": "astralex",
+            "name": "AstraLex",
+            "weight": "Тяжёлый",
+            "description": "Максимум эффектов и настроек. Для мощных ПК",
         },
     ],
 
@@ -1232,8 +1345,11 @@ def render_main_background(width: int, height: int, colors: dict):
     except Exception:  # noqa: BLE001
         pass   # логотипа нет — не беда, окно всё равно рабочее
 
+    # Без размытия: арт под полосой и так тёмный (там земля и скала), а
+    # размытие только мылило картинку, ничего не добавляя. Осталось
+    # затемнение с мягким верхним краем.
     top = height - BAR_H - BAR_FEATHER
-    strip = base.crop((0, top, width, height)).filter(ImageFilter.GaussianBlur(14))
+    strip = base.crop((0, top, width, height))
     tint = Image.new("RGBA", (width, BAR_H + BAR_FEATHER), (10, 14, 20, 255))
     ramp = Image.new("L", (1, BAR_H + BAR_FEATHER))
     for i in range(BAR_H + BAR_FEATHER):
@@ -1581,7 +1697,7 @@ def resource_path(filename: str) -> Path:
 
 
 ICON_NAMES = ["folder", "chat", "grid", "wrench", "list", "sun", "moon", "gauge", "gear",
-              "image", "shader", "discord", "skin"]
+              "image", "shader", "discord", "skin", "telegram"]
 
 
 def load_icons(theme_name: str) -> dict:
@@ -2592,6 +2708,141 @@ def _modrinth_api_get(url: str, timeout: float = 15.0) -> object:
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def _modrinth_api_post(url: str, payload: dict, timeout: float = 20.0) -> object:
+    request = urllib.request.Request(
+        url, data=json.dumps(payload).encode("utf-8"),
+        headers={"User-Agent": "%s-launcher/1.0 (github.com)" % CONFIG["PACK_NAME"],
+                 "Content-Type": "application/json"},
+        method="POST")
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+MOD_LIST_CACHE = APP_DATA_DIR / "mod_list_cache.json"
+
+
+def _jar_display_name(path: Path) -> str:
+    """Имя мода из самого jar, если Modrinth его не знает.
+
+    Внутри jar лежит fabric.mod.json или META-INF/neoforge.mods.toml с
+    человеческим названием. Это лучше, чем показывать
+    'sodium-neoforge-0.6.13.jar'.
+    """
+    try:
+        with zipfile.ZipFile(path) as zf:
+            names = set(zf.namelist())
+            if "fabric.mod.json" in names:
+                data = json.loads(zf.read("fabric.mod.json").decode("utf-8", "ignore"))
+                if data.get("name"):
+                    return str(data["name"])
+            for toml_name in ("META-INF/neoforge.mods.toml", "META-INF/mods.toml"):
+                if toml_name in names:
+                    text = zf.read(toml_name).decode("utf-8", "ignore")
+                    m = re.search(r'^\s*displayName\s*=\s*["\'](.+?)["\']', text,
+                                  re.M)
+                    if m:
+                        return m.group(1)
+    except Exception:  # noqa: BLE001
+        pass
+    return re.sub(r"[-_]?\d[\d.]*.*$", "", path.stem).replace("-", " ").replace("_", " ").strip() or path.stem
+
+
+def scan_installed_mods(status_cb=None) -> list:
+    """Реальный список модов из папки mods/: название, описание, иконка.
+
+    Раньше список был вбит руками в CONFIG и устаревал при каждом обновлении
+    сборки. Тут читаем, что лежит на диске, и спрашиваем Modrinth ПАЧКОЙ:
+    два запроса на 170 модов вместо 170 — иначе окно открывалось бы минуту
+    и упёрлось бы в ограничение частоты запросов.
+    """
+    mods_dir = INSTANCE_DIR / "mods"
+    if not mods_dir.is_dir():
+        return []
+    jars = sorted(p for p in mods_dir.glob("*.jar") if p.is_file())
+    if not jars:
+        return []
+
+    cache = {}
+    if MOD_LIST_CACHE.exists():
+        try:
+            cache = json.loads(MOD_LIST_CACHE.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            cache = {}
+
+    if status_cb:
+        status_cb("Читаю папку модов…")
+    by_hash = {}
+    for jar in jars:
+        h = hashlib.sha1()
+        with open(jar, "rb") as fh:
+            for chunk in iter(lambda fh=fh: fh.read(1 << 20), b""):
+                h.update(chunk)
+        by_hash[h.hexdigest()] = jar
+
+    unknown = [h for h in by_hash if h not in cache]
+    if unknown:
+        if status_cb:
+            status_cb("Узнаю моды на Modrinth (%d шт)…" % len(unknown))
+        try:
+            found = _modrinth_api_post(
+                "https://api.modrinth.com/v2/version_files",
+                {"hashes": unknown, "algorithm": "sha1"})
+            ids = sorted({v["project_id"] for v in found.values() if v.get("project_id")})
+            projects = {}
+            for i in range(0, len(ids), 100):        # у API есть предел на длину запроса
+                chunk = ids[i:i + 100]
+                data = _modrinth_api_get(
+                    "https://api.modrinth.com/v2/projects?ids=" +
+                    urllib.parse.quote(json.dumps(chunk)))
+                for p in data:
+                    projects[p["id"]] = p
+            for h, ver in found.items():
+                p = projects.get(ver.get("project_id"))
+                if not p:
+                    continue
+                cache[h] = {"title": p.get("title") or "",
+                            "description": (p.get("description") or "")[:160],
+                            "icon": p.get("icon_url") or "",
+                            "slug": p.get("slug") or ""}
+        except Exception:  # noqa: BLE001
+            pass       # нет сети — покажем то, что вытащим из самих jar
+        for h in unknown:
+            cache.setdefault(h, {})
+        try:
+            MOD_LIST_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            MOD_LIST_CACHE.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+
+    mods = []
+    for h, jar in by_hash.items():
+        info = cache.get(h) or {}
+        mods.append({
+            "title": info.get("title") or _jar_display_name(jar),
+            "description": info.get("description") or "",
+            "icon": info.get("icon") or "",
+            "slug": info.get("slug") or "",
+            "file": jar.name,
+            "hash": h,
+        })
+    mods.sort(key=lambda m: m["title"].lower())
+    return mods
+
+
+def load_mod_icon_by_url(url: str, hash_key: str, size: int = 40):
+    """Иконка мода с Modrinth, с кэшем на диске. Только из фонового потока."""
+    if not (_PIL_OK and url):
+        return None
+    cached = MOD_ICONS_DIR / ("h_" + hash_key)
+    try:
+        if not cached.exists():
+            MOD_ICONS_DIR.mkdir(parents=True, exist_ok=True)
+            download_file(url, cached)
+        return Image.open(cached).convert("RGBA").resize((size, size), Image.LANCZOS)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _version_tuple(version_str: str):
@@ -3839,10 +4090,13 @@ class LauncherApp:
                  ("list", "Список", self.on_show_mod_list),
                  ("folder", "Папка", self.on_open_folder),
                  ("discord", "Discord", self.on_open_discord),
+                 ("telegram", "Telegram", self.on_open_telegram),
                  ("wrench", "Починить", self.on_repair),
                  ("gear", "Настройки", self.on_open_install_settings)]
         if not CONFIG.get("DISCORD_URL"):
             tiles = [t for t in tiles if t[0] != "discord"]
+        if not CONFIG.get("TELEGRAM_URL"):
+            tiles = [t for t in tiles if t[0] != "telegram"]
         if not CONFIG.get("MOD_SHOWCASE"):
             tiles = [t for t in tiles if t[0] != "list"]
         if not CONFIG.get("OPTIONAL_MODS"):
@@ -4132,13 +4386,19 @@ class LauncherApp:
             messagebox.showerror("Не удалось открыть папку", str(exc))
 
     def on_open_discord(self) -> None:
-        url = CONFIG.get("DISCORD_URL")
+        self._open_link(CONFIG.get("DISCORD_URL"), "Discord")
+
+    def on_open_telegram(self) -> None:
+        self._open_link(CONFIG.get("TELEGRAM_URL"), "Telegram")
+
+    @staticmethod
+    def _open_link(url, what: str) -> None:
         if not url:
             return
         try:
             webbrowser.open(url)
         except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("Не удалось открыть Discord", str(exc))
+            messagebox.showerror("Не удалось открыть %s" % what, str(exc))
 
     def _open_recommended_packs(self, parent, refresh) -> None:
         """Окошко с готовыми паками: ставятся с Modrinth в один клик."""
@@ -5435,100 +5695,140 @@ class LauncherApp:
         )
 
     def on_show_mod_list(self) -> None:
+        """Полный список модов, как он есть на диске, с иконками.
+
+        Раньше показывался список, вбитый руками в CONFIG: он врал после
+        каждого обновления сборки. Теперь читаем папку mods/ и подтягиваем
+        названия и картинки с Modrinth.
+        """
         colors = THEMES[self.theme_name]
-        categories = CONFIG.get("MOD_SHOWCASE", {})
 
         dialog = tk.Toplevel(self.root)
         dialog.title("Моды сборки")
         dialog.configure(bg=colors["bg_panel"])
-        dialog.resizable(False, False)
         dialog.transient(self.root)
-        dialog.geometry("420x520")
-        set_titlebar_dark(dialog, self.theme_name == "dark")
+        sw, sh = dialog.winfo_screenwidth(), dialog.winfo_screenheight()
+        width = max(760, min(1040, sw - 220))
+        height = max(560, min(780, sh - 200))
+        dialog.geometry("%dx%d+%d+%d" % (width, height, (sw - width) // 2, (sh - height) // 3))
+        dialog.minsize(720, 520)
+        set_titlebar_dark(dialog, True)
+
+        self._modlist_refs = {}
+        state = {"mods": [], "query": ""}
 
         outer = tk.Frame(dialog, bg=colors["bg_panel"])
         outer.pack(fill="both", expand=True, padx=16, pady=16)
 
-        header = tk.Frame(outer, bg=colors["bg_panel"])
-        header.pack(fill="x")
-        if self.icons.get("gear"):
-            tk.Label(header, image=self.icons["gear"], bg=colors["bg_panel"]).pack(side="left", padx=(0, 8))
-        tk.Label(
-            header, text="%s — из чего сделана сборка" % CONFIG["PACK_NAME"],
-            font=("Segoe UI", 13, "bold"), bg=colors["bg_panel"], fg=colors["fg"],
-            wraplength=340, justify="left",
-        ).pack(side="left", anchor="w")
+        title_var = tk.StringVar(value="Моды сборки")
+        tk.Label(outer, textvariable=title_var, font=("Segoe UI", 14, "bold"),
+                 bg=colors["bg_panel"], fg=colors["fg"]).pack(anchor="w")
+        status_var = tk.StringVar(value="Читаю папку модов…")
+        tk.Label(outer, textvariable=status_var, font=("Segoe UI", 9),
+                 bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(anchor="w", pady=(2, 10))
 
-        tk.Frame(outer, bg=colors["accent_dim"], height=1).pack(fill="x", pady=(12, 12))
+        head = tk.Frame(outer, bg=colors["bg_panel"])
+        head.pack(fill="x", pady=(0, 10))
+        search_var = tk.StringVar()
+        entry = tk.Entry(head, textvariable=search_var, font=("Segoe UI", 10),
+                         bg=colors["bg_field"], fg=colors["fg"], insertbackground=colors["fg"],
+                         relief="flat", highlightthickness=1, width=26,
+                         highlightbackground=colors["border"], highlightcolor=colors["accent"])
+        entry.pack(side="right", ipady=4)
+        tk.Label(head, text="Поиск", font=("Segoe UI", 9), bg=colors["bg_panel"],
+                 fg=colors["fg_muted"]).pack(side="right", padx=(0, 6))
 
-        list_container = tk.Frame(outer, bg=colors["bg_panel"], highlightbackground=colors["border"],
-                                   highlightthickness=1)
-        list_container.pack(fill="both", expand=True)
-
-        canvas = tk.Canvas(list_container, bg=colors["bg_panel"], highlightthickness=0)
-        scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=canvas.yview)
-        scroll_frame = tk.Frame(canvas, bg=colors["bg_panel"])
-
-        scroll_frame.bind(
-            "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
+        box = tk.Frame(outer, bg=colors["bg_panel"],
+                       highlightbackground=colors["border"], highlightthickness=1)
+        box.pack(fill="both", expand=True)
+        canvas = tk.Canvas(box, bg=colors["bg_panel"], highlightthickness=0)
+        sb = ttk.Scrollbar(box, orient="vertical", command=canvas.yview)
+        grid = tk.Frame(canvas, bg=colors["bg_panel"])
+        grid.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=grid, anchor="nw")
+        canvas.configure(yscrollcommand=sb.set)
         canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        def on_mousewheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-        canvas.bind_all("<MouseWheel>", on_mousewheel)
+        sb.pack(side="right", fill="y")
+        canvas.bind_all("<MouseWheel>",
+                        lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
         dialog.bind("<Destroy>", lambda e: canvas.unbind_all("<MouseWheel>"))
 
-        if not categories:
-            tk.Label(
-                scroll_frame, text="Список пока пуст.", font=("Segoe UI", 9),
-                bg=colors["bg_panel"], fg=colors["fg_muted"],
-            ).pack(padx=10, pady=10, anchor="w")
+        def card(mod, row, column):
+            c = tk.Frame(grid, bg=colors["bg_field"],
+                         highlightbackground=colors["border"], highlightthickness=1)
+            c.grid(row=row, column=column, padx=6, pady=6, sticky="nsew")
+            body = tk.Frame(c, bg=colors["bg_field"])
+            body.pack(fill="x", padx=10, pady=9)
 
-        category_names = list(categories.keys())
-        for index, category in enumerate(category_names):
-            mods = categories[category]
-            block = tk.Frame(scroll_frame, bg=colors["bg_panel"])
-            block.pack(fill="x", padx=12, pady=(14 if index == 0 else 8, 0))
+            holder = tk.Frame(body, bg=colors["bg_panel"], width=40, height=40)
+            holder.pack(side="left", padx=(0, 10))
+            holder.pack_propagate(False)
+            img = tk.Label(holder, bg=colors["bg_panel"], text=mod["title"][:1].upper(),
+                           fg=colors["accent"], font=("Segoe UI", 14, "bold"))
+            img.pack(fill="both", expand=True)
 
-            tk.Label(
-                block, text=category.upper(), font=("Segoe UI", 10, "bold"),
-                bg=colors["bg_panel"], fg=colors["accent"],
-            ).pack(anchor="w")
+            text = tk.Frame(body, bg=colors["bg_field"])
+            text.pack(side="left", fill="x", expand=True)
+            tk.Label(text, text=mod["title"], font=("Segoe UI", 10, "bold"),
+                     bg=colors["bg_field"], fg=colors["fg"], anchor="w",
+                     wraplength=220, justify="left").pack(anchor="w")
+            if mod["description"]:
+                tk.Label(text, text=mod["description"], font=("Segoe UI", 8),
+                         bg=colors["bg_field"], fg=colors["fg_muted"], anchor="w",
+                         wraplength=220, justify="left").pack(anchor="w")
 
-            chips = tk.Frame(block, bg=colors["bg_panel"])
-            chips.pack(fill="x", pady=(6, 0))
+            if mod["icon"]:
+                def load(m=mod, label=img):
+                    image = load_mod_icon_by_url(m["icon"], m["hash"], 40)
+                    if image is None:
+                        return
 
-            row = tk.Frame(chips, bg=colors["bg_panel"])
-            row.pack(fill="x", anchor="w")
-            row_width = 0
-            max_row_width = 360
-            char_px = 6.5  # грубая оценка ширины символа для переноса строк
+                    def show():
+                        if not label.winfo_exists():
+                            return
+                        try:
+                            photo = ImageTk.PhotoImage(image)
+                            self._modlist_refs[m["hash"]] = photo
+                            label.configure(image=photo, text="")
+                        except Exception:  # noqa: BLE001
+                            pass
+                    dialog.after(0, show)
+                threading.Thread(target=load, daemon=True).start()
 
-            for mod_name in mods:
-                chip_width = len(mod_name) * char_px + 20
-                if row_width > 0 and row_width + chip_width > max_row_width:
-                    row = tk.Frame(chips, bg=colors["bg_panel"])
-                    row.pack(fill="x", anchor="w", pady=(6, 0))
-                    row_width = 0
-                chip = tk.Label(
-                    row, text=mod_name, font=("Segoe UI", 9),
-                    bg=colors["bg_field"], fg=colors["fg"], padx=8, pady=4,
-                )
-                chip.pack(side="left", padx=(0, 6))
-                row_width += chip_width
+        def render():
+            for ch in grid.winfo_children():
+                ch.destroy()
+            q = state["query"].strip().lower()
+            items = [m for m in state["mods"]
+                     if q in m["title"].lower() or q in m["description"].lower()]
+            if not items:
+                tk.Label(grid, text="Ничего не найдено." if q else "Моды не найдены — "
+                         "сборка ещё не установлена.",
+                         font=("Segoe UI", 10), bg=colors["bg_panel"],
+                         fg=colors["fg_muted"]).grid(row=0, column=0, padx=16, pady=16)
+                return
+            columns = max(1, (width - 60) // 300)
+            for i, m in enumerate(items):
+                card(m, i // columns, i % columns)
+            for c in range(columns):
+                grid.grid_columnconfigure(c, weight=1)
 
-            if index < len(category_names) - 1:
-                tk.Frame(scroll_frame, bg=colors["border"], height=1).pack(
-                    fill="x", padx=12, pady=(14, 0)
-                )
+        search_var.trace_add("write",
+                             lambda *a: (state.update(query=search_var.get()), render()))
 
-        dialog.grab_set()
+        def worker():
+            mods = scan_installed_mods(lambda t: dialog.after(0, lambda: status_var.set(t)))
+
+            def done():
+                state["mods"] = mods
+                known = sum(1 for m in mods if m["icon"])
+                title_var.set("Моды сборки — %d шт" % len(mods))
+                status_var.set("С картинками: %d. Остальные лаунчер прочитал прямо из jar."
+                               % known if mods else "Папка mods пуста.")
+                render()
+            dialog.after(0, done)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def on_show_changelog(self) -> None:
         colors = THEMES[self.theme_name]
