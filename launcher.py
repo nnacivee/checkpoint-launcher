@@ -286,7 +286,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.7.0",
+    "LAUNCHER_VERSION": "1.8.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -298,6 +298,21 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.8.0",
+            "date": "14 июля 2026",
+            "changes": [
+                "Готовые ресурс-паки в один клик: Faithful 32x, Better Leaves, "
+                "Low On Fire и Fast Better Grass.",
+                "Fast Better Grass включается автоматически вместе с режимом "
+                "для слабых ПК.",
+                "Оперативная память и режим для слабых ПК переехали в настройки "
+                "(шестерёнка) — на главном окне осталась короткая сводка.",
+                "Полоса загрузки больше не сбрасывается по нескольку раз: теперь "
+                "одна шкала на весь запуск с номером шага (например, «Шаг 3/5 · "
+                "NeoForge — 40%»).",
+            ],
+        },
         {
             "version": "1.7.0",
             "date": "14 июля 2026",
@@ -733,6 +748,34 @@ CONFIG = {
     # сюда), это всегда безопасный выбор.
     #
     # Если список пустой [] — кнопка "🧩 Моды" в лаунчере не показывается.
+    # Готовые ресурс-паки, которые лаунчер ставит сам с Modrinth в один клик
+    # (кнопка «Ресурс-паки» → «Готовые паки»). low_end=True — облегчённый пак:
+    # он включается автоматически вместе с режимом для слабых ПК.
+    "RECOMMENDED_RESOURCE_PACKS": [
+        {
+            "slug": "faithful-32x",
+            "name": "Faithful 32x",
+            "description": "Ванильный стиль в двойном разрешении — самый популярный пак",
+        },
+        {
+            "slug": "better-leaves",
+            "name": "Better Leaves",
+            "description": "Пышная объёмная листва вместо плоских кубов",
+        },
+        {
+            "slug": "low-on-fire",
+            "name": "Low On Fire",
+            "description": "Огонь не закрывает пол-экрана, когда вы горите",
+        },
+        {
+            "slug": "fast-better-grass",
+            "name": "Fast Better Grass",
+            "description": "Красивая трава без потери FPS. Включается сам вместе "
+                           "с режимом для слабых ПК",
+            "low_end": True,
+        },
+    ],
+
     "OPTIONAL_MODS": [
         {
             "id": "emi",
@@ -1218,10 +1261,10 @@ def install_modpack(status_cb, progress_cb) -> None:
     zip_path = APP_DATA_DIR / "modpack_download.zip"
 
     def download_progress(pct):
+        # Подпись с номером шага ставит сам progress_cb — здесь только процент.
         progress_cb(pct)
-        status_cb("Скачивание сборки модов — %d%%" % pct)
 
-    status_cb("Скачивание сборки модов — 0%")
+    status_cb("скачивание")
     download_file(CONFIG["MODPACK_URL"], zip_path, download_progress)
 
     # Чистим старые моды/конфиги, чтобы не оставалось "мусора" от старой версии.
@@ -1243,7 +1286,7 @@ def install_modpack(status_cb, progress_cb) -> None:
             if pct != last_pct:
                 last_pct = pct
                 progress_cb(pct)
-                status_cb("Распаковка модов — %d%% (%d/%d файлов)" % (pct, index, total))
+                status_cb("распаковка — %d%% (%d/%d файлов)" % (pct, index, total))
 
     zip_path.unlink(missing_ok=True)
 
@@ -1677,6 +1720,61 @@ def install_resource_pack(zip_path) -> str:
     dst_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst_dir / src.name)
     return src.name
+
+
+def _remember_recommended_pack(slug: str, filename: str) -> None:
+    """Запоминаем, каким файлом лёг готовый пак: имя файла с Modrinth заранее
+    неизвестно, а нам потом надо его найти (например, для слабого режима)."""
+    data = load_settings().get("recommended_packs", {})
+    data[slug] = filename
+    update_settings(recommended_packs=data)
+
+
+def _recommended_pack_filename(slug: str):
+    return load_settings().get("recommended_packs", {}).get(slug)
+
+
+def is_recommended_pack_installed(pack_cfg: dict) -> bool:
+    filename = _recommended_pack_filename(pack_cfg["slug"])
+    return bool(filename) and (get_resourcepacks_dir() / filename).exists()
+
+
+def install_recommended_resource_pack(pack_cfg: dict, status_cb=None) -> str:
+    """Скачивает готовый ресурс-пак с Modrinth по slug и кладёт в resourcepacks."""
+    if status_cb:
+        status_cb("Скачиваю ресурс-пак: %s" % pack_cfg["name"])
+    filename, url = _find_modrinth_download(
+        pack_cfg["slug"], CONFIG["MC_VERSION"], ["minecraft"])
+    if not url:
+        raise RuntimeError("Не удалось найти «%s» для Minecraft %s"
+                           % (pack_cfg["name"], CONFIG["MC_VERSION"]))
+    dst_dir = get_resourcepacks_dir()
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    target = dst_dir / (filename or (pack_cfg["slug"] + ".zip"))
+    download_file(url, target)
+    _remember_recommended_pack(pack_cfg["slug"], target.name)
+    return target.name
+
+
+def _apply_low_end_resource_pack(enabled: bool, status_cb=None) -> None:
+    """Вместе с режимом для слабых ПК включает облегчённый ресурс-пак (и
+    выключает обратно). Если пака ещё нет — скачивает. Любая ошибка (нет
+    интернета) не должна мешать запуску игры, поэтому просто пропускаем."""
+    for pack_cfg in CONFIG.get("RECOMMENDED_RESOURCE_PACKS", []):
+        if not pack_cfg.get("low_end"):
+            continue
+        try:
+            filename = _recommended_pack_filename(pack_cfg["slug"])
+            if not (filename and (get_resourcepacks_dir() / filename).exists()):
+                if not enabled:
+                    continue  # выключать нечего — пак и не ставили
+                filename = install_recommended_resource_pack(pack_cfg, status_cb)
+            set_resource_pack_enabled({"entry": "file/%s" % filename}, enabled)
+            if status_cb:
+                status_cb("%s облегчённый ресурс-пак: %s"
+                          % ("включён" if enabled else "выключен", pack_cfg["name"]))
+        except Exception:
+            pass
 
 
 def delete_resource_pack(pack: dict) -> None:
@@ -2137,10 +2235,16 @@ def apply_low_end_mode(enabled: bool, status_cb=None) -> None:
             status_cb("Применяю настройки для слабых ПК...")
         _write_options_txt(options_path, current)
     else:
+        # Список ресурс-паков запоминаем отдельно: восстановление резервной
+        # копии вернуло бы старый список и стёрло паки, которые игрок включил
+        # уже после включения слабого режима.
+        saved_packs = _read_options_value("resourcePacks", None)
         if OPTIONS_BACKUP_FILE.exists():
             if status_cb:
                 status_cb("Возвращаю обычные настройки графики...")
             shutil.copy2(OPTIONS_BACKUP_FILE, options_path)
+            if saved_packs is not None:
+                _write_options_value("resourcePacks", saved_packs)
         elif options_path.exists():
             # Резервной копии нет — значит "слабый ПК" включили ещё до
             # самого первого запуска игры, и сохранять было нечего. В этом
@@ -2151,6 +2255,10 @@ def apply_low_end_mode(enabled: bool, status_cb=None) -> None:
             for key in LOW_END_OPTIONS:
                 current.pop(key, None)
             _write_options_txt(options_path, current)
+
+    # Облегчённый ресурс-пак применяем ПОСЛЕДНИМ: выше options.txt мог быть
+    # перезаписан целиком, и более ранняя правка списка паков потерялась бы.
+    _apply_low_end_resource_pack(enabled, status_cb)
 
 
 # Папки внутри экземпляра, которые можно спокойно удалять и качать заново —
@@ -2240,13 +2348,59 @@ def _find_bundled_java(status_cb=None):
         return None
 
 
-def install_minecraft_and_modloader(status_cb, progress_cb) -> str:
+class LaunchProgress:
+    """Сквозная полоса загрузки на весь запуск.
+
+    Раньше каждый установщик гнал полосу от 0 до 100 по-своему: Minecraft
+    доезжал до 100%, потом с нуля стартовал NeoForge, потом моды — со стороны
+    это выглядело как дублирующаяся загрузка, и было непонятно, на каком ты
+    этапе. Теперь этапы идут друг за другом, каждый занимает свой участок
+    общей шкалы, а в подписи всегда виден номер шага."""
+
+    def __init__(self, status_cb, progress_cb, stages):
+        self._status_cb = status_cb
+        self._progress_cb = progress_cb
+        self._stages = list(stages)  # [(название, вес), ...]
+        self._total = sum(weight for _, weight in self._stages) or 1
+
+    def scoped(self, title):
+        """Пара колбэков (status, progress) для одного этапа: проценты этапа
+        пересчитываются в общий отрезок шкалы."""
+        index, done, weight = 1, 0, 1
+        for position, (name, stage_weight) in enumerate(self._stages):
+            if name == title:
+                index = position + 1
+                weight = stage_weight
+                done = sum(w for _, w in self._stages[:position])
+                break
+        prefix = "Шаг %d/%d · %s" % (index, len(self._stages), title)
+
+        def stage_status(text=""):
+            text = str(text or "").strip()
+            self._status_cb("%s — %s" % (prefix, text) if text else prefix + "...")
+
+        def stage_progress(pct):
+            pct = min(100, max(0, int(pct or 0)))
+            overall = (done + weight * pct / 100.0) * 100.0 / self._total
+            self._progress_cb(int(overall))
+            self._status_cb("%s — %d%%" % (prefix, pct))
+
+        return stage_status, stage_progress
+
+
+def install_minecraft_and_modloader(progress: "LaunchProgress") -> str:
     """Ставит ванильный Minecraft нужной версии + модлоадер (NeoForge и т.д.).
     Возвращает id версии, которую нужно передать в запуск игры.
 
     Если версия Minecraft/модлоадера в CONFIG не менялась с прошлого
     успешного запуска и нужные файлы всё ещё на месте — скачивание и
     установка полностью пропускаются, лаунчер сразу переходит дальше."""
+    loader_id = CONFIG["MOD_LOADER"]
+    loader_name = LOADER_DISPLAY_NAMES.get(loader_id, loader_id.capitalize())
+
+    java_status, _java_progress = progress.scoped("Java")
+    mc_status, mc_progress = progress.scoped("Minecraft")
+    loader_status, loader_progress = progress.scoped(loader_name)
 
     marker = _read_install_marker()
     if marker and marker.get("version_id") and all(
@@ -2255,17 +2409,17 @@ def install_minecraft_and_modloader(status_cb, progress_cb) -> str:
         version_id = marker["version_id"]
         version_json = INSTANCE_DIR / "versions" / version_id / ("%s.json" % version_id)
         if version_json.exists():
-            status_cb("Minecraft и NeoForge уже установлены.")
-            progress_cb(100)
+            loader_status("уже установлено")
+            loader_progress(100)
             return version_id
         # Файл почему-то пропал (например, папку версий удалили руками) —
         # доверять метке нельзя, ставим заново как обычно.
 
-    def callback_dict(friendly_label):
+    def callback_dict(stage_progress):
         # Библиотека minecraft-launcher-lib шлёт технические сообщения вроде
         # "Install java runtime" — они не переведены и не нужны игроку.
         # Вместо них считаем честный процент по факту скачанных файлов
-        # (setMax/setProgress) и показываем понятную русскую подпись.
+        # (setMax/setProgress); подпись со шагом ставит сам stage_progress.
         state = {"max": 0, "last_pct": -1}
 
         def set_status(_text):
@@ -2276,8 +2430,7 @@ def install_minecraft_and_modloader(status_cb, progress_cb) -> str:
             pct = min(100, max(0, int(value * 100 / max_value)))
             if pct != state["last_pct"]:
                 state["last_pct"] = pct
-                progress_cb(pct)
-                status_cb("%s — %d%%" % (friendly_label, pct))
+                stage_progress(pct)
 
         def set_max(value):
             state["max"] = value or 1
@@ -2288,17 +2441,15 @@ def install_minecraft_and_modloader(status_cb, progress_cb) -> str:
             "setMax": set_max,
         }
 
-    status_cb("Загрузка Minecraft %s..." % CONFIG["MC_VERSION"])
+    mc_status("подготовка")
     _install_with_retry(
         mll.install.install_minecraft_version,
         CONFIG["MC_VERSION"], str(INSTANCE_DIR),
-        callback=callback_dict("Загрузка Minecraft"),
-        status_cb=status_cb,
+        callback=callback_dict(mc_progress),
+        status_cb=mc_status,
     )
 
-    loader_id = CONFIG["MOD_LOADER"]
-    loader_name = LOADER_DISPLAY_NAMES.get(loader_id, loader_id.capitalize())
-    status_cb("Установка %s..." % loader_name)
+    loader_status("подготовка")
     mod_loader = mll.mod_loader.get_mod_loader(loader_id)
 
     if not mod_loader.is_minecraft_version_supported(CONFIG["MC_VERSION"]):
@@ -2307,7 +2458,7 @@ def install_minecraft_and_modloader(status_cb, progress_cb) -> str:
         )
 
     loader_version = CONFIG["LOADER_VERSION"] or None
-    java_path = _find_bundled_java(status_cb)
+    java_path = _find_bundled_java(java_status)
 
     # install() сам ставит модлоадер (и ванильную версию, если её вдруг нет)
     # и возвращает id версии, который нужно передать в get_minecraft_command.
@@ -2320,9 +2471,9 @@ def install_minecraft_and_modloader(status_cb, progress_cb) -> str:
         CONFIG["MC_VERSION"],
         str(INSTANCE_DIR),
         loader_version=loader_version,
-        callback=callback_dict("Установка %s" % loader_name),
+        callback=callback_dict(loader_progress),
         java=java_path,
-        status_cb=status_cb,
+        status_cb=loader_status,
     )
     _write_install_marker(version_id)
     return version_id
@@ -2366,29 +2517,46 @@ def deploy_test_mods(status_cb, progress_cb) -> bool:
 def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb, progress_cb, server_override=None, test_mode=False):
     INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
 
-    version_id = install_minecraft_and_modloader(status_cb, progress_cb)
+    loader_name = LOADER_DISPLAY_NAMES.get(
+        CONFIG["MOD_LOADER"], CONFIG["MOD_LOADER"].capitalize())
+    # Одна полоса на весь запуск: этапы идут по очереди, каждый занимает свой
+    # участок шкалы. Вес — примерная доля времени этапа.
+    progress = LaunchProgress(status_cb, progress_cb, [
+        ("Java", 8),
+        ("Minecraft", 20),
+        (loader_name, 18),
+        ("Сборка модов", 34),
+        ("Моды и дополнения", 20),
+    ])
 
-    if test_mode and deploy_test_mods(status_cb, progress_cb):
+    version_id = install_minecraft_and_modloader(progress)
+
+    pack_status, pack_progress = progress.scoped("Сборка модов")
+    extras_status, extras_progress = progress.scoped("Моды и дополнения")
+
+    if test_mode and deploy_test_mods(pack_status, pack_progress):
         # Тест-режим: моды взяты один-в-один с локального сервера,
         # обычную установку сборки и опциональные моды пропускаем.
-        status_cb("Тестовая сборка развёрнута (моды с локального сервера).")
+        pack_status("тестовая сборка развёрнута (моды с локального сервера)")
     else:
         if get_local_modpack_version() != get_remote_modpack_version():
-            install_modpack(status_cb, progress_cb)
+            install_modpack(pack_status, pack_progress)
         else:
-            status_cb("Сборка модов уже актуальна.")
+            pack_status("сборка уже актуальна")
+            pack_progress(100)
 
-        remove_blocked_mods(status_cb)
-        harvest_optional_mods(status_cb)
-        restore_no_longer_optional_mods(status_cb)
-        apply_optional_mods(status_cb, progress_cb)
+        remove_blocked_mods(extras_status)
+        harvest_optional_mods(extras_status)
+        restore_no_longer_optional_mods(extras_status)
+        apply_optional_mods(extras_status, extras_progress)
 
-    ensure_pinned_server(status_cb)
-    apply_low_end_mode(low_end_enabled, status_cb)
-    install_extra_shaderpacks(status_cb, progress_cb)
-    install_game_window_icon(status_cb)
-    install_extra_client_mods(status_cb, progress_cb)
+    ensure_pinned_server(extras_status)
+    apply_low_end_mode(low_end_enabled, extras_status)
+    install_extra_shaderpacks(extras_status, extras_progress)
+    install_game_window_icon(extras_status)
+    install_extra_client_mods(extras_status, extras_progress)
 
+    progress_cb(100)
     status_cb("Запуск игры...")
 
     options = {
@@ -2725,44 +2893,25 @@ class LauncherApp:
         )
         nick_entry.pack(fill="x", ipady=7, pady=(5, 12))
 
-        # Ползунок ОЗУ
-        ram_row = tk.Frame(inner, bg=colors["bg_panel"])
-        ram_row.pack(fill="x", pady=(0, 4))
-        tk.Label(ram_row, text="ОПЕРАТИВНАЯ ПАМЯТЬ", font=("Segoe UI", 8, "bold"),
-                 bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(side="left")
-        self.ram_value_label = tk.Label(
-            ram_row, text=self._format_gb(self.memory_var.get()), font=("Segoe UI", 9, "bold"),
-            bg=colors["bg_panel"], fg=colors["accent"],
+        # Ползунок ОЗУ и «слабый режим» переехали в окно настроек (шестерёнка),
+        # чтобы главное окно оставалось простым. Здесь — только короткая сводка
+        # текущих значений, кликом открывается то же окно настроек.
+        self.ram_value_label = None
+        summary = tk.Frame(inner, bg=colors["bg_panel"], cursor="hand2")
+        summary.pack(fill="x", pady=(0, 12))
+        self.settings_summary_var = tk.StringVar(value=self._settings_summary_text())
+        summary_label = tk.Label(
+            summary, textvariable=self.settings_summary_var, font=("Segoe UI", 9),
+            bg=colors["bg_panel"], fg=colors["fg_muted"], anchor="w", cursor="hand2",
         )
-        self.ram_value_label.pack(side="right")
-
-        self.ram_scale = tk.Scale(
-            inner, from_=self.memory_min, to=self.memory_max,
-            orient="horizontal", variable=self.memory_var,
-            showvalue=False, resolution=256, sliderlength=18,
-            bg=colors["bg_panel"], fg=colors["fg"], troughcolor=colors["bg_field"],
-            highlightthickness=0, bd=0, activebackground=colors["accent_hover"],
-            command=self._on_ram_change,
+        summary_label.pack(side="left")
+        change_link = tk.Label(
+            summary, text="настроить", font=("Segoe UI", 9, "underline"),
+            bg=colors["bg_panel"], fg=colors["accent"], cursor="hand2",
         )
-        self.ram_scale.pack(fill="x", pady=(6, 4))
-
-        range_row = tk.Frame(inner, bg=colors["bg_panel"])
-        range_row.pack(fill="x", pady=(0, 14))
-        tk.Label(range_row, text=self._format_gb(self.memory_min), font=("Segoe UI", 8),
-                 bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(side="left")
-        tk.Label(range_row, text=self._format_gb(self.memory_max), font=("Segoe UI", 8),
-                 bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(side="right")
-
-        # Режим для слабых ПК
-        low_end_cb = tk.Checkbutton(
-            inner, text=" Режим для слабых ПК — проще графика, выше FPS",
-            image=self.icons.get("gauge"), compound="left",
-            variable=self.low_end_var, font=("Segoe UI", 9),
-            bg=colors["bg_panel"], fg=colors["fg"], activebackground=colors["bg_panel"],
-            activeforeground=colors["fg"], selectcolor=colors["bg_field"],
-            highlightthickness=0, bd=0, cursor="hand2", anchor="w", justify="left",
-        )
-        low_end_cb.pack(fill="x", pady=(0, 12))
+        change_link.pack(side="right")
+        for widget in (summary, summary_label, change_link):
+            widget.bind("<Button-1>", lambda e: self.on_open_install_settings())
 
         # Кнопка играть — золотая "пилюля" на Canvas
         self.play_button = self._make_pill_button(
@@ -2920,8 +3069,28 @@ class LauncherApp:
     def _format_gb(mb: int) -> str:
         return "%.1f ГБ" % (mb / 1024)
 
+    def _settings_summary_text(self) -> str:
+        """Короткая строка на главном окне: сколько ОЗУ и включён ли слабый режим."""
+        parts = ["Память: %s" % self._format_gb(self.memory_var.get())]
+        if self.low_end_var.get():
+            parts.append("режим для слабых ПК включён")
+        return "  ·  ".join(parts)
+
+    def _refresh_settings_summary(self) -> None:
+        try:
+            self.settings_summary_var.set(self._settings_summary_text())
+        except (AttributeError, tk.TclError):
+            pass
+
     def _on_ram_change(self, value) -> None:
-        self.ram_value_label.configure(text=self._format_gb(int(float(value))))
+        # Ползунок живёт в окне настроек и существует не всегда, поэтому
+        # подпись обновляем только если она сейчас на экране.
+        if self.ram_value_label is not None:
+            try:
+                self.ram_value_label.configure(text=self._format_gb(int(float(value))))
+            except tk.TclError:
+                pass
+        self._refresh_settings_summary()
 
     def _setup_style(self, colors) -> None:
         style = ttk.Style()
@@ -2959,8 +3128,85 @@ class LauncherApp:
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Не удалось открыть Discord", str(exc))
 
+    def _open_recommended_packs(self, parent, refresh) -> None:
+        """Окошко с готовыми паками: ставятся с Modrinth в один клик."""
+        colors = THEMES[self.theme_name]
+        dialog = tk.Toplevel(parent)
+        dialog.title("Готовые ресурс-паки")
+        dialog.configure(bg=colors["bg_panel"])
+        dialog.resizable(False, False)
+        dialog.transient(parent)
+        dialog.geometry("560x420")
+        set_titlebar_dark(dialog, self.theme_name == "dark")
+
+        outer = tk.Frame(dialog, bg=colors["bg_panel"])
+        outer.pack(fill="both", expand=True, padx=16, pady=16)
+        tk.Label(outer, text="Готовые ресурс-паки", font=("Segoe UI", 13, "bold"),
+                 bg=colors["bg_panel"], fg=colors["fg"]).pack(anchor="w")
+        tk.Label(outer, text="Проверенные паки — скачиваются с Modrinth одной кнопкой.",
+                 font=("Segoe UI", 9), bg=colors["bg_panel"],
+                 fg=colors["fg_muted"]).pack(anchor="w", pady=(2, 10))
+
+        buttons = {}
+
+        def make_handler(cfg, var):
+            def handler():
+                button = buttons.get(cfg["slug"])
+                if button is not None:
+                    button.configure(state="disabled")
+                var.set("Скачиваю...")
+
+                def worker():
+                    try:
+                        install_recommended_resource_pack(
+                            cfg, status_cb=lambda t: dialog.after(0, lambda: var.set(t)))
+                    except Exception as exc:  # noqa: BLE001
+                        dialog.after(0, lambda e=exc: var.set("Ошибка: %s" % e))
+                    else:
+                        dialog.after(0, lambda: var.set("Установлен"))
+                        dialog.after(0, refresh)
+                    finally:
+                        if button is not None:
+                            dialog.after(0, lambda: button.configure(state="normal"))
+
+                threading.Thread(target=worker, daemon=True).start()
+            return handler
+
+        for pack_cfg in CONFIG.get("RECOMMENDED_RESOURCE_PACKS", []):
+            card = tk.Frame(outer, bg=colors["bg_field"],
+                            highlightbackground=colors["border"], highlightthickness=1)
+            card.pack(fill="x", pady=4)
+            body = tk.Frame(card, bg=colors["bg_field"])
+            body.pack(fill="x", padx=10, pady=8)
+
+            state = tk.StringVar(
+                value="Установлен" if is_recommended_pack_installed(pack_cfg) else "")
+
+            get_btn = tk.Button(
+                body, text="Установить", command=make_handler(pack_cfg, state),
+                font=("Segoe UI", 9),
+                bg=colors["accent"], fg=colors["accent_text"],
+                activebackground=colors["accent_hover"], activeforeground=colors["accent_text"],
+                relief="flat", cursor="hand2", bd=0, padx=12, pady=4)
+            get_btn.pack(side="right")
+            buttons[pack_cfg["slug"]] = get_btn
+
+            tk.Label(body, textvariable=state, font=("Segoe UI", 8),
+                     bg=colors["bg_field"], fg=colors["fg_muted"]).pack(side="right", padx=(0, 10))
+
+            mid = tk.Frame(body, bg=colors["bg_field"])
+            mid.pack(side="left", fill="x", expand=True)
+            tk.Label(mid, text=pack_cfg["name"], font=("Segoe UI", 11, "bold"),
+                     bg=colors["bg_field"], fg=colors["fg"], anchor="w").pack(anchor="w")
+            tk.Label(mid, text=pack_cfg.get("description", ""), font=("Segoe UI", 8),
+                     bg=colors["bg_field"], fg=colors["fg_muted"], anchor="w",
+                     justify="left", wraplength=340).pack(anchor="w")
+
+        dialog.grab_set()
+
     def _open_pack_manager(self, title, subtitle, empty_hint, kind,
-                           list_fn, toggle_fn, delete_fn, install_fn) -> None:
+                           list_fn, toggle_fn, delete_fn, install_fn,
+                           show_recommended=False) -> None:
         """Общее окно менеджера паков — используется и для ресурс-паков, и для
         шейдеров. Отличаются только функции работы с файлами, которые
         передаются аргументами."""
@@ -3112,21 +3358,31 @@ class LauncherApp:
                   activebackground=colors["accent_hover"], activeforeground=colors["accent_text"],
                   relief="flat", cursor="hand2", bd=0, padx=14, pady=6).pack(side="right")
 
+        if show_recommended:
+            tk.Button(head, text="Готовые паки",
+                      command=lambda: self._open_recommended_packs(dialog, refresh),
+                      font=("Segoe UI", 10), bg=colors["bg_field"], fg=colors["fg"],
+                      activebackground=colors["border"], activeforeground=colors["fg"],
+                      relief="flat", cursor="hand2", bd=0,
+                      padx=14, pady=6).pack(side="right", padx=(0, 8))
+
         refresh()
         dialog.grab_set()
 
     def on_open_resource_packs(self) -> None:
         self._open_pack_manager(
             title="Ресурс-паки",
-            subtitle="Установите ZIP-архив с текстурами — он появится в списке.\n"
-                     "Галочка «Включён» сразу включает пак в самой игре.",
+            subtitle="Нажмите «Готовые паки», чтобы поставить проверенные паки в один клик,\n"
+                     "или добавьте свой ZIP. Галочка «Включён» сразу включает пак в игре.",
             empty_hint="Пока ничего не установлено.\n\n"
-                       "Нажмите «Установить из ZIP...» и выберите архив с ресурс-паком.",
+                       "Нажмите «Готовые паки» — там есть Faithful 32x и другие,\n"
+                       "или «Установить из ZIP...» для своего архива.",
             kind="image",
             list_fn=list_resource_packs,
             toggle_fn=set_resource_pack_enabled,
             delete_fn=delete_resource_pack,
             install_fn=install_resource_pack,
+            show_recommended=True,
         )
 
     def on_open_install_settings(self) -> None:
@@ -3135,15 +3391,63 @@ class LauncherApp:
         colors = THEMES[self.theme_name]
 
         dialog = tk.Toplevel(self.root)
-        dialog.title("Папка установки")
+        dialog.title("Настройки")
         dialog.configure(bg=colors["bg_panel"])
         dialog.resizable(False, False)
         dialog.transient(self.root)
-        dialog.geometry("560x330")
+        dialog.geometry("560x560")
         set_titlebar_dark(dialog, self.theme_name == "dark")
 
         outer = tk.Frame(dialog, bg=colors["bg_panel"])
         outer.pack(fill="both", expand=True, padx=18, pady=18)
+
+        # ---- Оперативная память (переехала сюда с главного окна) ----
+        ram_row = tk.Frame(outer, bg=colors["bg_panel"])
+        ram_row.pack(fill="x")
+        tk.Label(ram_row, text="ОПЕРАТИВНАЯ ПАМЯТЬ", font=("Segoe UI", 8, "bold"),
+                 bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(side="left")
+        self.ram_value_label = tk.Label(
+            ram_row, text=self._format_gb(self.memory_var.get()), font=("Segoe UI", 9, "bold"),
+            bg=colors["bg_panel"], fg=colors["accent"])
+        self.ram_value_label.pack(side="right")
+
+        tk.Scale(
+            outer, from_=self.memory_min, to=self.memory_max,
+            orient="horizontal", variable=self.memory_var,
+            showvalue=False, resolution=256, sliderlength=18,
+            bg=colors["bg_panel"], fg=colors["fg"], troughcolor=colors["bg_field"],
+            highlightthickness=0, bd=0, activebackground=colors["accent_hover"],
+            command=self._on_ram_change,
+        ).pack(fill="x", pady=(6, 2))
+
+        range_row = tk.Frame(outer, bg=colors["bg_panel"])
+        range_row.pack(fill="x", pady=(0, 12))
+        tk.Label(range_row, text=self._format_gb(self.memory_min), font=("Segoe UI", 8),
+                 bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(side="left")
+        tk.Label(range_row, text=self._format_gb(self.memory_max), font=("Segoe UI", 8),
+                 bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(side="right")
+
+        # ---- Режим для слабых ПК ----
+        def on_low_end_toggle():
+            update_settings(low_end_mode=self.low_end_var.get())
+            self._refresh_settings_summary()
+
+        tk.Checkbutton(
+            outer, text=" Режим для слабых ПК — проще графика, выше FPS,\n"
+                        " автоматически включается облегчённый ресурс-пак",
+            image=self.icons.get("gauge"), compound="left",
+            variable=self.low_end_var, font=("Segoe UI", 9), command=on_low_end_toggle,
+            bg=colors["bg_panel"], fg=colors["fg"], activebackground=colors["bg_panel"],
+            activeforeground=colors["fg"], selectcolor=colors["bg_field"],
+            highlightthickness=0, bd=0, cursor="hand2", anchor="w", justify="left",
+        ).pack(fill="x", pady=(0, 6))
+
+        # При закрытии окна запоминаем выбранный объём памяти.
+        dialog.bind("<Destroy>", lambda e: (
+            update_settings(memory_mb=int(self.memory_var.get())),
+            self._refresh_settings_summary()) if e.widget is dialog else None)
+
+        tk.Frame(outer, bg=colors["border"], height=1).pack(fill="x", pady=(6, 14))
 
         tk.Label(outer, text="Папка установки игры", font=("Segoe UI", 14, "bold"),
                  bg=colors["bg_panel"], fg=colors["fg"]).pack(anchor="w")
