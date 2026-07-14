@@ -286,7 +286,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.9.0",
+    "LAUNCHER_VERSION": "1.9.1",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -298,6 +298,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.9.1",
+            "date": "14 июля 2026",
+            "changes": [
+                "Обрыв связи при скачивании больше не роняет установку: закачка "
+                "продолжается с места обрыва и повторяется автоматически. "
+                "Заново качать сборку не нужно.",
+            ],
+        },
         {
             "version": "1.9.0",
             "date": "14 июля 2026",
@@ -1271,16 +1280,60 @@ def offline_uuid(username: str) -> str:
     return str(uuid.uuid3(uuid.NAMESPACE_OID, "OfflinePlayer:%s" % username))
 
 
-def download_file(url: str, dest: Path, progress_cb=None) -> None:
+def download_file(url: str, dest: Path, progress_cb=None, retries: int = 5) -> None:
+    """Качает файл с докачкой и повторами.
+
+    Раньше здесь был urlretrieve: любой обрыв связи посреди 400-мегабайтного
+    архива ронял всю установку с невнятным "IncompleteRead", и качать
+    приходилось заново с нуля. Теперь недокачанное складывается в файл .part,
+    при обрыве закачка продолжается с места остановки (заголовок HTTP Range),
+    и делается несколько попыток с нарастающей паузой. Даже если попытки
+    кончились — .part остаётся на диске, и следующий запуск продолжит с него,
+    а не начнёт заново."""
     dest.parent.mkdir(parents=True, exist_ok=True)
+    part = dest.with_name(dest.name + ".part")
+    last_error = None
 
-    def reporthook(block_num, block_size, total_size):
-        if progress_cb and total_size > 0:
-            downloaded = block_num * block_size
-            pct = min(100, int(downloaded * 100 / total_size))
-            progress_cb(pct)
+    for attempt in range(1, retries + 1):
+        have = part.stat().st_size if part.exists() else 0
+        request = urllib.request.Request(url, headers={"User-Agent": "CheckpointLauncher"})
+        if have:
+            request.add_header("Range", "bytes=%d-" % have)
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                # Сервер мог проигнорировать Range (ответил 200 вместо 206) —
+                # тогда начинаем файл с нуля, иначе получим мешанину.
+                if have and getattr(response, "status", 200) != 206:
+                    have = 0
+                    part.unlink(missing_ok=True)
+                length = response.headers.get("Content-Length")
+                total = (int(length) + have) if length else 0
+                with open(part, "ab" if have else "wb") as fh:
+                    while True:
+                        chunk = response.read(65536)
+                        if not chunk:
+                            break
+                        fh.write(chunk)
+                        have += len(chunk)
+                        if progress_cb and total:
+                            progress_cb(min(100, int(have * 100 / total)))
+                # ВАЖНО: при обрыве связи read() возвращает пустоту — так же,
+                # как при нормальном конце файла. Без этой проверки обрезанный
+                # архив молча считался бы скачанным целиком.
+                if total and have < total:
+                    raise IOError("связь оборвалась: получено %d из %d байт" % (have, total))
+            dest.unlink(missing_ok=True)
+            part.replace(dest)
+            return
+        except Exception as exc:  # noqa: BLE001 — сеть падает по-разному
+            last_error = exc
+            if attempt < retries:
+                time.sleep(2 * attempt)
 
-    urllib.request.urlretrieve(url, dest, reporthook=reporthook)
+    raise RuntimeError(
+        "Обрыв связи при скачивании — не удалось за %d попыток.\n\n"
+        "Проверьте интернет и нажмите «Играть» ещё раз: закачка продолжится "
+        "с места обрыва, заново качать не придётся.\n\n(%s)" % (retries, last_error))
 
 
 def get_remote_modpack_version() -> int:
