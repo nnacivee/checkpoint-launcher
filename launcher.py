@@ -293,7 +293,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.15.1",
+    "LAUNCHER_VERSION": "1.16.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -305,6 +305,14 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.16.0",
+            "date": "15 июля 2026",
+            "changes": [
+                "Логотип Industrial Horizon теперь крупно по центру.",
+                "Фон стал чище — без сетки посередине.",
+            ],
+        },
         {
             "version": "1.15.0",
             "date": "15 июля 2026",
@@ -1182,6 +1190,7 @@ def _draw_rounded_rect(canvas: tk.Canvas, x1, y1, x2, y2, radius, **kwargs):
 MAIN_W, MAIN_H = 1080, 640
 BAR_H = 138          # высота нижней полосы с ником и кнопкой «Играть»
 BAR_FEATHER = 34     # мягкий край полосы
+LOGO_SIZE = 300      # логотип по центру свободной зоны над плитками
 
 
 def _cover_fit(img, width: int, height: int):
@@ -1204,12 +1213,24 @@ def render_main_background(width: int, height: int, colors: dict):
     """
     if not _PIL_OK:
         return None
-    path = resource_path("background.png")
     try:
-        art = Image.open(path).convert("RGB")
+        art = Image.open(resource_path("background.png")).convert("RGB")
     except Exception:  # noqa: BLE001
         return None
     base = _cover_fit(art, width, height).convert("RGBA")
+
+    # Логотип отдельной картинкой, а не впечатанный в арт: так его можно
+    # двигать и менять размер, не перерисовывая фон.
+    try:
+        logo = Image.open(resource_path("logo.png")).convert("RGBA")
+        free_bottom = height - BAR_H - 84          # выше плиток
+        k = LOGO_SIZE / max(logo.width, logo.height)
+        logo = logo.resize((max(1, round(logo.width * k)), max(1, round(logo.height * k))),
+                           Image.LANCZOS)
+        base.alpha_composite(logo, ((width - logo.width) // 2,
+                                    max(10, (free_bottom - logo.height) // 2)))
+    except Exception:  # noqa: BLE001
+        pass   # логотипа нет — не беда, окно всё равно рабочее
 
     top = height - BAR_H - BAR_FEATHER
     strip = base.crop((0, top, width, height)).filter(ImageFilter.GaussianBlur(14))
