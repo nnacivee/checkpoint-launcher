@@ -288,7 +288,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.13.0",
+    "LAUNCHER_VERSION": "1.13.1",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -300,6 +300,18 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.13.1",
+            "date": "14 июля 2026",
+            "changes": [
+                "Починены скины и плащи: раньше выбранный скин не появлялся в "
+                "игре — лаунчер настраивал мод неправильно, и тот искал "
+                "картинку не в той папке.",
+                "Скины из репозитория сборки теперь тоже работают — их видят "
+                "все игроки на сервере.",
+                "Ничего делать не нужно: настройки чинятся сами при запуске.",
+            ],
+        },
         {
             "version": "1.13.0",
             "date": "14 июля 2026",
@@ -2579,19 +2591,29 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> None:
 WINDOW_ICON_MOD_SLUG = "custom-window-title"
 
 
+SKIN_CONFIG_VERSION = 2
+
+
 def install_skin_config(status_cb=None) -> None:
     """Настраивает CustomSkinLoader: откуда брать скины и плащи.
 
-    Пишем конфиг ТОЛЬКО если его ещё нет — иначе затирали бы правки игрока при
-    каждом запуске. Если формат вдруг не подойдёт, мод просто перезапишет файл
-    своими значениями: там уже есть Ely.by и локальные скины, так что скины
-    останутся рабочими в любом случае."""
-    root = CONFIG.get("SKINS_ROOT_URL")
+    ВАЖНО про формат. Загрузчик "Legacy" НЕ понимает ключ "root" — в коде мода
+    (LegacyLoader.java) его просто нет, root читает только JsonAPILoader (это
+    типы вроде ElyByAPI). Поэтому у Legacy весь путь пишется целиком прямо в
+    "skin"/"cape": либо полный URL, либо путь относительно папки
+    CustomSkinLoader. Если написать root + "skins/{USERNAME}.png", мод молча
+    полезет в CustomSkinLoader/skins/ и ничего не найдёт — ровно эта ошибка и
+    была в 1.12–1.13.
+
+    Конфиг перезаписываем, когда вырос SKIN_CONFIG_VERSION: иначе у тех, кто
+    уже играл, навсегда остался бы сломанный файл."""
+    root = (CONFIG.get("SKINS_ROOT_URL") or "").rstrip("/")
     if not root:
         return
     config_dir = INSTANCE_DIR / "CustomSkinLoader"
     config_path = config_dir / "CustomSkinLoader.json"
-    if config_path.exists():
+    have_version = load_settings().get("skin_config_version", 0)
+    if config_path.exists() and have_version >= SKIN_CONFIG_VERSION:
         return
     profile = {
         "enable": True,
@@ -2602,27 +2624,29 @@ def install_skin_config(status_cb=None) -> None:
         "threadPoolSize": 8,
         "cacheExpiry": 30,
         "loadlist": [
-            # Скины самой сборки: владелец кладёт PNG в репозиторий.
+            # Скины сборки: владелец кладёт PNG в репозиторий — их видят все.
+            # Путь полным URL, потому что Legacy игнорирует root (см. выше).
             {
                 "name": CONFIG["PACK_NAME"],
                 "type": "Legacy",
                 "checkPNG": True,
-                "root": root,
-                "skin": "skins/{USERNAME}.png",
+                "skin": root + "/skins/{USERNAME}.png",
                 "model": "auto",
-                "cape": "capes/{USERNAME}.png",
+                "cape": root + "/capes/{USERNAME}.png",
             },
             # Кто хочет сам — регистрируется на Ely.by и грузит свой скин.
+            # Тут root как раз нужен: ElyByAPI — это JsonAPI-загрузчик.
             {"name": "ElyBy", "type": "ElyByAPI", "root": "http://skinsystem.ely.by/"},
-            # Локальные файлы игрока.
+            # Локальные файлы игрока (выбор в окне «Скины и плащи»).
+            # Пути — ровно как в самом моде, LegacyLoader.getSkinRoot().
             {
                 "name": "LocalSkin",
                 "type": "Legacy",
                 "checkPNG": False,
-                "root": "LocalSkin/",
-                "skin": "skins/{USERNAME}.png",
+                "skin": "LocalSkin/skins/{USERNAME}.png",
                 "model": "auto",
-                "cape": "capes/{USERNAME}.png",
+                "cape": "LocalSkin/capes/{USERNAME}.png",
+                "elytra": "LocalSkin/elytras/{USERNAME}.png",
             },
         ],
     }
@@ -2630,10 +2654,31 @@ def install_skin_config(status_cb=None) -> None:
         config_dir.mkdir(parents=True, exist_ok=True)
         config_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2),
                                encoding="utf-8")
-        if status_cb:
-            status_cb("скины и плащи настроены")
     except OSError:
-        pass  # не критично: мод создаст свой конфиг сам
+        return  # не критично: мод создаст свой конфиг сам
+
+    # Мод кэширует и УСПЕХ, и «скина нет». Со старым конфигом там осели одни
+    # промахи — не почистив, игрок и после починки увидит Стива.
+    clear_skin_cache()
+    update_settings(skin_config_version=SKIN_CONFIG_VERSION)
+    if status_cb:
+        status_cb("скины и плащи настроены")
+
+
+def clear_skin_cache() -> None:
+    """Чистит кэш CustomSkinLoader, чтобы мод сходил за скином заново."""
+    for name in ("caches", "ProfileCache"):
+        folder = INSTANCE_DIR / "CustomSkinLoader" / name
+        if not folder.is_dir():
+            continue
+        for item in folder.iterdir():
+            try:
+                if item.is_dir():
+                    shutil.rmtree(item, ignore_errors=True)
+                else:
+                    item.unlink()
+            except OSError:
+                pass  # занят — не страшно, мод перезапишет сам
 
 
 def _skin_pack_base(kind: str) -> str:
@@ -2745,6 +2790,7 @@ def apply_pack_skin(kind: str, filename: str, username: str) -> None:
                 staging.unlink()
             except OSError:
                 pass
+    clear_skin_cache()
     update_settings(**{_skin_choice_key(kind): filename})
 
 
@@ -2758,6 +2804,7 @@ def install_own_skin_file(kind: str, source, username: str) -> None:
     folder = get_localskin_dir() / ("skins" if kind == "skins" else "capes")
     folder.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, folder / (username + ".png"))
+    clear_skin_cache()
     update_settings(**{_skin_choice_key(kind): "custom:" + source.name})
 
 
@@ -2772,6 +2819,7 @@ def clear_pack_skin(kind: str, username: str) -> None:
             target.unlink()
         except OSError as exc:
             raise ValueError("Не удалось убрать файл: %s" % exc)
+    clear_skin_cache()
     update_settings(**{_skin_choice_key(kind): ""})
 
 
@@ -4315,7 +4363,8 @@ class LauncherApp:
         tk.Label(outer, text="Скины и плащи", font=("Segoe UI", 14, "bold"),
                  bg=colors["bg_panel"], fg=colors["fg"]).pack(anchor="w")
         tk.Label(outer,
-                 text="Выберите картинку — она применится сразу, перезаходить в игру не нужно.",
+                 text="Выберите картинку. Чтобы увидеть её на себе — выйдите в главное меню\n"
+                      "игры и зайдите на сервер заново (мод подхватывает скин при входе).",
                  font=("Segoe UI", 9), justify="left",
                  bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(anchor="w", pady=(2, 10))
 
@@ -4393,7 +4442,9 @@ class LauncherApp:
                     if error:
                         status_var.set("Не получилось: %s" % error)
                     else:
-                        status_var.set("Готово: «%s» — виден вам в игре." % item["name"])
+                        status_var.set(
+                            "Готово: «%s». Теперь перезайдите на сервер — "
+                            "скин подхватится при входе." % item["name"])
                         render()
                 dialog.after(0, done)
 
