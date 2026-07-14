@@ -288,7 +288,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.10.3",
+    "LAUNCHER_VERSION": "1.11.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -300,6 +300,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.11.0",
+            "date": "14 июля 2026",
+            "changes": [
+                "Меню клиентских модов переделано: широкое окно, моды в три "
+                "колонки, поиск, фильтр по категориям и сортировка. "
+                "Прокручивать почти не нужно.",
+                "Игра всегда запускается с интерфейсом x2 и снятым "
+                "ограничением FPS — независимо от режима для слабых ПК.",
+            ],
+        },
         {
             "version": "1.10.3",
             "date": "14 июля 2026",
@@ -903,6 +914,7 @@ CONFIG = {
             "id": "emi",
             "name": "EMI",
             "slug": "emi",
+            "category": "Интерфейс",
             "description": "Просмотр рецептов и предметов",
             # Актуальное на момент написания имя файла для NeoForge 1.21.1.
             # Если вы поставите более новую версию EMI — обновите имя файла
@@ -914,6 +926,7 @@ CONFIG = {
             "id": "invmove",
             "name": "InvMove",
             "slug": "invmove",
+            "category": "Управление",
             "description": "Ходьба при открытом инвентаре",
             "filename": "InvMove-0.9.3+1.21.1-NeoForge.jar",
             "default": True,
@@ -922,6 +935,7 @@ CONFIG = {
             "id": "jade",
             "name": "Jade",
             "slug": "jade",
+            "category": "Интерфейс",
             "description": "Подсказки при наведении на блоки",
             "filename": "Jade-1.21.1-NeoForge-15.10.5.jar",
             "default": True,
@@ -930,6 +944,7 @@ CONFIG = {
             "id": "jade_addons",
             "name": "Jade Addons",
             "slug": "jade-addons",
+            "category": "Интерфейс",
             "description": "Дополнительные подсказки для Jade",
             "filename": "JadeAddons-1.21.1-NeoForge-6.1.0.jar",
             "default": True,
@@ -938,6 +953,7 @@ CONFIG = {
             "id": "appleskin",
             "name": "AppleSkin",
             "slug": "appleskin",
+            "category": "Интерфейс",
             "description": "Показывает сытость/насыщение на HUD",
             "filename": "appleskin-neoforge-mc1.21-3.0.9.jar",
             "default": True,
@@ -946,6 +962,7 @@ CONFIG = {
             "id": "ambient_sounds",
             "name": "AmbientSounds",
             "slug": "ambientsounds",
+            "category": "Звук",
             "description": "Атмосферные звуки",
             "filename": "AmbientSounds_NEOFORGE_v6.3.8_mc1.21.1.jar",
             "default": True,
@@ -954,6 +971,7 @@ CONFIG = {
             "id": "mouse_tweaks",
             "name": "Mouse Tweaks",
             "slug": "mouse-tweaks",
+            "category": "Управление",
             "description": "Удобный drag&drop в инвентаре",
             "filename": "MouseTweaks-neoforge-mc1.21-2.26.1.jar",
             "default": True,
@@ -962,6 +980,7 @@ CONFIG = {
             "id": "just_zoom",
             "name": "Just Zoom",
             "slug": "just-zoom",
+            "category": "Управление",
             "description": "Зум по клавише",
             "filename": "justzoom_neoforge_2.1.0_MC_1.21.1.jar",
             "default": True,
@@ -970,6 +989,7 @@ CONFIG = {
             "id": "no_chat_reports",
             "name": "No Chat Reports",
             "slug": "no-chat-reports",
+            "category": "Прочее",
             "description": "Убирает отчёты о чате (приватность)",
             "filename": "NoChatReports-NEOFORGE-1.21.1-v2.9.1.jar",
             "default": True,
@@ -978,6 +998,7 @@ CONFIG = {
             "id": "betterf3",
             "name": "BetterF3",
             "slug": "betterf3",
+            "category": "Интерфейс",
             "description": "Улучшенный экран отладки (F3)",
             "filename": "BetterF3-11.0.3-NeoForge-1.21.1.jar",
             "default": True,
@@ -986,6 +1007,7 @@ CONFIG = {
             "id": "iris",
             "name": "Iris Shaders",
             "slug": "iris",
+            "category": "Графика",
             "description": "Поддержка шейдеров",
             "filename": "iris-neoforge-1.8.12+mc1.21.1.jar",
             "default": True,
@@ -2616,6 +2638,15 @@ LOW_END_OPTIONS = {
     "biomeBlendRadius": "0",
 }
 
+# Настройки, которые лаунчер выставляет ВСЕГДА — и на слабом ПК, и на мощном.
+# Применяются последними, уже после режима для слабых ПК: иначе восстановление
+# резервной копии настроек их бы затёрло.
+FORCED_OPTIONS = {
+    "guiScale": "2",         # интерфейс x2
+    "maxFps": "260",         # 260 — это и есть "Без ограничения" в самой игре
+    "enableVsync": "false",  # вертикальная синхронизация тоже режет FPS
+}
+
 OPTIONS_BACKUP_FILE = APP_DATA_DIR / "options_backup_before_low_end.txt"
 IRIS_CONFIG_BACKUP_FILE = APP_DATA_DIR / "iris_backup_before_low_end.properties"
 
@@ -2671,6 +2702,21 @@ def _apply_low_end_shaders(enabled: bool, status_cb=None) -> None:
             shutil.copy2(IRIS_CONFIG_BACKUP_FILE, iris_config_path)
             if status_cb:
                 status_cb("Настройки шейдеров восстановлены.")
+
+
+def apply_forced_options(status_cb=None) -> None:
+    """Ставит настройки из FORCED_OPTIONS: интерфейс x2 и снятое ограничение
+    FPS. Работает независимо от режима для слабых ПК и вызывается ПОСЛЕ него —
+    иначе восстановление резервной копии вернуло бы старые значения."""
+    INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
+    options_path = INSTANCE_DIR / "options.txt"
+    current = _read_options_txt(options_path)
+    if all(current.get(key) == value for key, value in FORCED_OPTIONS.items()):
+        return  # уже стоит как надо — файл не трогаем
+    current.update(FORCED_OPTIONS)
+    _write_options_txt(options_path, current)
+    if status_cb:
+        status_cb("интерфейс x2, ограничение FPS снято")
 
 
 def apply_low_end_mode(enabled: bool, status_cb=None) -> None:
@@ -3011,6 +3057,7 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
 
     ensure_pinned_server(extras_status)
     apply_low_end_mode(low_end_enabled, extras_status)
+    apply_forced_options(extras_status)
     install_extra_shaderpacks(extras_status, extras_progress)
     install_game_window_icon(extras_status)
     install_extra_client_mods(extras_status, extras_progress)
@@ -4173,28 +4220,86 @@ class LauncherApp:
         current = get_optional_mods_selection()
 
         dialog = tk.Toplevel(self.root)
-        dialog.title("Опциональные моды")
+        dialog.title("Клиентские моды")
         dialog.configure(bg=colors["bg_panel"])
         dialog.resizable(False, False)
         dialog.transient(self.root)
-        dialog.geometry("470x610")
+        # Размер подбираем под экран: на 1080p окно широкое, на 1440p — ещё
+        # шире, и моды раскладываются в 2-3 колонки вместо длинной ленты.
+        screen_w = dialog.winfo_screenwidth()
+        screen_h = dialog.winfo_screenheight()
+        width = max(720, min(1060, screen_w - 220))
+        height = max(560, min(760, screen_h - 220))
+        dialog.geometry("%dx%d+%d+%d" % (
+            width, height, max(0, (screen_w - width) // 2), max(0, (screen_h - height) // 3)))
         set_titlebar_dark(dialog, self.theme_name == "dark")
 
         outer = tk.Frame(dialog, bg=colors["bg_panel"])
-        outer.pack(fill="both", expand=True, padx=16, pady=16)
+        outer.pack(fill="both", expand=True, padx=16, pady=14)
 
-        tk.Label(
-            outer, text="Опциональные моды", font=("Segoe UI", 14, "bold"),
-            bg=colors["bg_panel"], fg=colors["fg"],
-        ).pack(anchor="w")
+        # ---- Шапка: заголовок + поиск + сортировка ----
+        head = tk.Frame(outer, bg=colors["bg_panel"])
+        head.pack(fill="x")
+        tk.Label(head, text="Клиентские моды", font=("Segoe UI", 14, "bold"),
+                 bg=colors["bg_panel"], fg=colors["fg"]).pack(side="left")
+
+        sort_var = tk.StringVar(value="Сначала включённые")
+        sort_box = ttk.Combobox(head, textvariable=sort_var, state="readonly", width=20,
+                                values=["Сначала включённые", "По названию", "По категории"])
+        sort_box.pack(side="right")
+        tk.Label(head, text="Сортировка:", font=("Segoe UI", 9), bg=colors["bg_panel"],
+                 fg=colors["fg_muted"]).pack(side="right", padx=(0, 6))
+
+        search_var = tk.StringVar()
+        search_entry = tk.Entry(
+            head, textvariable=search_var, font=("Segoe UI", 10), width=26,
+            bg=colors["bg_field"], fg=colors["fg"], insertbackground=colors["fg"],
+            relief="flat", highlightthickness=1,
+            highlightbackground=colors["border"], highlightcolor=colors["accent"])
+        search_entry.pack(side="right", padx=(16, 24), ipady=4)
+        tk.Label(head, text="Поиск:", font=("Segoe UI", 9), bg=colors["bg_panel"],
+                 fg=colors["fg_muted"]).pack(side="right", padx=(0, 6))
+
         tk.Label(
             outer,
-            text="Эти моды безопасно включать и выключать в любой момент —\nвключили галочку, мод сразу скачается; убрали — сразу удалится.",
+            text="Эти моды безопасно включать и выключать в любой момент — "
+                 "включили галочку, мод сразу скачается; убрали — сразу удалится.",
             font=("Segoe UI", 9), bg=colors["bg_panel"], fg=colors["fg_muted"],
             justify="left",
-        ).pack(anchor="w", pady=(2, 12))
+        ).pack(anchor="w", pady=(4, 8))
 
-        # Прокручиваемый список (модов может быть много)
+        # ---- Фильтр по категориям ----
+        categories = ["Все"]
+        for mod in CONFIG["OPTIONAL_MODS"]:
+            category = mod.get("category") or "Прочее"
+            if category not in categories:
+                categories.append(category)
+        category_var = tk.StringVar(value="Все")
+
+        chips = tk.Frame(outer, bg=colors["bg_panel"])
+        chips.pack(fill="x", pady=(0, 10))
+        chip_buttons = {}
+
+        def select_category(name):
+            category_var.set(name)
+            for chip_name, button in chip_buttons.items():
+                active = (chip_name == name)
+                button.configure(
+                    bg=colors["accent"] if active else colors["bg_field"],
+                    fg=colors["accent_text"] if active else colors["fg_muted"])
+            render()
+
+        for name in categories:
+            button = tk.Button(
+                chips, text=name, font=("Segoe UI", 9), relief="flat", bd=0,
+                cursor="hand2", padx=12, pady=4,
+                bg=colors["bg_field"], fg=colors["fg_muted"],
+                activebackground=colors["accent_hover"],
+                command=lambda n=name: select_category(n))
+            button.pack(side="left", padx=(0, 6))
+            chip_buttons[name] = button
+
+        # Прокручиваемая сетка карточек
         list_container = tk.Frame(outer, bg=colors["bg_panel"], highlightbackground=colors["border"],
                                    highlightthickness=1)
         list_container.pack(fill="both", expand=True)
@@ -4302,18 +4407,26 @@ class LauncherApp:
             except Exception:
                 pass
 
-        for mod in CONFIG["OPTIONAL_MODS"]:
-            var = tk.BooleanVar(value=current.get(mod["id"], mod.get("default", True)))
-            checkbox_vars[mod["id"]] = var
+        # Сколько колонок влезет: карточка ~330px. При нашей ширине окна это
+        # обычно 3 — список умещается почти без прокрутки.
+        columns = max(1, (width - 60) // 330)
+        card_width = (width - 70) // columns
 
-            # Карточка мода: иконка | название+описание+статус | переключатель
+        def build_card(mod, row, column):
+            var = checkbox_vars.get(mod["id"])
+            if var is None:
+                var = tk.BooleanVar(value=current.get(mod["id"], mod.get("default", True)))
+                checkbox_vars[mod["id"]] = var
+
             card = tk.Frame(scroll_frame, bg=colors["bg_field"],
-                            highlightbackground=colors["border"], highlightthickness=1)
-            card.pack(fill="x", padx=8, pady=4)
+                            highlightbackground=colors["border"], highlightthickness=1,
+                            width=card_width)
+            card.grid(row=row, column=column, padx=6, pady=5, sticky="nsew")
+            card.grid_propagate(False)
+            card.configure(height=92)
             body = tk.Frame(card, bg=colors["bg_field"])
-            body.pack(fill="x", padx=10, pady=8)
+            body.pack(fill="both", expand=True, padx=10, pady=8)
 
-            # Иконка 40×40 (пока не загрузилась — первая буква названия)
             icon_holder = tk.Frame(body, bg=colors["bg_panel"], width=40, height=40)
             icon_holder.pack(side="left", padx=(0, 10))
             icon_holder.pack_propagate(False)
@@ -4333,14 +4446,19 @@ class LauncherApp:
             checkboxes[mod["id"]] = cb
 
             mid = tk.Frame(body, bg=colors["bg_field"])
-            mid.pack(side="left", fill="x", expand=True)
-            tk.Label(mid, text=mod["name"], font=("Segoe UI", 10, "bold"),
-                     bg=colors["bg_field"], fg=colors["fg"], anchor="w").pack(anchor="w")
+            mid.pack(side="left", fill="both", expand=True)
+            title_row = tk.Frame(mid, bg=colors["bg_field"])
+            title_row.pack(anchor="w", fill="x")
+            tk.Label(title_row, text=mod["name"], font=("Segoe UI", 10, "bold"),
+                     bg=colors["bg_field"], fg=colors["fg"]).pack(side="left")
+            tk.Label(title_row, text="  " + (mod.get("category") or "Прочее"),
+                     font=("Segoe UI", 7), bg=colors["bg_field"],
+                     fg=colors["accent"]).pack(side="left")
             description = mod.get("description")
             if description:
                 tk.Label(mid, text=description, font=("Segoe UI", 8),
                          bg=colors["bg_field"], fg=colors["fg_muted"], anchor="w",
-                         justify="left", wraplength=300).pack(anchor="w")
+                         justify="left", wraplength=card_width - 90).pack(anchor="w")
             status_label = tk.Label(mid, text="", font=("Segoe UI", 8),
                                     bg=colors["bg_field"], fg=colors["fg_muted"], anchor="w")
             status_label.pack(anchor="w")
@@ -4348,12 +4466,57 @@ class LauncherApp:
 
             # Иконку тянем с Modrinth в фоне, чтобы окно не подвисало.
             if _PIL_OK and mod.get("slug"):
-                def load_icon(m=mod):
-                    pil = _load_mod_icon_image(m["slug"], 40)
-                    if pil is not None:
-                        dialog.after(0, lambda mm=m, p=pil: apply_icon(mm["id"], p))
-                threading.Thread(target=load_icon, daemon=True).start()
+                cached = self._opt_icon_refs.get(mod["id"])
+                if cached is not None:
+                    icon_lbl.configure(image=cached, text="")
+                else:
+                    def load_icon(m=mod):
+                        pil = _load_mod_icon_image(m["slug"], 40)
+                        if pil is not None:
+                            dialog.after(0, lambda mm=m, p=pil: apply_icon(mm["id"], p))
+                    threading.Thread(target=load_icon, daemon=True).start()
 
+        def render():
+            for child in scroll_frame.winfo_children():
+                child.destroy()
+            icon_labels.clear()
+
+            query = search_var.get().strip().lower()
+            category = category_var.get()
+            selection = get_optional_mods_selection()
+
+            mods = []
+            for mod in CONFIG["OPTIONAL_MODS"]:
+                if category != "Все" and (mod.get("category") or "Прочее") != category:
+                    continue
+                if query and query not in (mod["name"] + " " +
+                                           mod.get("description", "")).lower():
+                    continue
+                mods.append(mod)
+
+            order = sort_var.get()
+            if order == "По названию":
+                mods.sort(key=lambda m: m["name"].lower())
+            elif order == "По категории":
+                mods.sort(key=lambda m: ((m.get("category") or "Прочее"), m["name"].lower()))
+            else:  # сначала включённые
+                mods.sort(key=lambda m: (
+                    not selection.get(m["id"], m.get("default", True)), m["name"].lower()))
+
+            if not mods:
+                tk.Label(scroll_frame, text="Ничего не найдено.", font=("Segoe UI", 9),
+                         bg=colors["bg_panel"], fg=colors["fg_muted"]).grid(
+                    row=0, column=0, padx=14, pady=18, sticky="w")
+                return
+
+            for index in range(columns):
+                scroll_frame.grid_columnconfigure(index, weight=1, minsize=card_width)
+            for index, mod in enumerate(mods):
+                build_card(mod, index // columns, index % columns)
+
+        search_var.trace_add("write", lambda *_: render())
+        sort_box.bind("<<ComboboxSelected>>", lambda e: render())
+        select_category("Все")  # заодно первая отрисовка
         dialog.grab_set()
 
     def _run_in_background(self, work_fn) -> None:
