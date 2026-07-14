@@ -248,6 +248,13 @@ CONFIG = {
     # собирать .exe (см. MODPACK_VERSION_URL — так делать не обязательно).
     "MODPACK_VERSION": 3,
 
+    # Моды, которые нужно убрать из сборки, даже если они лежат в архиве
+    # modpack.zip. Лаунчер удаляет их из mods/ при каждом запуске — так можно
+    # выкинуть мод, не перезаливая весь архив (он весит сотни мегабайт):
+    # достаточно дописать сюда кусок имени файла. Сравнение без учёта регистра.
+    # Осторожно: "konkrete" НЕ трогаем — он нужен моду Just Zoom.
+    "REMOVED_MODS": ["fancymenu", "melody"],
+
     # (необязательно, но удобно) Ссылка на маленький текстовый файл, в
     # котором лежит только число — версия сборки. Если её указать, лаунчер
     # будет проверять актуальность модов через интернет при каждом запуске,
@@ -278,7 +285,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.5.1",
+    "LAUNCHER_VERSION": "1.5.2",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -290,6 +297,14 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.5.2",
+            "date": "14 июля 2026",
+            "changes": [
+                "FancyMenu окончательно убран: лаунчер теперь сам вычищает "
+                "ненужные моды из сборки при запуске.",
+            ],
+        },
         {
             "version": "1.5.1",
             "date": "13 июля 2026",
@@ -1156,6 +1171,28 @@ def save_optional_mods_selection(selection: dict) -> None:
     update_settings(optional_mods=selection)
 
 
+def remove_blocked_mods(status_cb=None) -> None:
+    """Удаляет из mods/ моды, перечисленные в CONFIG["REMOVED_MODS"], даже если
+    они есть в архиве сборки. Благодаря этому мод можно убрать, не перезаливая
+    modpack.zip — достаточно дописать кусок имени файла в список. Работает при
+    каждом запуске, поэтому мод пропадёт и у тех, у кого сборка уже стоит."""
+    patterns = [p.lower() for p in CONFIG.get("REMOVED_MODS", []) if p]
+    if not patterns:
+        return
+    mods_dir = INSTANCE_DIR / "mods"
+    if not mods_dir.exists():
+        return
+    for jar in mods_dir.glob("*.jar"):
+        name = jar.name.lower()
+        if any(p in name for p in patterns):
+            try:
+                jar.unlink()
+                if status_cb:
+                    status_cb("Убираю лишний мод: %s" % jar.name)
+            except OSError:
+                pass
+
+
 def harvest_optional_mods(status_cb=None) -> None:
     """Вызывается сразу после распаковки архива сборки. Файлы модов,
     перечисленных в CONFIG["OPTIONAL_MODS"], уже лежат в mods/ вместе со
@@ -2001,6 +2038,7 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
         else:
             status_cb("Сборка модов уже актуальна.")
 
+        remove_blocked_mods(status_cb)
         harvest_optional_mods(status_cb)
         restore_no_longer_optional_mods(status_cb)
         apply_optional_mods(status_cb, progress_cb)
