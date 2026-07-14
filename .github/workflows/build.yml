@@ -6,6 +6,7 @@ on:
     paths:
       - "launcher.py"
       - "requirements.txt"
+      - "installer.iss"
       - "icon.ico"
       - "window_icon.png"
       - "icons/**"
@@ -30,6 +31,11 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      # Дешёвая проверка синтаксиса до тяжёлых шагов: PyInstaller на опечатке
+      # падает где-то в середине сборки и невнятно, а тут ошибка видна сразу.
+      - name: Check launcher.py compiles
+        run: python -m py_compile launcher.py
+
       - name: Read version from launcher.py
         id: version
         shell: pwsh
@@ -39,10 +45,15 @@ jobs:
           echo "Detected version: $version"
           echo "version=$version" >> $env:GITHUB_OUTPUT
 
-      - name: Build exe
+      # --onedir, а НЕ --onefile. Один .exe распаковывал себя в Temp при каждом
+      # запуске, и сразу после обновления это падало с "Failed to load Python
+      # DLL python312.dll" (антивирус ещё проверял свежий файл). Папка ничего не
+      # распаковывает — ошибка невозможна в принципе. Пользователь всё равно
+      # качает один файл: установщик ниже.
+      - name: Build app folder
         shell: pwsh
         run: |
-          $args = @("--onefile", "--noconsole", "--name", "Launcher")
+          $args = @("--onedir", "--noconsole", "--name", "Launcher")
           if (Test-Path "icon.ico") {
             $args += "--icon=icon.ico"
             $args += "--add-data=icon.ico;."
@@ -56,10 +67,37 @@ jobs:
           $args += "launcher.py"
           pyinstaller @args
 
-      - name: Create GitHub Release with the exe attached
+      - name: Check the app folder really built
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist\Launcher\Launcher.exe")) {
+            throw "dist\Launcher\Launcher.exe not found"
+          }
+          # Главный смысл перехода: DLL должна лежать рядом, а не распаковываться.
+          $dll = Get-ChildItem -Path "dist\Launcher" -Recurse -Filter "python3*.dll"
+          if (-not $dll) { throw "python3xx.dll is missing from the app folder" }
+          echo "OK: $($dll[0].FullName)"
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found at $iscc" }
+          & $iscc "/DMyAppVersion=${{ steps.version.outputs.version }}" installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with $LASTEXITCODE" }
+          if (-not (Test-Path "installer_out\CheckpointSetup.exe")) {
+            throw "installer was not produced"
+          }
+          $size = (Get-Item "installer_out\CheckpointSetup.exe").Length / 1MB
+          echo ("Installer size: {0:N1} MB" -f $size)
+
+      - name: Create GitHub Release with the installer attached
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
-          files: dist/Launcher.exe
+          files: installer_out/CheckpointSetup.exe
           generate_release_notes: false
