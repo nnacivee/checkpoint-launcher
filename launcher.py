@@ -285,7 +285,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.5.2",
+    "LAUNCHER_VERSION": "1.5.3",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -297,6 +297,19 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.5.3",
+            "date": "14 июля 2026",
+            "changes": [
+                "Повторный клик по ярлыку теперь возвращает уже открытое окно "
+                "лаунчера, а не выдаёт ошибку.",
+                "Во время игры лаунчер сворачивается в панель задач, а не "
+                "исчезает — окно больше не «теряется».",
+                "Окно всегда открывается по центру экрана и возвращается на "
+                "него, если уехало за границы.",
+                "После закрытия окна процесс гарантированно завершается.",
+            ],
+        },
         {
             "version": "1.5.2",
             "date": "14 июля 2026",
@@ -2137,9 +2150,114 @@ class LauncherApp:
         self.update_banner = None
         self.version_row = None
 
+        # Закрытие окна крестиком должно гарантированно завершать процесс.
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+
         self._build_ui()
+        self._center_window()
         self.refresh_server_status()
         self._check_launcher_update_async()
+        self._serve_single_instance()
+
+    # ------------------------------------------------------------------
+    # Окно: показать, вернуть на экран, второй запуск, корректный выход
+
+    def _center_window(self) -> None:
+        """Ставит окно по центру экрана. Без явной позиции Windows иногда
+        открывала его на координатах отключённого второго монитора — окно
+        как будто "пропадало"."""
+        try:
+            self.root.update_idletasks()
+            width, height = self.root.winfo_width(), self.root.winfo_height()
+            screen_w, screen_h = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+            self.root.geometry("+%d+%d" % (
+                max(0, (screen_w - width) // 2), max(0, (screen_h - height) // 3)))
+        except tk.TclError:
+            pass
+
+    def _ensure_on_screen(self) -> None:
+        """Если окно оказалось за пределами видимой области (сменилось
+        разрешение, отключили второй монитор) — возвращает его на экран."""
+        try:
+            self.root.update_idletasks()
+            x, y = self.root.winfo_x(), self.root.winfo_y()
+            screen_w, screen_h = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+            if x < 0 or y < 0 or x + 60 > screen_w or y + 60 > screen_h:
+                self._center_window()
+        except tk.TclError:
+            pass
+
+    def show_window(self) -> None:
+        """Показывает окно и выводит его вперёд — даже если оно свёрнуто,
+        скрыто или уехало за экран. Вызывается и второй копией лаунчера,
+        когда пользователь снова кликает по ярлыку."""
+        try:
+            self.root.deiconify()
+            self.root.state("normal")
+            self._ensure_on_screen()
+            self.root.lift()
+            self.root.attributes("-topmost", True)
+            self.root.after(400, self._drop_topmost)
+            self.root.focus_force()
+        except tk.TclError:
+            pass
+
+    def _drop_topmost(self) -> None:
+        # Держим "поверх всех окон" только миг, чтобы окно выскочило вперёд,
+        # но не мешало потом.
+        try:
+            self.root.attributes("-topmost", False)
+        except tk.TclError:
+            pass
+
+    def _serve_single_instance(self) -> None:
+        """Слушает локальный порт: если пользователь снова запустит лаунчер
+        через ярлык, вторая копия постучится сюда и закроется, а мы просто
+        покажем уже открытое окно."""
+        server = get_single_instance_server()
+        if server is None:
+            return  # порт занять не удалось — работаем без этой функции
+
+        def worker():
+            while True:
+                try:
+                    conn, _addr = server.accept()
+                except OSError:
+                    return  # сокет закрыт (выходим) — завершаем поток
+                try:
+                    conn.settimeout(2)
+                    data = conn.recv(64)
+                    conn.sendall(SINGLE_INSTANCE_TOKEN + b"\n")
+                    if data.strip() == b"SHOW":
+                        self.root.after(0, self.show_window)
+                    # Ждём, пока закроется клиент, и только потом закрываемся
+                    # сами: тогда "остаточное" состояние TIME_WAIT достаётся
+                    # его временному порту, а не нашему 49517 — иначе
+                    # следующий запуск лаунчера мог не занять порт обратно.
+                    conn.recv(1)
+                except OSError:
+                    pass
+                finally:
+                    try:
+                        conn.close()
+                    except OSError:
+                        pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def on_close(self) -> None:
+        """Закрытие окна. Освобождаем порт и гасим интерфейс — процесс затем
+        завершается принудительно в main(), чтобы exe не оставался висеть."""
+        server = get_single_instance_server()
+        if server is not None:
+            try:
+                server.close()
+            except OSError:
+                pass
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
 
     # ------------------------------------------------------------------
     # Построение интерфейса (вызывается заново при смене темы)
@@ -2754,13 +2872,14 @@ class LauncherApp:
 
     def _on_game_started(self) -> None:
         self.set_status("Игра запущена! Лаунчер откроется снова, когда вы закроете Minecraft.")
-        self.root.withdraw()
+        # Сворачиваем в панель задач, а НЕ прячем полностью (withdraw):
+        # раньше окно исчезало отовсюду и вернуть его было нечем — со стороны
+        # это и выглядело как "процесс есть, окна нет".
+        self.root.iconify()
 
     def _on_game_ended(self, game_started: bool) -> None:
         self.play_button.set_enabled(True)
-        self.root.deiconify()
-        self.root.lift()
-        self.root.focus_force()
+        self.show_window()
         if game_started:
             self.set_status("Игра закрыта. Готово к новому запуску.")
 
@@ -3165,53 +3284,68 @@ class LauncherApp:
                 self.update_info["exe_url"] = None
 
 
-# Храним хэндл mutex'а в переменной модуля, чтобы Windows не освободила
-# его раньше времени (если объект будет собран сборщиком мусора).
-_single_instance_mutex = None
+# ================= Единственный экземпляр приложения =================
+# Раньше здесь был именованный mutex: он просто НЕ давал запуститься второй
+# копии и показывал "проверьте панель задач". Но если окно было скрыто
+# (например, свёрнуто на время игры), достать его было уже нечем — со стороны
+# это выглядело как "процесс запущен, а окна нет" и "ярлык не работает".
+#
+# Теперь вместо замка используется локальный порт: занять его может только
+# один процесс (это и есть замок), и одновременно это канал связи — вторая
+# копия стучится сюда, просит показать окно и молча закрывается.
+SINGLE_INSTANCE_PORT = 49517
+SINGLE_INSTANCE_TOKEN = b"CHECKPOINT-LAUNCHER"
+
+_single_instance_server = None
+
+
+def get_single_instance_server():
+    """Слушающий сокет первой копии (или None, если занять порт не вышло)."""
+    return _single_instance_server
+
+
+def _ask_running_instance_to_show() -> bool:
+    """Просит уже запущенную копию показать своё окно. Возвращает True, если
+    на том конце действительно наш лаунчер и он ответил."""
+    try:
+        with socket.create_connection(
+                ("127.0.0.1", SINGLE_INSTANCE_PORT), timeout=2) as conn:
+            conn.sendall(b"SHOW\n")
+            reply = conn.recv(64)
+        return reply.strip() == SINGLE_INSTANCE_TOKEN
+    except OSError:
+        return False
 
 
 def acquire_single_instance_lock() -> bool:
-    """Не даёт запустить вторую копию лаунчера одновременно — иначе
-    получится, что открыто несколько окон сразу (и, что хуже, можно
-    случайно нажать "Играть" в каждом и получить несколько копий игры).
-
-    Использует именованный mutex Windows: сама операционная система
-    считает, сколько раз он занят, и сама освобождает его, если наш
-    процесс закроется — даже аварийно. В отличие от файла-метки на диске,
-    тут не может остаться "зависшая" блокировка после сбоя.
-
-    Возвращает True, если можно продолжать запуск (это первая и
-    единственная копия), False — если лаунчер уже запущен."""
-    global _single_instance_mutex
-    if sys.platform != "win32":
-        return True  # проверка актуальна только для Windows-сборки
-
+    """True — мы единственная копия и можем работать дальше.
+    False — лаунчер уже запущен, мы попросили его показать окно и уходим."""
+    global _single_instance_server
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        import ctypes
-        mutex_name = "Local\\%sLauncherSingleInstance" % CONFIG["PACK_NAME"].replace(" ", "_")
-        _single_instance_mutex = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
-        ERROR_ALREADY_EXISTS = 183
-        if ctypes.windll.kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
-            return False
-        return True
-    except Exception:
-        return True  # если проверка сама не сработала — не блокируем на всякий случай
+        server.bind(("127.0.0.1", SINGLE_INSTANCE_PORT))
+        server.listen(5)
+    except OSError:
+        server.close()
+        # Порт занят. Проверяем, что это правда наш лаунчер, а не чужая
+        # программа — иначе мы бы навсегда отказывались запускаться.
+        return not _ask_running_instance_to_show()
+    _single_instance_server = server
+    return True
 
 
 def main():
     if not acquire_single_instance_lock():
-        root = tk.Tk()
-        root.withdraw()
-        messagebox.showinfo(
-            CONFIG["PACK_NAME"],
-            "%s уже запущен — проверьте панель задач." % CONFIG["PACK_NAME"],
-        )
-        root.destroy()
+        # Лаунчер уже открыт: мы попросили его показать окно и просто уходим.
         return
 
     root = tk.Tk()
     LauncherApp(root)
     root.mainloop()
+    # Жёстко завершаем процесс: иначе после закрытия окна exe иногда
+    # оставался висеть в диспетчере задач. Запущенная игра при этом
+    # продолжает работать — это отдельный процесс.
+    os._exit(0)
 
 
 if __name__ == "__main__":
