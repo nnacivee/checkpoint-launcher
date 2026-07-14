@@ -285,7 +285,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.5.3",
+    "LAUNCHER_VERSION": "1.5.4",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -297,6 +297,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.5.4",
+            "date": "14 июля 2026",
+            "changes": [
+                "Окно больше не мигает у края экрана при запуске — сразу "
+                "открывается по центру.",
+                "Лаунчер надёжно сворачивается в панель задач при старте игры.",
+            ],
+        },
         {
             "version": "1.5.3",
             "date": "14 июля 2026",
@@ -2153,8 +2162,8 @@ class LauncherApp:
         # Закрытие окна крестиком должно гарантированно завершать процесс.
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
+        self._geometry_set = False
         self._build_ui()
-        self._center_window()
         self.refresh_server_status()
         self._check_launcher_update_async()
         self._serve_single_instance()
@@ -2275,7 +2284,17 @@ class LauncherApp:
 
         width, height = 680, 680
         root.title(CONFIG["PACK_NAME"])
-        root.geometry("%dx%d" % (width, height))
+        if getattr(self, "_geometry_set", False):
+            # Перестройка интерфейса (смена темы) — позицию окна не трогаем.
+            root.geometry("%dx%d" % (width, height))
+        else:
+            # Позицию считаем ЗАРАНЕЕ и ставим одним вызовом вместе с размером.
+            # Если центрировать после отрисовки, окно успевает мигнуть у левого
+            # края экрана и только потом прыгает в центр.
+            x = max(0, (root.winfo_screenwidth() - width) // 2)
+            y = max(0, (root.winfo_screenheight() - height) // 3)
+            root.geometry("%dx%d+%d+%d" % (width, height, x, y))
+            self._geometry_set = True
         root.configure(bg=colors["bg_grad_top"])
         set_titlebar_dark(root, self.theme_name == "dark")
         self._setup_style(colors)
@@ -2875,7 +2894,23 @@ class LauncherApp:
         # Сворачиваем в панель задач, а НЕ прячем полностью (withdraw):
         # раньше окно исчезало отовсюду и вернуть его было нечем — со стороны
         # это и выглядело как "процесс есть, окна нет".
-        self.root.iconify()
+        self._minimize_to_taskbar()
+        # Окно игры в этот момент как раз перехватывает фокус, и Windows может
+        # проигнорировать сворачивание — поэтому повторяем ещё пару раз, пока
+        # игра точно запущена.
+        self.root.after(700, self._minimize_to_taskbar)
+        self.root.after(2000, self._minimize_to_taskbar)
+
+    def _minimize_to_taskbar(self) -> None:
+        """Сворачивает окно, но только пока игра действительно работает —
+        иначе повторный вызов мог бы свернуть уже вернувшийся лаунчер."""
+        process = self.game_process
+        if process is None or process.poll() is not None:
+            return
+        try:
+            self.root.iconify()
+        except tk.TclError:
+            pass
 
     def _on_game_ended(self, game_started: bool) -> None:
         self.play_button.set_enabled(True)
