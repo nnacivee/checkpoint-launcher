@@ -287,7 +287,7 @@ CONFIG = {
     # увеличивайте LAUNCHER_VERSION и добавляйте новую запись в начало
     # списка LAUNCHER_CHANGELOG — тогда друзья всегда будут видеть, что
     # именно поменялось, просто открыв "что нового" в лаунчере.
-    "LAUNCHER_VERSION": "1.9.4",
+    "LAUNCHER_VERSION": "1.10.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -299,6 +299,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.10.0",
+            "date": "14 июля 2026",
+            "changes": [
+                "Появился менеджер шейдеров: установка из ZIP, список, превью, "
+                "включение и удаление. Включение работает по-настоящему — "
+                "шейдер сразу применяется в игре.",
+            ],
+        },
         {
             "version": "1.9.4",
             "date": "14 июля 2026",
@@ -2018,6 +2027,107 @@ def delete_resource_pack(pack: dict) -> None:
         path.unlink(missing_ok=True)
 
 
+# ------------------------------- Шейдеры -------------------------------
+# Шейдерами заведует мод Iris, и хранит он их отдельно от options.txt — в
+# своём файле config/iris.properties. Включённым может быть только ОДИН
+# шейдер (в отличие от ресурс-паков), поэтому включение одного автоматически
+# выключает предыдущий.
+
+def get_shaderpacks_dir() -> Path:
+    return INSTANCE_DIR / "shaderpacks"
+
+
+def _iris_config_path() -> Path:
+    return INSTANCE_DIR / "config" / "iris.properties"
+
+
+def _read_iris_properties() -> dict:
+    path = _iris_config_path()
+    values = {}
+    if path.exists():
+        try:
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                if "=" in line and not line.strip().startswith("#"):
+                    key, _, value = line.partition("=")
+                    values[key.strip()] = value.strip()
+        except OSError:
+            pass
+    return values
+
+
+def _write_iris_properties(updates: dict) -> None:
+    """Меняет только указанные ключи, остальные настройки Iris не трогает."""
+    path = _iris_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = []
+    if path.exists():
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            lines = []
+    remaining = dict(updates)
+    for index, line in enumerate(lines):
+        key = line.partition("=")[0].strip()
+        if key in remaining:
+            lines[index] = "%s=%s" % (key, remaining.pop(key))
+    for key, value in remaining.items():
+        lines.append("%s=%s" % (key, value))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def list_shader_packs() -> list:
+    values = _read_iris_properties()
+    active = values.get("shaderPack", "")
+    shaders_on = values.get("enableShaders", "false").lower() == "true"
+    packs = []
+    for path in _list_packs_in(get_shaderpacks_dir()):
+        packs.append({
+            "name": path.stem if path.is_file() else path.name,
+            "path": path,
+            "enabled": shaders_on and active == path.name,
+            "description": "",
+        })
+    return packs
+
+
+def set_shader_enabled(pack: dict, enabled: bool) -> None:
+    if enabled:
+        # Включаем именно этот шейдер: Iris держит активным только один,
+        # поэтому предыдущий выключится сам.
+        _write_iris_properties({"shaderPack": Path(pack["path"]).name,
+                                "enableShaders": "true"})
+    else:
+        _write_iris_properties({"enableShaders": "false"})
+
+
+def install_shader_pack(zip_path) -> str:
+    """Ставит шейдер из ZIP в папку shaderpacks. Если такой уже есть —
+    заменяет."""
+    src = Path(zip_path)
+    if not zipfile.is_zipfile(src):
+        raise RuntimeError("Это не ZIP-архив: %s" % src.name)
+    with zipfile.ZipFile(src) as zf:
+        names = zf.namelist()
+    # У шейдерпака внутри обязательно есть папка shaders/ с программами.
+    if not any("shaders/" in name for name in names):
+        raise RuntimeError(
+            "В архиве нет папки shaders — похоже, это не шейдерпак:\n%s" % src.name)
+    dst_dir = get_shaderpacks_dir()
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst_dir / src.name)
+    return src.name
+
+
+def delete_shader_pack(pack: dict) -> None:
+    if pack.get("enabled"):
+        set_shader_enabled(pack, False)
+    path = Path(pack["path"])
+    if path.is_dir():
+        shutil.rmtree(path, ignore_errors=True)
+    else:
+        path.unlink(missing_ok=True)
+
+
 def ensure_pinned_server(status_cb=None) -> None:
     """Добавляет сервер из CONFIG["PINNED_SERVER"] в список серверов игрока
     (файл servers.dat), если его там ещё нет — сравнение по IP. Остальные
@@ -3117,6 +3227,11 @@ class LauncherApp:
         packs_btn.pack(side="left", padx=(8, 0))
         self._add_tooltip(packs_btn, "Ресурс-паки (текстуры)", colors)
 
+        shaders_btn = self._make_icon_button(
+            toolbar, self.icons["shader"], colors, self.on_open_shader_packs)
+        shaders_btn.pack(side="left", padx=(8, 0))
+        self._add_tooltip(shaders_btn, "Шейдеры", colors)
+
         repair_btn = self._make_icon_button(toolbar, self.icons["wrench"], colors, self.on_repair)
         repair_btn.pack(side="left", padx=(8, 0))
         self._add_tooltip(repair_btn, "Починить / переустановить", colors)
@@ -3705,6 +3820,20 @@ class LauncherApp:
             delete_fn=delete_resource_pack,
             install_fn=install_resource_pack,
             show_recommended=True,
+        )
+
+    def on_open_shader_packs(self) -> None:
+        self._open_pack_manager(
+            title="Шейдеры",
+            subtitle="Установите ZIP с шейдером — он появится в списке.\n"
+                     "Включён может быть только один шейдер: новый выключит предыдущий.",
+            empty_hint="Пока ничего не установлено.\n\n"
+                       "Нажмите «Установить из ZIP...» и выберите архив с шейдером.",
+            kind="shader",
+            list_fn=list_shader_packs,
+            toggle_fn=set_shader_enabled,
+            delete_fn=delete_shader_pack,
+            install_fn=install_shader_pack,
         )
 
     def on_open_install_settings(self) -> None:
