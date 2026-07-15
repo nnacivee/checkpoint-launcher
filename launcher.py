@@ -295,7 +295,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.18.0",
+    "LAUNCHER_VERSION": "1.18.1",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -307,6 +307,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.18.1",
+            "date": "15 июля 2026",
+            "changes": [
+                "Моды, шейдеры и текстур-паки теперь в две колонки — "
+                "крутить вниз вдвое меньше.",
+                "Окна шейдеров и текстур стали шире.",
+            ],
+        },
         {
             "version": "1.18.0",
             "date": "15 июля 2026",
@@ -4648,7 +4657,13 @@ class LauncherApp:
         dialog.configure(bg=colors["bg_panel"])
         dialog.resizable(False, False)
         dialog.transient(self.root)
-        dialog.geometry("640x640")
+        # Широкое окно и две колонки: 12 текстур-паков и 11 шейдеров в один
+        # столбик — это лишняя прокрутка на ровном месте.
+        sw, sh = dialog.winfo_screenwidth(), dialog.winfo_screenheight()
+        pw = max(760, min(1000, sw - 240))
+        ph = max(560, min(720, sh - 220))
+        dialog.geometry("%dx%d+%d+%d" % (pw, ph, (sw - pw) // 2, (sh - ph) // 3))
+        PACK_COLS = 2 if pw >= 760 else 1
         set_titlebar_dark(dialog, self.theme_name == "dark")
 
         outer = tk.Frame(dialog, bg=colors["bg_panel"])
@@ -4685,10 +4700,19 @@ class LauncherApp:
         # Ссылки на картинки держим на self, иначе tkinter не хранит их сам.
         self._pack_icon_refs = {}
 
+        # Счётчик ячеек сетки. Один на оба вида карточек — установленные и
+        # готовые, — чтобы они шли сплошным потоком, а не двумя таблицами.
+        cell = {"n": 0}
+
+        def place(card):
+            card.grid(row=cell["n"] // PACK_COLS, column=cell["n"] % PACK_COLS,
+                      padx=6, pady=4, sticky="nsew")
+            cell["n"] += 1
+
         def build_row(pack):
             card = tk.Frame(scroll_frame, bg=colors["bg_field"],
                             highlightbackground=colors["border"], highlightthickness=1)
-            card.pack(fill="x", padx=8, pady=4)
+            place(card)
             body = tk.Frame(card, bg=colors["bg_field"])
             body.pack(fill="x", padx=10, pady=8)
 
@@ -4784,7 +4808,7 @@ class LauncherApp:
             Modrinth, описание и кнопка «Установить»."""
             card = tk.Frame(scroll_frame, bg=colors["bg_panel"],
                             highlightbackground=colors["border"], highlightthickness=1)
-            card.pack(fill="x", padx=8, pady=4)
+            place(card)
             body = tk.Frame(card, bg=colors["bg_panel"])
             body.pack(fill="x", padx=10, pady=8)
 
@@ -4870,6 +4894,9 @@ class LauncherApp:
             for child in scroll_frame.winfo_children():
                 child.destroy()
             self._pack_icon_refs = {}
+            cell["n"] = 0
+            for c in range(PACK_COLS):
+                scroll_frame.grid_columnconfigure(c, weight=1, uniform="pack")
             packs = list_fn()
             for pack in packs:
                 build_row(pack)
@@ -4881,16 +4908,23 @@ class LauncherApp:
                 available = [cfg for cfg in recommended
                              if (_recommended_pack_filename(cfg["slug"]) or "") not in installed]
                 if available:
+                    # Заголовок ставим с начала ряда и на всю ширину, иначе
+                    # он влез бы во вторую колонку и разорвал сетку.
+                    if cell["n"] % PACK_COLS:
+                        cell["n"] += PACK_COLS - cell["n"] % PACK_COLS
                     tk.Label(scroll_frame, text="ГОТОВЫЕ — СТАВЯТСЯ В ОДИН КЛИК",
                              font=("Segoe UI", 8, "bold"), bg=colors["bg_panel"],
-                             fg=colors["fg_muted"]).pack(anchor="w", padx=14, pady=(12, 4))
+                             fg=colors["fg_muted"]).grid(
+                        row=cell["n"] // PACK_COLS, column=0, columnspan=PACK_COLS,
+                        sticky="w", padx=8, pady=(12, 4))
+                    cell["n"] += PACK_COLS
                     for cfg in available:
                         build_available_row(cfg)
 
             if not packs and not recommended:
                 tk.Label(scroll_frame, text=empty_hint, font=("Segoe UI", 9),
                          bg=colors["bg_panel"], fg=colors["fg_muted"],
-                         justify="left", wraplength=560).pack(anchor="w", padx=14, pady=18)
+                         justify="left", wraplength=560).grid(row=0, column=0, padx=14, pady=18)
 
         def on_install():
             paths = filedialog.askopenfilenames(
@@ -5966,7 +6000,11 @@ class LauncherApp:
         # Поэтому рисуем строки на холсте и только те, что сейчас на экране —
         # штук пятнадцать. Прокрутка дорисовывает по мере надобности.
         ROW_H = 76
-        state["rows"] = {}       # индекс строки -> id нарисованных элементов
+        # Две колонки: при 170 модах одна колонка — это метр прокрутки.
+        # Число колонок считаем от ширины, чтобы на узком окне не сплющилось.
+        COLS = max(1, min(2, (width - 60) // 440))
+        CELL_W = (inner_w - 12) // COLS
+        state["rows"] = {}       # индекс -> id нарисованных элементов
         state["items"] = []
 
         # Цвет полоски слева = категория. Глазами так список читается быстрее,
@@ -5980,49 +6018,60 @@ class LauncherApp:
         }
 
         def draw_row(i, m):
-            y = i * ROW_H
+            x0 = 6 + (i % COLS) * CELL_W
+            y = (i // COLS) * ROW_H
+            right = x0 + CELL_W - 18
             tag = "row%d" % i
             cat_color = CAT_COLORS.get(m["category"], colors["fg_muted"])
-            ids = [grid_cv.create_rectangle(6, y + 4, inner_w - 6, y + ROW_H - 4,
+            ids = [grid_cv.create_rectangle(x0, y + 4, x0 + CELL_W - 12, y + ROW_H - 4,
                                             fill=colors["bg_field"],
                                             outline=colors["border"], tags=(tag,)),
-                   grid_cv.create_rectangle(6, y + 4, 10, y + ROW_H - 4,
+                   grid_cv.create_rectangle(x0, y + 4, x0 + 4, y + ROW_H - 4,
                                             fill=cat_color, outline="", tags=(tag,))]
             photo = self._modlist_refs.get(m["hash"])
             if photo is not None:
-                ids.append(grid_cv.create_image(26, y + ROW_H // 2, image=photo,
+                ids.append(grid_cv.create_image(x0 + 16, y + ROW_H // 2, image=photo,
                                                 anchor="w", tags=(tag,)))
             else:
-                ids.append(grid_cv.create_text(44, y + ROW_H // 2,
+                ids.append(grid_cv.create_text(x0 + 34, y + ROW_H // 2,
                                                text=m["title"][:1].upper(),
                                                font=("Segoe UI", 15, "bold"),
                                                fill=cat_color, tags=(tag,)))
             self._modlist_labels[m["hash"]] = i
 
-            ids.append(grid_cv.create_text(80, y + 17, anchor="w", text=m["title"],
-                                           font=("Segoe UI", 11, "bold"),
+            tx = x0 + 66
+            ids.append(grid_cv.create_text(tx, y + 16, anchor="w", text=m["title"],
+                                           font=("Segoe UI", 10, "bold"),
                                            fill=colors["fg"], tags=(tag,)))
-            # Тег категории «плашкой», как в макете
-            tw = 8 * len(m["category"]) + 14
-            ids.append(grid_cv.create_rectangle(80, y + 30, 80 + tw, y + 46,
+            if m["version"]:
+                ids.append(grid_cv.create_text(right, y + 16, anchor="e",
+                                               text="v" + m["version"],
+                                               font=("Segoe UI", 8, "bold"),
+                                               fill=colors["fg_muted"], tags=(tag,)))
+            # Тег категории плашкой
+            tw = 7 * len(m["category"]) + 12
+            ids.append(grid_cv.create_rectangle(tx, y + 27, tx + tw, y + 41,
                                                 fill="", outline=cat_color, tags=(tag,)))
-            ids.append(grid_cv.create_text(80 + tw // 2, y + 38, text=m["category"],
+            ids.append(grid_cv.create_text(tx + tw // 2, y + 34, text=m["category"],
                                            font=("Segoe UI", 7, "bold"),
                                            fill=cat_color, tags=(tag,)))
+            if m["author"]:
+                ids.append(grid_cv.create_text(right, y + 34, anchor="e",
+                                               text=m["author"][:18],
+                                               font=("Segoe UI", 7),
+                                               fill=colors["fg_muted"], tags=(tag,)))
             if m["description"]:
-                ids.append(grid_cv.create_text(80 + tw + 12, y + 38, anchor="w",
-                                               text=m["description"][:96],
+                # Текст режем по ширине колонки, а не по числу символов наугад.
+                limit = max(20, (CELL_W - 90) // 5)
+                text = m["description"]
+                if len(text) > limit:
+                    text = text[:limit - 1].rstrip(" ,.") + "…"
+                ids.append(grid_cv.create_text(tx, y + 54, anchor="w", text=text,
                                                font=("Segoe UI", 8),
                                                fill=colors["fg_muted"], tags=(tag,)))
-            ids.append(grid_cv.create_text(80, y + 58, anchor="w", text=m["file"],
-                                           font=("Segoe UI", 7),
-                                           fill=colors["border"], tags=(tag,)))
-
-            right = inner_w - 24
             if m["url"]:
-                lid = grid_cv.create_text(right, y + 58, anchor="e",
-                                          text="подробнее ↗",
-                                          font=("Segoe UI", 8, "underline"),
+                lid = grid_cv.create_text(right, y + 54, anchor="e", text="подробнее ↗",
+                                          font=("Segoe UI", 7, "underline"),
                                           fill=colors["accent"], tags=(tag, "lnk%d" % i))
                 ids.append(lid)
                 grid_cv.tag_bind("lnk%d" % i, "<Button-1>",
@@ -6031,26 +6080,20 @@ class LauncherApp:
                                  lambda e: grid_cv.configure(cursor="hand2"))
                 grid_cv.tag_bind("lnk%d" % i, "<Leave>",
                                  lambda e: grid_cv.configure(cursor=""))
-            if m["version"]:
-                ids.append(grid_cv.create_text(right, y + 17, anchor="e",
-                                               text="v" + m["version"],
-                                               font=("Segoe UI", 9, "bold"),
-                                               fill=colors["fg_muted"], tags=(tag,)))
-            if m["author"]:
-                ids.append(grid_cv.create_text(right, y + 36, anchor="e",
-                                               text="Автор: " + m["author"],
-                                               font=("Segoe UI", 8),
-                                               fill=colors["fg_muted"], tags=(tag,)))
             state["rows"][i] = ids
 
         def draw_visible(*_a):
             items = state["items"]
             if not items:
                 return
+            # Считаем в РЯДАХ сетки, а не в элементах: при двух колонках
+            # ряд — это два мода, и без пересчёта половина списка не рисовалась бы.
             top = grid_cv.canvasy(0)
             bottom = top + grid_cv.winfo_height()
-            first = max(0, int(top // ROW_H) - 2)
-            last = min(len(items), int(bottom // ROW_H) + 3)
+            first_row = max(0, int(top // ROW_H) - 2)
+            last_row = int(bottom // ROW_H) + 3
+            first = first_row * COLS
+            last = min(len(items), last_row * COLS)
             for i in list(state["rows"]):
                 if i < first or i >= last:
                     for cid in state["rows"].pop(i):
@@ -6072,7 +6115,8 @@ class LauncherApp:
                                     "Моды не найдены — сборка ещё не установлена.",
                                     font=("Segoe UI", 10), fill=colors["fg_muted"])
                 return
-            grid_cv.configure(scrollregion=(0, 0, inner_w, len(items) * ROW_H))
+            rows = (len(items) + COLS - 1) // COLS      # округляем вверх
+            grid_cv.configure(scrollregion=(0, 0, inner_w, rows * ROW_H))
             grid_cv.yview_moveto(0)
             draw_visible()
 
