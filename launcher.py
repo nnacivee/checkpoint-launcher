@@ -295,7 +295,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.17.1",
+    "LAUNCHER_VERSION": "1.17.2",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -307,6 +307,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.17.2",
+            "date": "15 июля 2026",
+            "changes": [
+                "Список модов больше не тормозит: рисуются только видимые строки.",
+                "Категории наконец появились — раньше всё было «Прочее» "
+                "из-за старого кэша.",
+            ],
+        },
         {
             "version": "1.17.1",
             "date": "15 июля 2026",
@@ -2730,6 +2739,10 @@ def _modrinth_api_post(url: str, payload: dict, timeout: float = 20.0) -> object
 
 
 MOD_LIST_CACHE = APP_DATA_DIR / "mod_list_cache.json"
+# Версия кэша. Обязательна: когда я добавил категории, у всех уже лежал кэш
+# БЕЗ них — код считал моды известными, не перезапрашивал, и в окне всё было
+# «Прочее». Меняешь набор полей — увеличивай число, кэш перечитается сам.
+MOD_CACHE_VERSION = 3
 
 
 def _jar_display_name(path: Path) -> str:
@@ -2776,7 +2789,9 @@ def scan_installed_mods(status_cb=None) -> list:
     cache = {}
     if MOD_LIST_CACHE.exists():
         try:
-            cache = json.loads(MOD_LIST_CACHE.read_text(encoding="utf-8"))
+            raw = json.loads(MOD_LIST_CACHE.read_text(encoding="utf-8"))
+            if isinstance(raw, dict) and raw.get("v") == MOD_CACHE_VERSION:
+                cache = raw.get("items") or {}
         except Exception:  # noqa: BLE001
             cache = {}
 
@@ -2819,10 +2834,14 @@ def scan_installed_mods(status_cb=None) -> list:
         except Exception:  # noqa: BLE001
             pass       # нет сети — покажем то, что вытащим из самих jar
         for h in unknown:
-            cache.setdefault(h, {})
+            # Пустая запись со списком категорий, а не просто {}: иначе моды,
+            # которых нет на Modrinth, перезапрашивались бы при каждом открытии.
+            cache.setdefault(h, {"categories": []})
         try:
             MOD_LIST_CACHE.parent.mkdir(parents=True, exist_ok=True)
-            MOD_LIST_CACHE.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+            MOD_LIST_CACHE.write_text(
+                json.dumps({"v": MOD_CACHE_VERSION, "items": cache}, ensure_ascii=False),
+                encoding="utf-8")
         except OSError:
             pass
 
@@ -5811,58 +5830,20 @@ class LauncherApp:
         box = tk.Frame(outer, bg=colors["bg_panel"],
                        highlightbackground=colors["border"], highlightthickness=1)
         box.pack(fill="both", expand=True)
-        canvas = tk.Canvas(box, bg=colors["bg_panel"], highlightthickness=0)
-        sb = ttk.Scrollbar(box, orient="vertical", command=canvas.yview)
-        grid = tk.Frame(canvas, bg=colors["bg_panel"])
-        grid.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=grid, anchor="nw")
-        canvas.configure(yscrollcommand=sb.set)
-        canvas.pack(side="left", fill="both", expand=True)
+        inner_w = width - 66          # ширина холста под полосу прокрутки
+        grid_cv = tk.Canvas(box, bg=colors["bg_panel"], highlightthickness=0, width=inner_w)
+        sb = ttk.Scrollbar(box, orient="vertical", command=grid_cv.yview)
+        grid_cv.configure(yscrollcommand=sb.set)
+        grid_cv.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
-        canvas.bind_all("<MouseWheel>",
-                        lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
-        dialog.bind("<Destroy>", lambda e: canvas.unbind_all("<MouseWheel>"))
 
-        def card(mod, row, column):
-            c = tk.Frame(grid, bg=colors["bg_field"],
-                         highlightbackground=colors["border"], highlightthickness=1)
-            c.grid(row=row, column=column, padx=6, pady=6, sticky="nsew")
-            body = tk.Frame(c, bg=colors["bg_field"])
-            body.pack(fill="both", expand=True, padx=10, pady=9)
+        def on_wheel(e):
+            grid_cv.yview_scroll(int(-1 * (e.delta / 120)), "units")
+            draw_visible()
 
-            holder = tk.Frame(body, bg=colors["bg_panel"], width=40, height=40)
-            holder.pack(side="left", padx=(0, 10), anchor="n")
-            holder.pack_propagate(False)
-            img = tk.Label(holder, bg=colors["bg_panel"], text=mod["title"][:1].upper(),
-                           fg=colors["accent"], font=("Segoe UI", 14, "bold"))
-            img.pack(fill="both", expand=True)
-            # Готовая картинка ставится сразу; если ещё качается — её поставит
-            # единственный фоновый поток, найдя ярлык вот здесь.
-            photo = self._modlist_refs.get(mod["hash"])
-            if photo is not None:
-                img.configure(image=photo, text="")
-            self._modlist_labels[mod["hash"]] = img
-
-            text = tk.Frame(body, bg=colors["bg_field"])
-            text.pack(side="left", fill="both", expand=True)
-            tk.Label(text, text=mod["title"], font=("Segoe UI", 10, "bold"),
-                     bg=colors["bg_field"], fg=colors["fg"], anchor="w",
-                     wraplength=210, justify="left").pack(anchor="w")
-            tk.Label(text, text=mod["category"], font=("Segoe UI", 8),
-                     bg=colors["bg_field"], fg=colors["accent"], anchor="w").pack(anchor="w")
-            if mod["description"]:
-                tk.Label(text, text=mod["description"], font=("Segoe UI", 8),
-                         bg=colors["bg_field"], fg=colors["fg_muted"], anchor="w",
-                         wraplength=210, justify="left").pack(anchor="w", pady=(2, 0))
-            tk.Label(text, text=mod["file"], font=("Segoe UI", 7),
-                     bg=colors["bg_field"], fg=colors["border"], anchor="w",
-                     wraplength=210, justify="left").pack(anchor="w", pady=(3, 0))
-
-            if mod["url"]:
-                link = tk.Label(text, text="подробнее ↗", font=("Segoe UI", 8, "underline"),
-                                bg=colors["bg_field"], fg=colors["accent"], cursor="hand2")
-                link.pack(anchor="w", pady=(3, 0))
-                link.bind("<Button-1>", lambda e, u=mod["url"]: self._open_link(u, "Modrinth"))
+        grid_cv.bind_all("<MouseWheel>", on_wheel)
+        grid_cv.bind("<Configure>", lambda e: draw_visible())
+        dialog.bind("<Destroy>", lambda e: grid_cv.unbind_all("<MouseWheel>"))
 
         def visible():
             q = state["query"].strip().lower()
@@ -5877,23 +5858,88 @@ class LauncherApp:
                 out.append(m)
             return out
 
+        # ---- Список рисуется НА ХОЛСТЕ и только видимая часть ----
+        # 170 модов — это ~1000 виджетов tkinter. Их создание занимает секунды,
+        # и никакая возня с потоками этого не лечит: тормозит само построение.
+        # Поэтому рисуем строки на холсте и только те, что сейчас на экране —
+        # штук пятнадцать. Прокрутка дорисовывает по мере надобности.
+        ROW_H = 76
+        state["rows"] = {}       # индекс строки -> id нарисованных элементов
+        state["items"] = []
+
+        def draw_row(i, m):
+            y = i * ROW_H
+            tag = "row%d" % i
+            ids = [grid_cv.create_rectangle(6, y + 4, inner_w - 6, y + ROW_H - 4,
+                                            fill=colors["bg_field"],
+                                            outline=colors["border"], tags=(tag,))]
+            photo = self._modlist_refs.get(m["hash"])
+            if photo is not None:
+                ids.append(grid_cv.create_image(22, y + ROW_H // 2, image=photo,
+                                                anchor="w", tags=(tag,)))
+            else:
+                ids.append(grid_cv.create_text(38, y + ROW_H // 2,
+                                               text=m["title"][:1].upper(),
+                                               font=("Segoe UI", 15, "bold"),
+                                               fill=colors["accent"], tags=(tag,)))
+            self._modlist_labels[m["hash"]] = i
+            ids.append(grid_cv.create_text(76, y + 18, anchor="w", text=m["title"],
+                                           font=("Segoe UI", 11, "bold"),
+                                           fill=colors["fg"], tags=(tag,)))
+            ids.append(grid_cv.create_text(76, y + 38, anchor="w", text=m["category"],
+                                           font=("Segoe UI", 8, "bold"),
+                                           fill=colors["accent"], tags=(tag,)))
+            if m["description"]:
+                ids.append(grid_cv.create_text(76, y + 56, anchor="w",
+                                               text=m["description"][:120],
+                                               font=("Segoe UI", 8),
+                                               fill=colors["fg_muted"], tags=(tag,)))
+            if m["url"]:
+                lid = grid_cv.create_text(inner_w - 24, y + ROW_H // 2, anchor="e",
+                                          text="подробнее ↗",
+                                          font=("Segoe UI", 8, "underline"),
+                                          fill=colors["accent"], tags=(tag, "lnk%d" % i))
+                ids.append(lid)
+                grid_cv.tag_bind("lnk%d" % i, "<Button-1>",
+                                 lambda e, u=m["url"]: self._open_link(u, "Modrinth"))
+                grid_cv.tag_bind("lnk%d" % i, "<Enter>",
+                                 lambda e: grid_cv.configure(cursor="hand2"))
+                grid_cv.tag_bind("lnk%d" % i, "<Leave>",
+                                 lambda e: grid_cv.configure(cursor=""))
+            state["rows"][i] = ids
+
+        def draw_visible(*_a):
+            items = state["items"]
+            if not items:
+                return
+            top = grid_cv.canvasy(0)
+            bottom = top + grid_cv.winfo_height()
+            first = max(0, int(top // ROW_H) - 2)
+            last = min(len(items), int(bottom // ROW_H) + 3)
+            for i in list(state["rows"]):
+                if i < first or i >= last:
+                    for cid in state["rows"].pop(i):
+                        grid_cv.delete(cid)
+            for i in range(first, last):
+                if i not in state["rows"]:
+                    draw_row(i, items[i])
+
         def render():
-            for ch in grid.winfo_children():
-                ch.destroy()
+            grid_cv.delete("all")
+            state["rows"].clear()
             self._modlist_labels.clear()
             items = visible()
+            state["items"] = items
             if not items:
-                tk.Label(grid, text="Ничего не найдено." if state["query"] else
-                         "Моды не найдены — сборка ещё не установлена.",
-                         font=("Segoe UI", 10), bg=colors["bg_panel"],
-                         fg=colors["fg_muted"]).grid(row=0, column=0, padx=16, pady=16)
+                grid_cv.configure(scrollregion=(0, 0, inner_w, 100))
+                grid_cv.create_text(inner_w // 2, 40, text="Ничего не найдено."
+                                    if state["query"] else
+                                    "Моды не найдены — сборка ещё не установлена.",
+                                    font=("Segoe UI", 10), fill=colors["fg_muted"])
                 return
-            columns = max(1, (width - 60) // 300)
-            for i, m in enumerate(items):
-                card(m, i // columns, i % columns)
-            for c in range(columns):
-                grid.grid_columnconfigure(c, weight=1)
-            canvas.yview_moveto(0)
+            grid_cv.configure(scrollregion=(0, 0, inner_w, len(items) * ROW_H))
+            grid_cv.yview_moveto(0)
+            draw_visible()
 
         def on_type(*_a):
             # Перерисовываем не на каждую букву, а через паузу: перебор 170
@@ -5920,11 +5966,14 @@ class LauncherApp:
 
                 def apply(mm=m, im=image):
                     try:
-                        photo = ImageTk.PhotoImage(im)
-                        self._modlist_refs[mm["hash"]] = photo
-                        label = self._modlist_labels.get(mm["hash"])
-                        if label is not None and label.winfo_exists():
-                            label.configure(image=photo, text="")
+                        self._modlist_refs[mm["hash"]] = ImageTk.PhotoImage(im)
+                        # Строка могла уже уехать за экран — тогда просто
+                        # запомнили картинку, её нарисуют при прокрутке.
+                        i = self._modlist_labels.get(mm["hash"])
+                        if i is not None and i in state["rows"]:
+                            for cid in state["rows"].pop(i):
+                                grid_cv.delete(cid)
+                            draw_row(i, state["items"][i])
                     except Exception:  # noqa: BLE001
                         pass
                 try:
