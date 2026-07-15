@@ -298,7 +298,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.18.4",
+    "LAUNCHER_VERSION": "1.19.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -310,6 +310,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.19.0",
+            "date": "15 июля 2026",
+            "changes": [
+                "Рядом с ником теперь видна голова из вашего скина — "
+                "сразу понятно, что скин применился.",
+                "Полоса загрузки больше не висит синей после запуска игры.",
+                "Строка с версиями стала спокойнее и не спорит со статусом сервера.",
+            ],
+        },
         {
             "version": "1.18.4",
             "date": "15 июля 2026",
@@ -3416,6 +3426,39 @@ def get_localskin_dir() -> Path:
     return INSTANCE_DIR / "CustomSkinLoader" / "LocalSkin"
 
 
+def render_player_head(username: str, size: int = 44):
+    """Голова игрока из его же скина — показываем рядом с ником в главном окне.
+
+    Лицо лежит в развёртке по (8,8)-(16,16), «шляпный» слой поверх — (40,8)-(48,16).
+    Координаты даны для скина 64×64, но скины бывают HD (128, 256 и больше),
+    поэтому всё умножаем на реальный масштаб — иначе у HD-скина вырежется
+    случайный кусок затылка.
+
+    Увеличиваем строго NEAREST: пиксель-арт сглаживать нельзя, превратится в кашу.
+    """
+    if not (_PIL_OK and username):
+        return None
+    path = get_localskin_dir() / "skins" / (username.strip() + ".png")
+    if not path.exists():
+        return None
+    try:
+        skin = Image.open(path).convert("RGBA")
+        scale = skin.width // 64
+        if scale < 1:
+            return None
+
+        def box(x0, y0, x1, y1):
+            return (x0 * scale, y0 * scale, x1 * scale, y1 * scale)
+
+        head = skin.crop(box(8, 8, 16, 16)).resize((size, size), Image.NEAREST)
+        hat = skin.crop(box(40, 8, 48, 16))
+        if hat.getbbox():                       # шляпный слой есть не у всех
+            head.alpha_composite(hat.resize((size, size), Image.NEAREST))
+        return head
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _validate_skin_png(path: Path, kind: str) -> None:
     """Проверяем, что это действительно PNG-скин: и обычный 64×64, и старый
     64×32 годятся, у плаща пропорции 2:1. Иначе игра просто не покажет
@@ -4345,27 +4388,44 @@ class LauncherApp:
         left = 36
         muted = colors["fg_muted"]
 
-        # --- слева: ник и сведения о сборке ---
-        cv.create_text(left, top + 10, text="ВАШ НИК", font=("Segoe UI", 8, "bold"),
+        # --- слева: голова, ник и сведения о сборке ---
+        # Голову рисуем из выбранного скина: сразу видно, что скин применился,
+        # и не надо заходить в игру, чтобы это проверить.
+        HEAD = 38
+        self._head_plate = render_rounded(HEAD + 6, HEAD + 6, 9,
+                                          (26, 33, 44, 240), (255, 255, 255, 50))
+        if self._head_plate is not None:
+            self._img_refs["head_plate"] = ImageTk.PhotoImage(self._head_plate)
+            cv.create_image(left, top + 25, image=self._img_refs["head_plate"], anchor="nw")
+        self.head_item = cv.create_image(left + 3, top + 28, anchor="nw")
+        self._refresh_head()
+
+        nx = left + HEAD + 18
+        cv.create_text(nx, top + 10, text="ВАШ НИК", font=("Segoe UI", 8, "bold"),
                        fill=muted, anchor="nw")
 
-        field = render_rounded(300, 38, 9, (26, 33, 44, 240), (255, 255, 255, 50))
+        field = render_rounded(256, 38, 9, (26, 33, 44, 240), (255, 255, 255, 50))
         if field is not None:
             self._img_refs["field"] = ImageTk.PhotoImage(field)
-            cv.create_image(left, top + 25, image=self._img_refs["field"], anchor="nw")
+            cv.create_image(nx, top + 25, image=self._img_refs["field"], anchor="nw")
         nick_entry = tk.Entry(
             cv, textvariable=self.nick_var, font=("Segoe UI", 13),
             bg="#1a2230", fg=colors["fg"], insertbackground=colors["fg"],
             relief="flat", highlightthickness=0, bd=0,
         )
-        cv.create_window(left + 12, top + 44, window=nick_entry, anchor="w", width=276, height=24)
+        cv.create_window(nx + 12, top + 44, window=nick_entry, anchor="w", width=232, height=24)
+        # Ник поменяли — голова должна догнать: скины лежат по имени файла.
+        self.nick_var.trace_add("write", lambda *_a: self._refresh_head())
 
-        cv.create_text(left, top + 72, anchor="nw", font=("Segoe UI", 8, "bold"),
-                       fill=colors["accent"],
-                       text="MINECRAFT %s  ·  %s  ·  ВЕРСИЯ ЛАУНЧЕРА %s" % (
+        # Версии — служебная справка, а не заголовок. Раньше она была жирной и
+        # акцентным цветом: спорила за внимание со статусом сервера, который
+        # куда важнее. Приглушаем, чтобы порядок чтения был правильный.
+        cv.create_text(left, top + 72, anchor="nw", font=("Segoe UI", 8),
+                       fill=muted,
+                       text="Minecraft %s  ·  %s  ·  лаунчер %s" % (
                            CONFIG["MC_VERSION"],
                            LOADER_DISPLAY_NAMES.get(CONFIG["MOD_LOADER"],
-                                                    CONFIG["MOD_LOADER"].capitalize()).upper(),
+                                                    CONFIG["MOD_LOADER"].capitalize()),
                            CONFIG.get("LAUNCHER_VERSION", "?")))
         self.server_status_label = _CanvasText(
             cv, cv.create_text(left, top + 89, anchor="nw", font=("Segoe UI", 9, "bold"),
@@ -4403,7 +4463,8 @@ class LauncherApp:
         # Полосу прогресса подняли НАД статусом. Длинный статус («Игра
         # запущена! Лаунчер откроется снова…») переносится на две строки и
         # раньше налезал на полосу — снизу места нет, окно кончается.
-        cv.create_rectangle(px, top + 76, px + pw, top + 82, fill="#2b3543", outline="")
+        self.progress_track = cv.create_rectangle(px, top + 76, px + pw, top + 82,
+                                                  fill="#2b3543", outline="")
         self.progress_item = cv.create_rectangle(px, top + 76, px, top + 82,
                                                  fill=colors["accent"], outline="")
         self._progress_geom = (px, top + 76, pw, top + 82)
@@ -4447,13 +4508,42 @@ class LauncherApp:
         cv.tag_bind("upd", "<Enter>", lambda _e: cv.configure(cursor="hand2"))
         cv.tag_bind("upd", "<Leave>", lambda _e: cv.configure(cursor=""))
 
+    def _refresh_head(self) -> None:
+        """Перерисовывает голову рядом с ником. Вызывается при смене ника и
+        после установки скина.
+
+        Всё завёрнуто в try: файла может не быть, он может оказаться битым, а
+        окно к моменту вызова — уже закрытым. Ни один из этих случаев не повод
+        ронять лаунчер: просто останется пустое место.
+        """
+        try:
+            head = render_player_head(self.nick_var.get(), 38)
+            if head is None:
+                self._img_refs.pop("head", None)
+                self.canvas.itemconfig(self.head_item, image="")
+                return
+            self._img_refs["head"] = ImageTk.PhotoImage(head)
+            self.canvas.itemconfig(self.head_item, image=self._img_refs["head"])
+        except (tk.TclError, AttributeError, KeyError):
+            pass
+
     def _redraw_progress(self) -> None:
         """Прогресс рисуем сами прямоугольником: обычный ttk-виджет на арте
-        выглядел бы серой плашкой со своим фоном."""
+        выглядел бы серой плашкой со своим фоном.
+
+        На 0 и 100 полосу прячем целиком. Иначе после запуска игры она
+        оставалась залитой синим навсегда и выглядела не как прогресс, а как
+        случайная линия под кнопкой.
+        """
         try:
             x, y0, w, y1 = self._progress_geom
             pct = max(0, min(100, int(self.progress_var.get())))
-            self.canvas.coords(self.progress_item, x, y0, x + w * pct / 100.0, y1)
+            idle = pct in (0, 100)
+            state = "hidden" if idle else "normal"
+            self.canvas.itemconfig(self.progress_track, state=state)
+            self.canvas.itemconfig(self.progress_item, state=state)
+            if not idle:
+                self.canvas.coords(self.progress_item, x, y0, x + w * pct / 100.0, y1)
         except (tk.TclError, AttributeError):
             pass
 
@@ -5198,6 +5288,7 @@ class LauncherApp:
                             "Готово: «%s». Теперь перезайдите на сервер — "
                             "скин подхватится при входе." % item["name"])
                         render()
+                        self._refresh_head()   # голова в главном окне
                 dialog.after(0, done)
 
             threading.Thread(target=worker, daemon=True).start()
@@ -5215,6 +5306,7 @@ class LauncherApp:
                 return
             status_var.set("Свой файл применён.")
             render()
+            self._refresh_head()
 
         def on_clear():
             try:
@@ -5224,6 +5316,7 @@ class LauncherApp:
                 return
             status_var.set("Выбор убран.")
             render()
+            self._refresh_head()
 
         # ---- Карточка ----
         def build_card(item, row, column, selected):
