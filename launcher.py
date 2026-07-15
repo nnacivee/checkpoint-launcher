@@ -298,7 +298,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.19.0",
+    "LAUNCHER_VERSION": "1.19.1",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -310,6 +310,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.19.1",
+            "date": "15 июля 2026",
+            "changes": [
+                "Если файл игры скачался повреждённым, лаунчер теперь сам "
+                "перекачивает именно его и запускается дальше. Раньше "
+                "появлялась непонятная ошибка, и помогала только полная "
+                "переустановка.",
+            ],
+        },
         {
             "version": "1.19.0",
             "date": "15 июля 2026",
@@ -3771,6 +3781,33 @@ def apply_low_end_mode(enabled: bool, status_cb=None) -> None:
 REPAIRABLE_FOLDERS = ["versions", "libraries", "assets", "mods", "config",
                       "resourcepacks", "shaderpacks", "kubejs"]
 
+# minecraft-launcher-lib сверяет sha1 у каждого файла ассетов. Если файл
+# скачался битым — оборвалась связь, вмешался антивирус, диск икнул — она
+# бросает ошибку с полным путём, и запуск умирает намертво. Игроку при этом
+# показывалось «покажите это сообщение автору сборки», хотя чинится всё само.
+#
+# Ищем именно путь с буквой диска и не выходим за строку. Наивное "(.+?)"
+# с re.S хватало и текст ПЕРЕД путём, если библиотека обернула ошибку в
+# своё сообщение, — путь получался мусорный и файл не находился.
+_CHECKSUM_ERROR_RE = re.compile(r"([A-Za-z]:[\\/][^\n]*?)\s+has the wrong Checksum")
+
+
+def find_corrupted_file(error) -> "Path | None":
+    """Достаёт путь к битому файлу из ошибки библиотеки запуска.
+
+    Возвращает None, если это другая ошибка или путь ведёт за пределы нашей
+    установки — удалять что попало по тексту исключения нельзя.
+    """
+    match = _CHECKSUM_ERROR_RE.search(str(error))
+    if not match:
+        return None
+    try:
+        path = Path(match.group(1).strip())
+        path.relative_to(INSTANCE_DIR)      # бросит ValueError, если файл чужой
+    except (ValueError, OSError):
+        return None
+    return path if path.is_file() else None
+
 
 def repair_installation(status_cb=None, progress_cb=None) -> None:
     """Полностью удаляет файлы установки Minecraft/NeoForge/модов и сбрасывает
@@ -5971,7 +6008,22 @@ class LauncherApp:
         def worker():
             game_started = False
             try:
-                process = work_fn()
+                try:
+                    process = work_fn()
+                except Exception as first:  # noqa: BLE001
+                    # Битый файл ассетов — самая частая «неведомая» ошибка у
+                    # игроков. Лечится удалением одного файла: библиотека
+                    # скачает его заново. Раньше приходилось жать «Починить»
+                    # и качать сотни мегабайт из-за пяти килобайт.
+                    bad = find_corrupted_file(first)
+                    if bad is None:
+                        raise
+                    self.set_status("Файл повреждён, скачиваю заново: %s" % bad.name)
+                    try:
+                        bad.unlink()
+                    except OSError:
+                        raise first        # не удалось удалить — отдаём исходную ошибку
+                    process = work_fn()    # вторая попытка; упадёт — покажем как обычно
                 if process is not None:
                     game_started = True
                     self.game_process = process
