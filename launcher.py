@@ -295,7 +295,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.18.1",
+    "LAUNCHER_VERSION": "1.18.2",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -307,6 +307,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.18.2",
+            "date": "15 июля 2026",
+            "changes": [
+                "Лаунчер снова открывается сам после обновления.",
+                "Сообщение о новой версии стало заметным — синей плашкой, "
+                "а не бледной строчкой на фоне.",
+                "Появилась ссылка «проверить обновления» — не нужно ждать.",
+            ],
+        },
         {
             "version": "1.18.1",
             "date": "15 июля 2026",
@@ -4346,6 +4356,8 @@ class LauncherApp:
         links = []
         if CONFIG.get("LAUNCHER_CHANGELOG"):
             links.append(("что нового", self.on_show_changelog))
+        if CONFIG.get("GITHUB_REPO"):
+            links.append(("проверить обновления", self.on_check_update_now))
         if CONFIG.get("TEST_SERVER_ADDRESS"):
             links.append(("тест localhost", self.on_play_test))
         lx = left
@@ -4382,13 +4394,34 @@ class LauncherApp:
         self.progress_var.trace_add("write", lambda *a: self._redraw_progress())
         self._redraw_progress()
 
-        # Баннер обновления живёт над плитками, чтобы не толкать нижнюю полосу.
+        # Баннер обновления — плашкой, а не бледной строчкой поверх арта:
+        # мелкий текст на картинке просто не замечали.
+        by = height - BAR_H - 116
+        plate = render_rounded(460, 34, 17, _hex_to_rgb(colors["accent"]) + (235,))
+        if plate is not None:
+            self._img_refs["upd_plate"] = ImageTk.PhotoImage(plate)
+            self.update_plate = cv.create_image(width // 2, by, anchor="center",
+                                                image=self._img_refs["upd_plate"],
+                                                tags=("upd",), state="hidden")
+        else:
+            self.update_plate = cv.create_rectangle(width // 2 - 230, by - 17,
+                                                    width // 2 + 230, by + 17,
+                                                    fill=colors["accent"], outline="",
+                                                    tags=("upd",), state="hidden")
         self.update_banner = _CanvasText(
-            cv, cv.create_text(width // 2, height - BAR_H - 104, anchor="center",
-                               font=("Segoe UI", 10, "bold"), fill=colors["accent"],
+            cv, cv.create_text(width // 2, by, anchor="center",
+                               font=("Segoe UI", 10, "bold"), fill="#ffffff",
                                text=self.update_banner_var.get(), tags=("upd",)))
-        self.update_banner_var.trace_add(
-            "write", lambda *a: self.update_banner.set_text(self.update_banner_var.get()))
+
+        def show_banner(*_a):
+            text = self.update_banner_var.get()
+            self.update_banner.set_text(text)
+            try:
+                cv.itemconfig(self.update_plate, state="normal" if text else "hidden")
+            except tk.TclError:
+                pass
+
+        self.update_banner_var.trace_add("write", show_banner)
         cv.tag_bind("upd", "<Button-1>", lambda _e: self.on_open_update())
         cv.tag_bind("upd", "<Enter>", lambda _e: cv.configure(cursor="hand2"))
         cv.tag_bind("upd", "<Leave>", lambda _e: cv.configure(cursor=""))
@@ -6370,6 +6403,35 @@ class LauncherApp:
         except tk.TclError:
             pass    # окно закрыли
 
+    def on_check_update_now(self) -> None:
+        """Проверить обновления по кнопке.
+
+        Нужна не только для удобства: если баннер не появляется, по этой
+        кнопке сразу видно, в чём дело — нет сети, нет новой версии или
+        что-то сломалось. Иначе приходится гадать и ждать пять минут.
+        """
+        self.set_status("Проверяю обновления…")
+
+        def worker():
+            try:
+                info = check_for_launcher_update()
+                err = ""
+            except Exception as exc:  # noqa: BLE001
+                info, err = None, str(exc)
+
+            def done():
+                if err:
+                    self.set_status("Не удалось проверить обновления: %s" % err)
+                elif info:
+                    self._apply_update_info(info)
+                    self.set_status("Найдена версия %s" % info.get("version", "?"))
+                else:
+                    self.set_status("У вас последняя версия — %s"
+                                    % CONFIG.get("LAUNCHER_VERSION", "?"))
+            self.root.after(0, done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def _apply_update_info(self, info: dict) -> None:
         self.update_info = info
         self.update_banner_var.set(
@@ -6452,22 +6514,29 @@ class LauncherApp:
         Скрипт кладём во ВРЕМЕННУЮ папку, а пути передаём аргументами (%1/%2),
         а не вписываем в текст: иначе кириллица в пути ломает .bat."""
         bat = Path(tempfile.gettempdir()) / ("checkpoint_update_%d.bat" % os.getpid())
+        # Лаунчер отсюда НЕ запускаем — это делает сам установщик (см. installer.iss,
+        # секция [Run] без skipifsilent). Раньше запускал этот скрипт, и лаунчер
+        # не открывался: setup.exe от Inno завершается сразу, не дожидаясь конца
+        # установки, скрипт стартовал лаунчер посреди копирования файлов, а
+        # CloseApplications=force его убивал.
         script = (
             "@echo off\r\n"
             # Ждём, пока лаунчер закроется, иначе установщик упрётся в занятые файлы.
             "ping -n 3 127.0.0.1 >nul\r\n"
             # /VERYSILENT — без окон и вопросов, /NORESTART — не трогать систему.
             "%1 /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /NOCANCEL\r\n"
-            "ping -n 2 127.0.0.1 >nul\r\n"
-            'start "" %2\r\n'
+            # Установщик работает своим чередом и сам поднимет лаунчер.
+            # Ждём и подчищаем за собой.
+            "ping -n 12 127.0.0.1 >nul\r\n"
             'del %1 >nul 2>&1\r\n'
             'del "%~f0" >nul 2>&1\r\n'
         )
         try:
             bat.write_text(script, encoding="ascii")
             CREATE_NO_WINDOW = 0x08000000  # скрипт работает без чёрного окна
-            # %1 — установщик, %2 — сам лаунчер (его же и запустим обратно).
-            subprocess.Popen(["cmd", "/c", str(bat), str(new_exe), str(cur_exe)],
+            # %1 — установщик. Путь к лаунчеру больше не передаём: запускает его
+            # сам установщик, когда действительно закончит.
+            subprocess.Popen(["cmd", "/c", str(bat), str(new_exe)],
                              creationflags=CREATE_NO_WINDOW, close_fds=True)
             self.update_banner_var.set("✅  Обновление установлено, перезапуск…")
             self.root.after(400, self.root.destroy)
