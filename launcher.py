@@ -295,7 +295,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.18.2",
+    "LAUNCHER_VERSION": "1.18.3",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -307,6 +307,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.18.3",
+            "date": "15 июля 2026",
+            "changes": [
+                "Шейдеры и ресурс-паки: правая колонка больше не обрезается — "
+                "кнопка «Установить» на месте у всех.",
+                "Окно шейдеров и ресурс-паков теперь можно растянуть.",
+                "Колонки и текст подстраиваются под ширину окна.",
+            ],
+        },
         {
             "version": "1.18.2",
             "date": "15 июля 2026",
@@ -4688,15 +4698,25 @@ class LauncherApp:
         dialog = tk.Toplevel(self.root)
         dialog.title(title)
         dialog.configure(bg=colors["bg_panel"])
-        dialog.resizable(False, False)
         dialog.transient(self.root)
+        # Окно тянется. Раньше стояло resizable(False, False), и когда карточки
+        # не влезали в две колонки, правый столбец обрезался вместе с кнопкой
+        # «Установить» — поставить эти паки было physически нечем.
+        dialog.resizable(True, True)
         # Широкое окно и две колонки: 12 текстур-паков и 11 шейдеров в один
         # столбик — это лишняя прокрутка на ровном месте.
         sw, sh = dialog.winfo_screenwidth(), dialog.winfo_screenheight()
-        pw = max(760, min(1000, sw - 240))
-        ph = max(560, min(720, sh - 220))
+        pw = max(760, min(1060, sw - 160))
+        ph = max(560, min(760, sh - 200))
         dialog.geometry("%dx%d+%d+%d" % (pw, ph, (sw - pw) // 2, (sh - ph) // 3))
-        PACK_COLS = 2 if pw >= 760 else 1
+        dialog.minsize(560, 480)
+        # Минимальная ширина карточки: иконка 76 + текст ~250 + кнопка ~110.
+        # Уже этого — кнопка начинает наезжать на описание.
+        CARD_MIN = 440
+        # Колонки и перенос текста считаются от реальной ширины окна, а не
+        # задаются числом: иначе на другом разрешении вёрстка снова разъедется.
+        grid = {"cols": 2, "cell": 480}
+        wrap_labels = []
         set_titlebar_dark(dialog, self.theme_name == "dark")
 
         outer = tk.Frame(dialog, bg=colors["bg_panel"])
@@ -4719,10 +4739,36 @@ class LauncherApp:
         scroll_frame = tk.Frame(canvas, bg=colors["bg_panel"])
         scroll_frame.bind("<Configure>",
                           lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        window_id = canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+
+        def relayout(event):
+            """Подгоняем содержимое под ширину окна. Без этого внутренняя рамка
+            жила своей шириной по запросу детей и вылезала за край холста —
+            прокрутки вбок нет, поэтому правая колонка просто пропадала."""
+            avail = event.width
+            canvas.itemconfigure(window_id, width=avail)
+            cols = max(1, min(2, avail // CARD_MIN))
+            cell = (avail - 12 * cols) // cols
+            grid["cell"] = cell
+            # Описание переносим по ширине ячейки, иначе метка требует свои 330
+            # пикселей и снова распирает сетку.
+            wrap = max(150, cell - 200)
+            for label in wrap_labels:
+                try:
+                    label.configure(wraplength=wrap)
+                except Exception:
+                    pass
+            if cols != grid["cols"]:
+                grid["cols"] = cols
+                # Пересобираем только при смене числа колонок, а не на каждый
+                # пиксель: иконки лежат в кэше на диске, но перестроение сотни
+                # виджетов на каждом движении мышью — это заметный рывок.
+                dialog.after_idle(refresh)
+
+        canvas.bind("<Configure>", relayout)
 
         def on_mousewheel(event):
             canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
@@ -4738,7 +4784,8 @@ class LauncherApp:
         cell = {"n": 0}
 
         def place(card):
-            card.grid(row=cell["n"] // PACK_COLS, column=cell["n"] % PACK_COLS,
+            cols = grid["cols"]
+            card.grid(row=cell["n"] // cols, column=cell["n"] % cols,
                       padx=6, pady=4, sticky="nsew")
             cell["n"] += 1
 
@@ -4832,9 +4879,11 @@ class LauncherApp:
             tk.Label(mid, text=pack["name"], font=("Segoe UI", 11, "bold"),
                      bg=colors["bg_field"], fg=colors["fg"], anchor="w").pack(anchor="w")
             if pack.get("description"):
-                tk.Label(mid, text=pack["description"], font=("Segoe UI", 8),
-                         bg=colors["bg_field"], fg=colors["fg_muted"], anchor="w",
-                         justify="left", wraplength=330).pack(anchor="w")
+                desc = tk.Label(mid, text=pack["description"], font=("Segoe UI", 8),
+                                bg=colors["bg_field"], fg=colors["fg_muted"], anchor="w",
+                                justify="left", wraplength=max(150, grid["cell"] - 200))
+                desc.pack(anchor="w")
+                wrap_labels.append(desc)
 
         def build_available_row(cfg):
             """Строка готового пака, который ещё не установлен: превью с
@@ -4917,9 +4966,11 @@ class LauncherApp:
             else:
                 tk.Label(title_row, text="  готовый пак", font=("Segoe UI", 8),
                          bg=colors["bg_panel"], fg=colors["accent"]).pack(side="left")
-            tk.Label(mid, text=cfg.get("description", ""), font=("Segoe UI", 8),
-                     bg=colors["bg_panel"], fg=colors["fg_muted"], anchor="w",
-                     justify="left", wraplength=330).pack(anchor="w")
+            desc = tk.Label(mid, text=cfg.get("description", ""), font=("Segoe UI", 8),
+                            bg=colors["bg_panel"], fg=colors["fg_muted"], anchor="w",
+                            justify="left", wraplength=max(150, grid["cell"] - 200))
+            desc.pack(anchor="w")
+            wrap_labels.append(desc)
             tk.Label(mid, textvariable=state, font=("Segoe UI", 8),
                      bg=colors["bg_panel"], fg=colors["fg_muted"], anchor="w").pack(anchor="w")
 
@@ -4927,9 +4978,17 @@ class LauncherApp:
             for child in scroll_frame.winfo_children():
                 child.destroy()
             self._pack_icon_refs = {}
+            # Метки уничтожены вместе с карточками — иначе список рос бы вечно
+            # и мы дёргали бы configure у мёртвых виджетов.
+            wrap_labels.clear()
             cell["n"] = 0
-            for c in range(PACK_COLS):
-                scroll_frame.grid_columnconfigure(c, weight=1, uniform="pack")
+            cols = grid["cols"]
+            # Снимаем вес со старых колонок: при переходе 2 → 1 вторая колонка
+            # осталась бы растянутой и держала пустое место справа.
+            for c in range(4):
+                scroll_frame.grid_columnconfigure(
+                    c, weight=1 if c < cols else 0,
+                    uniform="pack" if c < cols else "")
             packs = list_fn()
             for pack in packs:
                 build_row(pack)
@@ -4943,21 +5002,24 @@ class LauncherApp:
                 if available:
                     # Заголовок ставим с начала ряда и на всю ширину, иначе
                     # он влез бы во вторую колонку и разорвал сетку.
-                    if cell["n"] % PACK_COLS:
-                        cell["n"] += PACK_COLS - cell["n"] % PACK_COLS
+                    if cell["n"] % cols:
+                        cell["n"] += cols - cell["n"] % cols
                     tk.Label(scroll_frame, text="ГОТОВЫЕ — СТАВЯТСЯ В ОДИН КЛИК",
                              font=("Segoe UI", 8, "bold"), bg=colors["bg_panel"],
                              fg=colors["fg_muted"]).grid(
-                        row=cell["n"] // PACK_COLS, column=0, columnspan=PACK_COLS,
+                        row=cell["n"] // cols, column=0, columnspan=cols,
                         sticky="w", padx=8, pady=(12, 4))
-                    cell["n"] += PACK_COLS
+                    cell["n"] += cols
                     for cfg in available:
                         build_available_row(cfg)
 
             if not packs and not recommended:
-                tk.Label(scroll_frame, text=empty_hint, font=("Segoe UI", 9),
-                         bg=colors["bg_panel"], fg=colors["fg_muted"],
-                         justify="left", wraplength=560).grid(row=0, column=0, padx=14, pady=18)
+                hint = tk.Label(scroll_frame, text=empty_hint, font=("Segoe UI", 9),
+                                bg=colors["bg_panel"], fg=colors["fg_muted"],
+                                justify="left",
+                                wraplength=max(150, grid["cell"] * grid["cols"] - 40))
+                hint.grid(row=0, column=0, columnspan=cols, padx=14, pady=18, sticky="w")
+                wrap_labels.append(hint)
 
         def on_install():
             paths = filedialog.askopenfilenames(
