@@ -295,7 +295,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.17.3",
+    "LAUNCHER_VERSION": "1.18.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -307,6 +307,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.18.0",
+            "date": "15 июля 2026",
+            "changes": [
+                "Все 170 модов теперь с русскими названиями и описаниями — "
+                "включая те, которых нет на Modrinth.",
+                "Список показывает автора, версию и категорию цветной меткой.",
+                "Появилась сортировка: по названию, категории или размеру.",
+                "В шапке видно, сколько модов, библиотек и сколько весит сборка.",
+            ],
+        },
         {
             "version": "1.17.3",
             "date": "15 июля 2026",
@@ -2788,6 +2799,48 @@ def _jar_display_name(path: Path) -> str:
     return re.sub(r"[-_]?\d[\d.]*.*$", "", path.stem).replace("-", " ").replace("_", " ").strip() or path.stem
 
 
+_MODS_RU_CACHE = {"keys": None, "data": None}
+
+
+def load_mods_ru():
+    """Русские названия и описания модов из mods_ru.json.
+
+    Ключ — узнаваемый кусок имени jar. Ищем от САМОГО ДЛИННОГО ключа к
+    короткому: иначе 'create' перехватил бы все сорок аддонов Create, и
+    'create_winery' стал бы просто «Create».
+    """
+    if _MODS_RU_CACHE["data"] is not None:
+        return _MODS_RU_CACHE
+    data = {}
+    try:
+        raw = json.loads(resource_path("mods_ru.json").read_text(encoding="utf-8"))
+        data = raw.get("mods") or {}
+    except Exception:  # noqa: BLE001
+        data = {}
+    _MODS_RU_CACHE["data"] = data
+    _MODS_RU_CACHE["keys"] = sorted(data, key=len, reverse=True)
+    return _MODS_RU_CACHE
+
+
+def mod_ru_info(jar_name: str):
+    """[название, описание, категория] или None."""
+    ru = load_mods_ru()
+    low = jar_name.lower()
+    for key in ru["keys"]:
+        if key in low:
+            return ru["data"][key]
+    return None
+
+
+def _jar_version(jar_name: str) -> str:
+    """Версия из имени файла: 'jade-1.21.1-15.10.5.jar' -> '15.10.5'.
+    Номер версии Minecraft отбрасываем — он у всех одинаковый."""
+    stem = re.sub(r"\.jar$", "", jar_name, flags=re.I)
+    parts = re.findall(r"\d+(?:\.\d+)+", stem)
+    parts = [p for p in parts if not p.startswith(("1.21", "1.20", "1.19"))]
+    return parts[-1] if parts else ""
+
+
 def scan_installed_mods(status_cb=None) -> list:
     """Реальный список модов из папки mods/: название, описание, иконка.
 
@@ -2847,6 +2900,7 @@ def scan_installed_mods(status_cb=None) -> list:
                             "description": (p.get("description") or "")[:160],
                             "icon": p.get("icon_url") or "",
                             "slug": p.get("slug") or "",
+                            "author": p.get("author") or "",
                             "categories": p.get("categories") or []}
         except Exception:  # noqa: BLE001
             pass       # нет сети — покажем то, что вытащим из самих jar
@@ -2866,13 +2920,26 @@ def scan_installed_mods(status_cb=None) -> list:
     for h, jar in by_hash.items():
         info = cache.get(h) or {}
         slug = info.get("slug") or ""
+        # Русское описание — главный источник. Modrinth оставляем на подхвате
+        # для модов, которых нет в файле, и берём оттуда иконку с автором.
+        ru = mod_ru_info(jar.name)
+        if ru:
+            title, description, category = ru[0], ru[1], ru[2]
+        else:
+            title = info.get("title") or _jar_display_name(jar)
+            description = info.get("description") or ""
+            category = _mod_category_ru(info.get("categories") or [])
         mods.append({
-            "title": info.get("title") or _jar_display_name(jar),
-            "description": info.get("description") or "",
+            "title": title,
+            "description": description,
             "icon": info.get("icon") or "",
+            "author": info.get("author") or "",
+            "version": _jar_version(jar.name),
             "slug": slug,
             "url": ("https://modrinth.com/mod/" + slug) if slug else "",
-            "category": _mod_category_ru(info.get("categories") or []),
+            "category": category,
+            "translated": bool(ru),
+            "size": jar.stat().st_size,
             "file": jar.name,
             "hash": h,
         })
@@ -5835,6 +5902,14 @@ class LauncherApp:
         tk.Label(head, text="Поиск", font=("Segoe UI", 9), bg=colors["bg_panel"],
                  fg=colors["fg_muted"]).pack(side="right", padx=(0, 6))
 
+        sort_var = tk.StringVar(value="По названию")
+        sort_box = ttk.Combobox(head, textvariable=sort_var, state="readonly", width=16,
+                                values=("По названию", "По категории", "По размеру файла"))
+        sort_box.pack(side="left")
+        sort_box.bind("<<ComboboxSelected>>", lambda e: render())
+        tk.Label(head, text="Сортировка", font=("Segoe UI", 9), bg=colors["bg_panel"],
+                 fg=colors["fg_muted"]).pack(side="left", padx=(8, 0))
+
         chips_row = tk.Frame(outer, bg=colors["bg_panel"])
         chips_row.pack(fill="x", pady=(0, 10))
         chip_buttons = {}
@@ -5876,6 +5951,13 @@ class LauncherApp:
                         and q not in m["file"].lower():
                     continue
                 out.append(m)
+            how = sort_var.get()
+            if how == "По категории":
+                out.sort(key=lambda m: (m["category"].lower(), m["title"].lower()))
+            elif how == "По размеру файла":
+                out.sort(key=lambda m: -m.get("size", 0))
+            else:
+                out.sort(key=lambda m: m["title"].lower())
             return out
 
         # ---- Список рисуется НА ХОЛСТЕ и только видимая часть ----
@@ -5887,35 +5969,58 @@ class LauncherApp:
         state["rows"] = {}       # индекс строки -> id нарисованных элементов
         state["items"] = []
 
+        # Цвет полоски слева = категория. Глазами так список читается быстрее,
+        # чем по подписям.
+        CAT_COLORS = {
+            "Технологии": "#e08a2e", "Оптимизация": "#4fd06a", "Библиотеки": "#8b6fd0",
+            "Генерация мира": "#3ec9a7", "Декор": "#e05fa8", "Утилиты": "#2f9fe0",
+            "Транспорт": "#d0c14f", "Хранение": "#e0693c", "Еда и фермы": "#7fd04f",
+            "Мобы": "#d04f4f", "Экипировка": "#6f9fd0", "Приключения": "#c9a13e",
+            "Магия": "#a24fd0", "Механики игры": "#4fb8d0",
+        }
+
         def draw_row(i, m):
             y = i * ROW_H
             tag = "row%d" % i
+            cat_color = CAT_COLORS.get(m["category"], colors["fg_muted"])
             ids = [grid_cv.create_rectangle(6, y + 4, inner_w - 6, y + ROW_H - 4,
                                             fill=colors["bg_field"],
-                                            outline=colors["border"], tags=(tag,))]
+                                            outline=colors["border"], tags=(tag,)),
+                   grid_cv.create_rectangle(6, y + 4, 10, y + ROW_H - 4,
+                                            fill=cat_color, outline="", tags=(tag,))]
             photo = self._modlist_refs.get(m["hash"])
             if photo is not None:
-                ids.append(grid_cv.create_image(22, y + ROW_H // 2, image=photo,
+                ids.append(grid_cv.create_image(26, y + ROW_H // 2, image=photo,
                                                 anchor="w", tags=(tag,)))
             else:
-                ids.append(grid_cv.create_text(38, y + ROW_H // 2,
+                ids.append(grid_cv.create_text(44, y + ROW_H // 2,
                                                text=m["title"][:1].upper(),
                                                font=("Segoe UI", 15, "bold"),
-                                               fill=colors["accent"], tags=(tag,)))
+                                               fill=cat_color, tags=(tag,)))
             self._modlist_labels[m["hash"]] = i
-            ids.append(grid_cv.create_text(76, y + 18, anchor="w", text=m["title"],
+
+            ids.append(grid_cv.create_text(80, y + 17, anchor="w", text=m["title"],
                                            font=("Segoe UI", 11, "bold"),
                                            fill=colors["fg"], tags=(tag,)))
-            ids.append(grid_cv.create_text(76, y + 38, anchor="w", text=m["category"],
-                                           font=("Segoe UI", 8, "bold"),
-                                           fill=colors["accent"], tags=(tag,)))
+            # Тег категории «плашкой», как в макете
+            tw = 8 * len(m["category"]) + 14
+            ids.append(grid_cv.create_rectangle(80, y + 30, 80 + tw, y + 46,
+                                                fill="", outline=cat_color, tags=(tag,)))
+            ids.append(grid_cv.create_text(80 + tw // 2, y + 38, text=m["category"],
+                                           font=("Segoe UI", 7, "bold"),
+                                           fill=cat_color, tags=(tag,)))
             if m["description"]:
-                ids.append(grid_cv.create_text(76, y + 56, anchor="w",
-                                               text=m["description"][:120],
+                ids.append(grid_cv.create_text(80 + tw + 12, y + 38, anchor="w",
+                                               text=m["description"][:96],
                                                font=("Segoe UI", 8),
                                                fill=colors["fg_muted"], tags=(tag,)))
+            ids.append(grid_cv.create_text(80, y + 58, anchor="w", text=m["file"],
+                                           font=("Segoe UI", 7),
+                                           fill=colors["border"], tags=(tag,)))
+
+            right = inner_w - 24
             if m["url"]:
-                lid = grid_cv.create_text(inner_w - 24, y + ROW_H // 2, anchor="e",
+                lid = grid_cv.create_text(right, y + 58, anchor="e",
                                           text="подробнее ↗",
                                           font=("Segoe UI", 8, "underline"),
                                           fill=colors["accent"], tags=(tag, "lnk%d" % i))
@@ -5926,6 +6031,16 @@ class LauncherApp:
                                  lambda e: grid_cv.configure(cursor="hand2"))
                 grid_cv.tag_bind("lnk%d" % i, "<Leave>",
                                  lambda e: grid_cv.configure(cursor=""))
+            if m["version"]:
+                ids.append(grid_cv.create_text(right, y + 17, anchor="e",
+                                               text="v" + m["version"],
+                                               font=("Segoe UI", 9, "bold"),
+                                               fill=colors["fg_muted"], tags=(tag,)))
+            if m["author"]:
+                ids.append(grid_cv.create_text(right, y + 36, anchor="e",
+                                               text="Автор: " + m["author"],
+                                               font=("Segoe UI", 8),
+                                               fill=colors["fg_muted"], tags=(tag,)))
             state["rows"][i] = ids
 
         def draw_visible(*_a):
@@ -6019,11 +6134,19 @@ class LauncherApp:
                                   command=lambda n=name: select_category(n))
                     b.pack(side="left", padx=(0, 5), pady=2)
                     chip_buttons[name] = b
-                title_var.set("Моды сборки — %d шт" % len(mods))
-                known = sum(1 for m in mods if m["url"])
-                status_var.set(
-                    "%d с описанием и ссылкой на Modrinth, остальные прочитаны из jar."
-                    % known if mods else "Папка mods пуста — сборка ещё не установлена.")
+                title_var.set("Моды сборки")
+                if mods:
+                    libs = sum(1 for m in mods if m["category"] == "Библиотеки")
+                    opt = sum(1 for m in mods if m["category"] == "Оптимизация")
+                    no_desc = sum(1 for m in mods if not m["description"])
+                    total_mb = sum(m.get("size", 0) for m in mods) / 1048576
+                    parts = ["%d модов" % len(mods), "%d библиотек" % libs,
+                             "%d оптимизационных" % opt, "%.0f МБ" % total_mb]
+                    if no_desc:
+                        parts.append("у %d нет описания" % no_desc)
+                    status_var.set("  ·  ".join(parts))
+                else:
+                    status_var.set("Папка mods пуста — сборка ещё не установлена.")
                 render()
                 threading.Thread(target=lambda: load_icons(mods), daemon=True).start()
             dialog.after(0, done)
