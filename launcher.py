@@ -270,6 +270,33 @@ CONFIG = {
     # этом текстовом файле. Оставьте "" чтобы не использовать эту функцию.
     "MODPACK_VERSION_URL": "",
 
+    # ------------------------- ПАК НАСТРОЕК -------------------------
+    # Маленький архив (единицы мегабайт) с тем, что делает сборку «нашей»:
+    # меню Industrial Horizon, ветка квестов, экран загрузки, а также моды,
+    # которых нет в modpack.zip (FancyMenu и т.п.).
+    #
+    # Зачем отдельно от modpack.zip. install_modpack() СТИРАЕТ папки mods/,
+    # config/ и kubejs/ целиком и распаковывает архив заново. Всё, чего в
+    # архиве нет, умирает молча — 15.07 так и вышло: меню, квесты, экран
+    # загрузки и правки fml.toml исчезли после обычного запуска, потому что
+    # лежали только на диске. Держать их в modpack.zip тоже плохо: он весит
+    # 400+ МБ, и ради правки одной кнопки его пришлось бы перезаливать
+    # целиком, а всем игрокам — качать заново.
+    #
+    # Пак настроек ставится ПОСЛЕ modpack.zip и переживает его переустановку.
+    # Внутри архива должен лежать configpack.json — см. install_configpack().
+    "CONFIGPACK_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/configpack/configpack.zip",
+
+    # Версия пака настроек «по умолчанию» — используется, только если ниже
+    # не указана CONFIGPACK_VERSION_URL или её не удалось скачать.
+    "CONFIGPACK_VERSION": 1,
+
+    # Текстовый файл с одним числом — версией пака настроек. Пока он указан,
+    # обновление меню/квестов выглядит так: перезалить configpack.zip,
+    # увеличить число здесь — и всё. Ни пересборки .exe, ни перезаливки
+    # сборки модов. Оставьте "" чтобы выключить проверку через интернет.
+    "CONFIGPACK_VERSION_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/configpack/configpack_version.txt",
+
     # Сколько оперативной памяти выделять игре по умолчанию (в мегабайтах).
     # Игрок сможет изменить это значение ползунком в самом лаунчере —
     # выбор запоминается и в следующий раз подставляется автоматически.
@@ -298,7 +325,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.19.1",
+    "LAUNCHER_VERSION": "1.20.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -310,6 +337,21 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.20.0",
+            "date": "15 июля 2026",
+            "changes": [
+                "Меню Industrial Horizon, ветка квестов и экран загрузки теперь "
+                "приезжают всем автоматически — раньше они были только на одном "
+                "компьютере.",
+                "Починено: обновление сборки модов стирало меню, квесты и экран "
+                "загрузки. Они лежали в тех же папках, которые сборка сносит "
+                "перед распаковкой, — и молча пропадали после обычного запуска. "
+                "Теперь лаунчер ставит их отдельно и возвращает, если их снесли.",
+                "FancyMenu, Melody, Konkrete и мод экрана загрузки лаунчер "
+                "скачивает с Modrinth сам — их больше не нужно держать в сборке.",
+            ],
+        },
         {
             "version": "1.19.1",
             "date": "15 июля 2026",
@@ -943,6 +985,13 @@ CONFIG = {
     #   "slug"  — часть ссылки на страницу мода на Modrinth
     #             (modrinth.com/mod/<slug>).
     #   "label" — что увидит игрок в статусе загрузки.
+    #
+    # Внимание: FancyMenu, Melody и Konkrete (все — Keksuccino) стоят здесь не
+    # для красоты, а потому что иначе нельзя. Лицензия FancyMenu (DSMSLv3.1,
+    # пункты 1.1 и 5.2) прямо запрещает класть jar внутрь сборки: «must not be
+    # physically included or shipped within the pack's files». Пункт 5.1 при
+    # этом прямо разрешает то, что делает лаунчер — скачивать мод за игрока с
+    # официального Modrinth. Поэтому их не должно быть в modpack.zip.
     "EXTRA_CLIENT_MODS": [
         {"slug": "sound-physics-remastered", "label": "Sound Physics Remastered (реалистичное эхо)"},
         {"slug": "dynamic-fps", "label": "Dynamic FPS (экономия ресурсов в фоне)"},
@@ -950,6 +999,10 @@ CONFIG = {
         {"slug": "searchables", "label": "Searchables (библиотека для Controlling)"},
         {"slug": "controlling", "label": "Controlling (поиск по клавишам управления)"},
         {"slug": "customskinloader", "label": "CustomSkinLoader (HD-скины и плащи)"},
+        {"slug": "konkrete", "label": "Konkrete (библиотека для меню)"},
+        {"slug": "melody", "label": "Melody (библиотека для меню)"},
+        {"slug": "fancymenu", "label": "FancyMenu (меню Industrial Horizon)"},
+        {"slug": "simple-custom-early-loading", "label": "Экран загрузки Industrial Horizon"},
     ],
 
     # ------------------------- СКИНЫ И ПЛАЩИ -------------------------
@@ -1652,6 +1705,7 @@ SKIN_CACHE_DIR = APP_DATA_DIR / "skin_pack_cache"
 DEFAULT_INSTANCE_DIR = APP_DATA_DIR / "instance"
 INSTANCE_DIR = DEFAULT_INSTANCE_DIR
 MODPACK_VERSION_FILE = INSTANCE_DIR / ".modpack_version"
+CONFIGPACK_MARKER_FILE = INSTANCE_DIR / ".configpack.json"
 INSTALL_MARKER_FILE = INSTANCE_DIR / ".install_complete.json"
 
 
@@ -1672,9 +1726,10 @@ def save_settings(data: dict) -> None:
 def set_install_dir(path) -> None:
     """Переключает лаунчер на другую папку установки: пересчитывает пути,
     которые от неё зависят. Вызывается при старте и после переноса игры."""
-    global INSTANCE_DIR, MODPACK_VERSION_FILE, INSTALL_MARKER_FILE
+    global INSTANCE_DIR, MODPACK_VERSION_FILE, CONFIGPACK_MARKER_FILE, INSTALL_MARKER_FILE
     INSTANCE_DIR = Path(path)
     MODPACK_VERSION_FILE = INSTANCE_DIR / ".modpack_version"
+    CONFIGPACK_MARKER_FILE = INSTANCE_DIR / ".configpack.json"
     INSTALL_MARKER_FILE = INSTANCE_DIR / ".install_complete.json"
 
 
@@ -2108,7 +2163,149 @@ def install_modpack(status_cb, progress_cb) -> None:
     harvest_optional_mods(status_cb)
 
     MODPACK_VERSION_FILE.write_text(str(get_remote_modpack_version()))
+
+    # Сборка только что снесла config/ и mods/ — значит, пак настроек
+    # (меню, квесты, экран загрузки) тоже стёрт. Убираем его отметку, чтобы
+    # install_configpack() ниже поставил всё заново.
+    CONFIGPACK_MARKER_FILE.unlink(missing_ok=True)
+
     progress_cb(100)
+
+
+def get_remote_configpack_version() -> int:
+    """То же, что get_remote_modpack_version(), но для пака настроек."""
+    url = CONFIG.get("CONFIGPACK_VERSION_URL")
+    if not url:
+        return CONFIG.get("CONFIGPACK_VERSION", 0)
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            return int(response.read().decode("utf-8").strip())
+    except Exception:
+        # Нет интернета или файл не отвечает — не повод переустанавливать
+        # настройки. Оставляем то, что уже стоит.
+        local = _read_configpack_marker().get("version")
+        return local if isinstance(local, int) else CONFIG.get("CONFIGPACK_VERSION", 0)
+
+
+def _read_configpack_marker() -> dict:
+    """Отметка о поставленном паке настроек: версия + список папок, которые
+    он собой заменяет. Список храним именно здесь, чтобы уметь проверить, на
+    месте ли файлы, ещё ДО скачивания архива."""
+    if not CONFIGPACK_MARKER_FILE.exists():
+        return {}
+    try:
+        data = json.loads(CONFIGPACK_MARKER_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _safe_zip_targets(zf, root: Path) -> list:
+    """Проверяет, что архив не пытается писать за пределы root.
+
+    Обычная гигиена при распаковке чужого zip: имя вида "../../Windows/..."
+    или "C:\\..." заставило бы extract() положить файл куда угодно. Свой
+    архив таким не будет, но проверка стоит десяти строк, а ошибиться здесь
+    можно ровно один раз."""
+    safe = []
+    root = root.resolve()
+    for member in zf.infolist():
+        name = member.filename
+        if name.endswith("/"):
+            continue
+        if os.path.isabs(name) or ".." in Path(name).parts or ":" in name:
+            raise ValueError("Архив настроек содержит небезопасный путь: %s" % name)
+        target = (root / name).resolve()
+        if root not in target.parents:
+            raise ValueError("Архив настроек пытается писать вне папки игры: %s" % name)
+        safe.append(member)
+    return safe
+
+
+def configpack_needs_install() -> bool:
+    """Ставить ли пак настроек. Да, если версия разошлась ИЛИ если файлы,
+    которые он приносит, кто-то стёр (например, переустановка сборки)."""
+    if not CONFIG.get("CONFIGPACK_URL"):
+        return False
+    marker = _read_configpack_marker()
+    if marker.get("version") != get_remote_configpack_version():
+        return True
+    for rel in marker.get("owns", []):
+        if not (INSTANCE_DIR / rel).exists():
+            return True
+    return False
+
+
+def install_configpack(status_cb=None, progress_cb=None) -> None:
+    """Ставит поверх игры маленький архив с настройками сборки.
+
+    Внутри архива обязателен configpack.json:
+        {"version": 1, "owns": ["config/fancymenu", "mods/fancymenu_...jar"]}
+    "owns" — то, что пак считает своим: эти пути стираются перед распаковкой
+    (иначе файл, убранный из пака, остался бы у игрока навсегда) и по ним же
+    потом проверяется, цел ли пак. Всё, чего в "owns" нет, не трогается —
+    поэтому options.txt, миры и чужие настройки в безопасности.
+
+    Некритично: при любой ошибке просто пропускаем — игра запустится, просто
+    с ванильным меню."""
+    if not configpack_needs_install():
+        if status_cb:
+            status_cb("настройки сборки уже актуальны")
+        if progress_cb:
+            progress_cb(100)
+        return
+
+    zip_path = APP_DATA_DIR / "configpack_download.zip"
+    try:
+        if status_cb:
+            status_cb("Скачиваю настройки сборки (меню, квесты, экран загрузки)...")
+        download_file(CONFIG["CONFIGPACK_URL"], zip_path, progress_cb)
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            try:
+                manifest = json.loads(zf.read("configpack.json").decode("utf-8"))
+            except KeyError:
+                raise ValueError("В архиве настроек нет configpack.json")
+
+            owns = [str(p) for p in manifest.get("owns", []) if p]
+            for rel in owns:
+                if os.path.isabs(rel) or ".." in Path(rel).parts:
+                    raise ValueError("Небезопасный путь в configpack.json: %s" % rel)
+
+            members = _safe_zip_targets(zf, INSTANCE_DIR)
+
+            # Сносим то, что пак считает своим — иначе файлы, убранные из
+            # новой версии пака, остались бы лежать и продолжали работать.
+            for rel in owns:
+                target = INSTANCE_DIR / rel
+                if target.is_dir():
+                    shutil.rmtree(target, ignore_errors=True)
+                elif target.exists():
+                    target.unlink(missing_ok=True)
+
+            total = len(members) or 1
+            for index, member in enumerate(members, start=1):
+                if member.filename == "configpack.json":
+                    continue
+                zf.extract(member, INSTANCE_DIR)
+                if progress_cb:
+                    progress_cb(int(index * 100 / total))
+
+        CONFIGPACK_MARKER_FILE.write_text(json.dumps({
+            "version": get_remote_configpack_version(),
+            "owns": owns,
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        if status_cb:
+            status_cb("Настройки сборки обновлены")
+    except Exception as exc:
+        # Меню — это украшение. Из-за него нельзя не пустить человека в игру.
+        if status_cb:
+            status_cb("Настройки сборки поставить не вышло (%s) — играем дальше" % exc)
+    finally:
+        zip_path.unlink(missing_ok=True)
+        if progress_cb:
+            progress_cb(100)
 
 
 def _install_with_retry(func, *args, retries=4, delay_seconds=2, status_cb=None, **kwargs):
@@ -4066,7 +4263,8 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
         ("Minecraft", 20),
         (loader_name, 18),
         ("Сборка модов", 34),
-        ("Моды и дополнения", 20),
+        ("Моды и дополнения", 14),
+        ("Настройки сборки", 6),
     ])
 
     version_id = install_minecraft_and_modloader(progress)
@@ -4078,6 +4276,8 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
         # Тест-режим: моды взяты один-в-один с локального сервера,
         # обычную установку сборки и опциональные моды пропускаем.
         pack_status("тестовая сборка развёрнута (моды с локального сервера)")
+        # mods/ пересобрана с нуля — моды из пака настроек надо вернуть.
+        CONFIGPACK_MARKER_FILE.unlink(missing_ok=True)
     else:
         if get_local_modpack_version() != get_remote_modpack_version():
             install_modpack(pack_status, pack_progress)
@@ -4097,6 +4297,12 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     install_game_window_icon(extras_status)
     install_extra_client_mods(extras_status, extras_progress)
     install_skin_config(extras_status)
+
+    # Строго последним. install_modpack() стирает config/ и mods/ целиком, а
+    # тест-режим пересобирает mods/ — поэтому пак настроек кладётся в самом
+    # конце, когда никто уже не тронет его файлы.
+    configpack_status, configpack_progress = progress.scoped("Настройки сборки")
+    install_configpack(configpack_status, configpack_progress)
 
     progress_cb(100)
     status_cb("Запуск игры...")
