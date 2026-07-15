@@ -23,6 +23,13 @@ on:
 permissions:
   contents: write
 
+# Сборки идут по очереди, а не одновременно. 15.07 два пуша подряд запустили
+# #59 и #60 параллельно — обе успели бы решить, что версия ещё не выходила, и
+# написали бы в Telegram по посту. Очередь убирает эту гонку.
+concurrency:
+  group: build-and-release
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: windows-latest
@@ -122,6 +129,32 @@ jobs:
           $size = (Get-Item "installer_out\CheckpointSetup.exe").Length / 1MB
           echo ("Installer size: {0:N1} MB" -f $size)
 
+      # Проверяем ДО создания релиза: выходила ли уже эта версия. От этого
+      # зависит, писать ли в Telegram. Пересборка той же версии (правка
+      # build.yml, повторный запуск, докинули файл) — не новость, и постить
+      # её второй раз не надо.
+      - name: Has this version been released before?
+        id: released
+        shell: pwsh
+        run: |
+          $tag = "v${{ steps.version.outputs.version }}"
+          $url = "https://api.github.com/repos/${{ github.repository }}/releases/tags/$tag"
+          $exists = "false"
+          try {
+            Invoke-RestMethod -Uri $url -Headers @{
+              Authorization = "Bearer ${{ secrets.GITHUB_TOKEN }}"
+              "User-Agent"  = "checkpoint-launcher-ci"
+            } -ErrorAction Stop | Out-Null
+            $exists = "true"
+          } catch {
+            # 404 = релиза нет, значит версия новая. Любая другая ошибка —
+            # тоже считаем, что нет: пропущенный пост не так обиден, как
+            # упавшая сборка.
+            $exists = "false"
+          }
+          echo "Release $tag exists: $exists"
+          echo "exists=$exists" >> $env:GITHUB_OUTPUT
+
       - name: Create GitHub Release with the installer attached
         uses: softprops/action-gh-release@v2
         with:
@@ -137,8 +170,12 @@ jobs:
       #   TELEGRAM_BOT_TOKEN — токен от @BotFather
       #   TELEGRAM_CHAT_ID   — id канала, для приватного вида -100...
       # Пока секретов нет, шаг тихо ничего не делает и сборку не роняет.
+      #
       # Шаг идёт ПОСЛЕ релиза: если сборка упала, в канал ничего не уходит.
+      # А условие ниже — про то, что новость это только первый выход версии:
+      # без него пересборка той же 1.20.0 продублировала пост в группе.
       - name: Tell Telegram about the release
+        if: steps.released.outputs.exists == 'false'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
