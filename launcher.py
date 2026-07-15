@@ -295,7 +295,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.17.2",
+    "LAUNCHER_VERSION": "1.17.3",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -307,6 +307,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.17.3",
+            "date": "15 июля 2026",
+            "changes": [
+                "Кнопка «Играть» больше не съезжает, когда игра запущена.",
+                "Надпись о запуске не налезает на полосу загрузки.",
+                "Новая версия лаунчера видна сразу — проверка идёт каждые "
+                "5 минут, а не только при запуске.",
+            ],
+        },
         {
             "version": "1.17.2",
             "date": "15 июля 2026",
@@ -1379,12 +1389,17 @@ def render_main_background(width: int, height: int, colors: dict):
 
 
 def render_rounded(width: int, height: int, radius: int, fill, outline=None,
-                   glow=None):
+                   glow=None, pad: int = 0):
     """Скруглённый прямоугольник картинкой. tkinter такое не умеет: у него
-    все прямоугольники честно прямоугольные."""
+    все прямоугольники честно прямоугольные.
+
+    pad — прозрачные поля вокруг. Задаётся явно, а не выводится из наличия
+    свечения: иначе картинки одной кнопки получаются РАЗНОГО размера, и при
+    переключении состояния кнопка прыгает. Ровно так «Играть» уезжала на
+    30 пикселей, когда становилась неактивной.
+    """
     if not _PIL_OK:
         return None
-    pad = 30 if glow else 0
     img = Image.new("RGBA", (width + 2 * pad, height + 2 * pad), (0, 0, 0, 0))
     if glow:
         g = Image.new("RGBA", img.size, (0, 0, 0, 0))
@@ -1446,10 +1461,12 @@ class _CanvasPill:
         dim = _hex_to_rgb(colors["accent_dim"])
         pad = 30
         self._imgs = {}
+        # Все три картинки одного размера — иначе кнопка прыгает при смене
+        # состояния. Свечения у выключенной нет, но поля те же.
         for key, rgb, glow in (("normal", accent, accent + (140,)),
                                ("hover", hover, hover + (170,)),
                                ("off", dim, None)):
-            img = render_rounded(w, h, h // 2, rgb + (255,), glow=glow)
+            img = render_rounded(w, h, h // 2, rgb + (255,), glow=glow, pad=pad)
             if img is not None:
                 self._imgs[key] = ImageTk.PhotoImage(img)
                 refs["pill_" + key + self.tag] = self._imgs[key]
@@ -4274,15 +4291,18 @@ class LauncherApp:
         self.play_button = _CanvasPill(cv, px, py, pw, ph, "ИГРАТЬ", colors,
                                        self.on_play, self._img_refs)
 
-        self.status_item = cv.create_text(px, top + 78, anchor="nw", font=("Segoe UI", 9),
+        # Полосу прогресса подняли НАД статусом. Длинный статус («Игра
+        # запущена! Лаунчер откроется снова…») переносится на две строки и
+        # раньше налезал на полосу — снизу места нет, окно кончается.
+        cv.create_rectangle(px, top + 76, px + pw, top + 82, fill="#2b3543", outline="")
+        self.progress_item = cv.create_rectangle(px, top + 76, px, top + 82,
+                                                 fill=colors["accent"], outline="")
+        self._progress_geom = (px, top + 76, pw, top + 82)
+
+        self.status_item = cv.create_text(px, top + 90, anchor="nw", font=("Segoe UI", 9),
                                           fill=muted, text=self.status_var.get(), width=pw)
         self.status_var.trace_add(
             "write", lambda *a: cv.itemconfig(self.status_item, text=self.status_var.get()))
-
-        cv.create_rectangle(px, top + 95, px + pw, top + 101, fill="#2b3543", outline="")
-        self.progress_item = cv.create_rectangle(px, top + 95, px, top + 101,
-                                                 fill=colors["accent"], outline="")
-        self._progress_geom = (px, top + 95, pw, top + 101)
         self.progress_var.trace_add("write", lambda *a: self._redraw_progress())
         self._redraw_progress()
 
@@ -6160,15 +6180,28 @@ class LauncherApp:
             pass  # окно как раз перерисовывается (смена темы) — не страшно
 
     def _check_launcher_update_async(self) -> None:
-        """Проверяет один раз при старте, не вышла ли новая версия
-        лаунчера (см. CONFIG["GITHUB_REPO"]). Не критично: если ничего не
-        настроено или сети нет — просто ничего не покажется."""
+        """Проверяет, не вышла ли новая версия лаунчера, и повторяет проверку
+        каждые 5 минут.
+
+        Раньше проверка была ровно одна — при запуске. Из-за этого новая
+        версия появлялась в окне только после перезапуска лаунчера: он мог
+        висеть открытым часами и ничего не знать.
+
+        Не критично: нет сети или не настроен GITHUB_REPO — просто тихо
+        ничего не произойдёт, попробуем снова через 5 минут.
+        """
         def worker():
             info = check_for_launcher_update()
             if info:
                 self.root.after(0, lambda: self._apply_update_info(info))
 
         threading.Thread(target=worker, daemon=True).start()
+        try:
+            # Уже нашли обновление — дальше проверять незачем, баннер висит.
+            if not self.update_info:
+                self.root.after(5 * 60 * 1000, self._check_launcher_update_async)
+        except tk.TclError:
+            pass    # окно закрыли
 
     def _apply_update_info(self, info: dict) -> None:
         self.update_info = info
