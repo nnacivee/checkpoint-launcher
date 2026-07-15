@@ -99,7 +99,25 @@ def send(token: str, chat_id: str, text: str) -> dict:
         raise SystemExit("Telegram ответил %s: %s" % (exc.code, body))
 
 
+def force_utf8_output() -> None:
+    """Заставляет print() выдавать UTF-8, чем бы ни был stdout.
+
+    Windows на серверах GitHub отдаёт вывод шага в cp1252. Первый же print()
+    с кириллицей падал с UnicodeEncodeError — и ронял всю сборку, хотя
+    Telegram тут вообще ни при чём. На Linux этого не видно: там UTF-8 по
+    умолчанию, поэтому тесты молчали.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main() -> None:
+    force_utf8_output()
+
     if len(sys.argv) < 2:
         raise SystemExit("нужна версия: python tg_notify.py 1.20.0 [ссылка]")
     version = sys.argv[1]
