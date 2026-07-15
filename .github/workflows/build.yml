@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "launcher.py"
+      - "tg_notify.py"
       - "requirements.txt"
       - "installer.iss"
       - "icon.ico"
@@ -128,3 +129,20 @@ jobs:
           name: v${{ steps.version.outputs.version }}
           files: installer_out/CheckpointSetup.exe
           generate_release_notes: false
+
+      # Пост в Telegram-канал. Текст берётся из LAUNCHER_CHANGELOG в
+      # launcher.py — писать его отдельно не нужно.
+      #
+      # Токены живут в Settings -> Secrets and variables -> Actions:
+      #   TELEGRAM_BOT_TOKEN — токен от @BotFather
+      #   TELEGRAM_CHAT_ID   — id канала, для приватного вида -100...
+      # Пока секретов нет, шаг тихо ничего не делает и сборку не роняет.
+      # Шаг идёт ПОСЛЕ релиза: если сборка упала, в канал ничего не уходит.
+      - name: Tell Telegram about the release
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: >
+          python tg_notify.py
+          "${{ steps.version.outputs.version }}"
+          "https://github.com/${{ github.repository }}/releases/tag/v${{ steps.version.outputs.version }}"
