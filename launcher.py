@@ -352,7 +352,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.30.0",
+    "LAUNCHER_VERSION": "1.31.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -364,6 +364,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.31.0",
+            "date": "16 июля 2026",
+            "changes": [
+                "Кнопка «Играть» теперь сразу заводит на сервер, минуя "
+                "главное меню. Автозаход был в лаунчере всегда, но Mojang "
+                "убрал старый механизм в 1.20.5 — починено новым (quick play).",
+                "Из EMI скрыты блоки Chipped и Chisel Reborn — они крафтятся "
+                "в своих верстаках, а список предметов стал сильно чище.",
+            ],
+        },
         {
             "version": "1.30.0",
             "date": "16 июля 2026",
@@ -4695,6 +4706,17 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
         options["port"] = str(port)
 
     command = mll.command.get_minecraft_command(version_id, str(INSTANCE_DIR), options)
+
+    # ПОЧЕМУ АВТОЗАХОД НЕ РАБОТАЛ. options["server"]/["port"] выше
+    # превращаются в флаги --server/--port, но Mojang УБРАЛ их в 1.20.5 —
+    # на нашей 1.21.1 игра молча игнорирует оба и открывает главное меню.
+    # Замена — флаг --quickPlayMultiplayer "host:port". Старые options
+    # оставлены на месте: вреда от них нет, а сторонние версии mll могут
+    # сами собрать из них quickPlay. Проверка "quickPlay уже в команде"
+    # защищает от двойного флага в этом случае.
+    if join_ip and not any("quickPlay" in str(arg) for arg in command):
+        host, port = parse_host_port(join_ip)
+        command += ["--quickPlayMultiplayer", "%s:%s" % (host, port)]
 
     # Java — консольное приложение. Если запустить её "как есть" из .exe,
     # собранного с --noconsole, Windows сама откроет для неё отдельное
