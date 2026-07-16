@@ -352,7 +352,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.28.0",
+    "LAUNCHER_VERSION": "1.29.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -364,6 +364,18 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.29.0",
+            "date": "16 июля 2026",
+            "changes": [
+                "Modern Industrialization обновлён до 2.5.3 — лаунчер заменит "
+                "его сам, ничего перекачивать целиком не нужно.",
+                "Убраны Chisels & Bits и (временно) Industrial Horizons. "
+                "Олово, свинец и уран теперь генерирует Mekanism — руда в "
+                "мире осталась. Лаунчер удалит эти моды сам.",
+                "ОБНОВИТЬСЯ ОБЯЗАТЕЛЬНО: со старым набором модов сервер не пустит.",
+            ],
+        },
         {
             "version": "1.28.0",
             "date": "16 июля 2026",
@@ -1205,6 +1217,30 @@ CONFIG = {
         {"slug": "common-storage-lib-github",
          "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/common-storage-lib-neoforge-1.21.1-0.0.9.jar",
          "label": "Common Storage Lib (библиотека Ad Astra)"},
+        # Modern Industrialization 2.5.3: старая 2.5.2 сидит в modpack.zip,
+        # обновляем поверх без перекачки всего пака — старый jar удаляет
+        # REMOVED_MODS ниже, новый качается по ссылке на ТОЧНУЮ версию.
+        # Ссылка именно версионная, не «последняя»: сервер должен совпадать
+        # с клиентами байт в байт, автообновление тут устроило бы рассинхрон.
+        {"slug": "modern-industrialization-2-5-3",
+         "url": "https://cdn.modrinth.com/data/Gov5Dboq/versions/F4wdAfHV/Modern-Industrialization-2.5.3.jar",
+         "label": "Modern Industrialization 2.5.3 (обновление)"},
+    ],
+
+    # ------------------- УДАЛЕНИЕ МОДОВ У ИГРОКОВ -------------------
+    # Файлы из этого списка лаунчер удаляет из mods/ игрока при каждом
+    # запуске. Это единственный способ убрать мод, приехавший с modpack.zip,
+    # не заставляя всех перекачивать 400 МБ: модпак ставится только при
+    # смене версии, и выброшенный из него мод сам собой не исчезнет.
+    "REMOVED_MODS": [
+        # Chisels & Bits — убран по решению владельца (16.07).
+        "chisels-and-bits-neoforge-21.1.32.jar",
+        # Industrial Horizons — временно убран владельцем (16.07). Его руды
+        # (олово/свинец/уран) продолжает генерировать Mekanism — включён
+        # в world.toml на 30%.
+        "ic3-2.19.0.jar",
+        # Заменён на 2.5.3 через EXTRA_CLIENT_MODS выше.
+        "Modern-Industrialization-2.5.2.jar",
     ],
 
     # ------------------------- СКИНЫ И ПЛАЩИ -------------------------
@@ -3756,6 +3792,14 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> None:
         src = cache / filename
         if src.exists() and not (mods_dir / filename).exists():
             shutil.copy2(src, mods_dir / filename)
+
+    # Моды, выброшенные из сборки (см. CONFIG["REMOVED_MODS"]): их принёс
+    # modpack.zip, и без этой чистки они жили бы у игрока вечно.
+    for filename in CONFIG.get("REMOVED_MODS", []):
+        try:
+            (mods_dir / filename).unlink(missing_ok=True)
+        except OSError:
+            pass  # файл занят — удалится при следующем запуске
 
 
 WINDOW_ICON_MOD_SLUG = "custom-window-title"
