@@ -352,7 +352,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.32.0",
+    "LAUNCHER_VERSION": "1.33.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -364,6 +364,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.33.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "Текстуры в 32x: официальный Faithful для ванили и апскейл "
+                "29 000 текстур модов — ставится и включается само при "
+                "запуске. Не понравится — выключается в настройках игры, "
+                "лаунчер выбор запомнит.",
+            ],
+        },
         {
             "version": "1.32.0",
             "date": "17 июля 2026",
@@ -1469,6 +1479,28 @@ CONFIG = {
         # популярный: ему нужны моды Entity Texture Features и Entity Model
         # Features. Без них он просто не работает, а кнопка «поставить в один
         # клик» обещала бы обратное.
+    ],
+
+    # ------------------- РЕСУРС-ПАКИ (АВТОУСТАНОВКА ВСЕМ) -------------------
+    # В отличие от RECOMMENDED_RESOURCE_PACKS выше (их игрок ставит сам из
+    # «Оформления»), эти лаунчер скачивает и ВКЛЮЧАЕТ сам при запуске игры.
+    # Включение — однократное: выбор записывается в маркер
+    # resourcepacks/.launcher_auto_packs.json, и если игрок потом выключил
+    # пак в настройках игры, лаунчер его мнение уважает и заново не включает.
+    # Решение владельца от 17.07: Faithful 32x для ванили + машинный апскейл
+    # текстур модов (Scale2x, 29 020 текстур из 76 модов). Апскейл разбит на
+    # 4 zip-части: GitHub-мост не пропускал файл больше 10 МБ, а игре всё
+    # равно — все части включаются разом и работают как один пак.
+    "AUTO_RESOURCE_PACKS": [
+        {"slug": "faithful-32x", "name": "Faithful 32x (ваниль)"},
+        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale_32x_1.zip",
+         "filename": "IH_Upscale_32x_1.zip", "name": "Моды 32x, часть 1"},
+        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale_32x_2.zip",
+         "filename": "IH_Upscale_32x_2.zip", "name": "Моды 32x, часть 2"},
+        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale_32x_3.zip",
+         "filename": "IH_Upscale_32x_3.zip", "name": "Моды 32x, часть 3"},
+        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale_32x_4.zip",
+         "filename": "IH_Upscale_32x_4.zip", "name": "Моды 32x, часть 4"},
     ],
 
     # Готовые шейдеры с Modrinth. weight — честная пометка о прожорливости:
@@ -3774,6 +3806,77 @@ def install_extra_shaderpacks(status_cb=None, progress_cb=None) -> None:
         marker_file.write_text(json.dumps(sorted(installed)), encoding="utf-8")
 
 
+def install_auto_resource_packs(status_cb=None, progress_cb=None) -> None:
+    """Скачивает паки из CONFIG["AUTO_RESOURCE_PACKS"] и включает каждый
+    РОВНО ОДИН РАЗ. Однократность — принципиальна: если игрок выключил пак
+    в настройках игры, повторное включение при каждом запуске выглядело бы
+    как поломка. Список уже включённых лежит в resourcepacks/
+    .launcher_auto_packs.json. Любая ошибка (нет сети, Modrinth молчит) не
+    мешает запуску игры — просто пропускаем до следующего раза."""
+    entries = CONFIG.get("AUTO_RESOURCE_PACKS", [])
+    if not entries:
+        return
+
+    packs_dir = get_resourcepacks_dir()
+    packs_dir.mkdir(parents=True, exist_ok=True)
+    marker_file = packs_dir / ".launcher_auto_packs.json"
+    activated = []
+    if marker_file.exists():
+        try:
+            activated = json.loads(marker_file.read_text(encoding="utf-8"))
+        except Exception:
+            activated = []
+
+    changed = False
+    total = len(entries)
+    for index, entry in enumerate(entries):
+        label = entry.get("name") or entry.get("slug") or entry.get("filename", "?")
+        try:
+            # 1. Выясняем имя файла и откуда качать.
+            if entry.get("url"):
+                filename = entry.get("filename") or entry["url"].rsplit("/", 1)[-1]
+                url = entry["url"]
+            else:
+                # Файл с Modrinth мог уже стоять (игрок ставил из
+                # «Оформления») — тогда и искать ссылку не надо.
+                filename = _recommended_pack_filename(entry["slug"])
+                url = None
+                if not (filename and (packs_dir / filename).exists()):
+                    filename, url = _find_modrinth_download(
+                        entry["slug"], CONFIG["MC_VERSION"], ["minecraft"])
+                    if not url:
+                        continue  # на Modrinth нет версии — не критично
+            target = packs_dir / filename
+
+            # 2. Скачиваем, если файла ещё нет.
+            if not target.exists():
+                if status_cb:
+                    status_cb("Скачиваю ресурс-пак «%s»..." % label)
+
+                def _progress(pct, _i=index):
+                    if progress_cb:
+                        progress_cb(int((_i + pct / 100.0) / total * 100))
+
+                download_file(url, target, _progress)
+                if entry.get("slug"):
+                    _remember_recommended_pack(entry["slug"], filename)
+
+            # 3. Включаем — но только если ещё ни разу не включали.
+            if filename not in activated:
+                set_resource_pack_enabled({"entry": "file/%s" % filename}, True)
+                activated.append(filename)
+                changed = True
+                if status_cb:
+                    status_cb("Включён ресурс-пак: %s" % label)
+        except Exception:
+            if status_cb:
+                status_cb("Не удалось поставить «%s» — пропускаю, это не критично." % label)
+            continue
+
+    if changed:
+        marker_file.write_text(json.dumps(activated, ensure_ascii=False), encoding="utf-8")
+
+
 def install_extra_client_mods(status_cb=None, progress_cb=None) -> None:
     """Скачивает доп. клиентские моды из CONFIG["EXTRA_CLIENT_MODS"] с
     Modrinth и кладёт в mods/. Скачивается каждый один раз в постоянный кэш
@@ -4697,6 +4800,9 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     apply_low_end_mode(low_end_enabled, extras_status)
     apply_forced_options(extras_status)
     install_extra_shaderpacks(extras_status, extras_progress)
+    # Faithful 32x + апскейл модов. После шейдеров: обе загрузки некритичные,
+    # но паки заметнее — их статус пусть будет последним на экране.
+    install_auto_resource_packs(extras_status, extras_progress)
     install_game_window_icon(extras_status)
     install_extra_client_mods(extras_status, extras_progress)
     install_skin_config(extras_status)
