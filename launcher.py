@@ -352,7 +352,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.26.0",
+    "LAUNCHER_VERSION": "1.26.1",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -364,6 +364,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.26.1",
+            "date": "16 июля 2026",
+            "changes": [
+                "Мод прочности заменён: прежний не показывал числа. Теперь "
+                "InventoryHUD+ — прочность брони и предмета в руке цифрами "
+                "или процентами, вид и место настраиваются в игре. Старый мод "
+                "лаунчер удалит сам.",
+            ],
+        },
         {
             "version": "1.26.0",
             "date": "16 июля 2026",
@@ -1148,13 +1158,13 @@ CONFIG = {
         # Титульный экран мод по умолчанию НЕ трогает (TitleScreen стоит в его
         # METHOD_SHADER_BLACKLIST) — меню Industrial Horizon останется как был.
         {"slug": "dark-mode-everywhere", "label": "Тёмный интерфейс во всех модах"},
-        # Прочность инструмента в руке и всей брони — прямо на экране, а не
-        # только в тултипе инвентаря: срубил дерево — сразу видно, сколько
-        # осталось у топора. Позиция и вид настраиваются кнопкой в игре.
+        # Прочность инструмента в руке и всей брони — прямо на экране, с
+        # ЧИСЛАМИ, а не только полосками. Первый кандидат (armor-durability-hud)
+        # не показывал, сколько прочности осталось, — заменён в 1.26.1.
         # Modrinth: client_side=required, server_side=unsupported — сервер о
         # нём не знает, каналов нет. Лицензия ARR, поэтому в архив сборки не
         # кладём — качаем с официального Modrinth, как FancyMenu и голос.
-        {"slug": "armor-durability-hud", "label": "Прочность брони и инструмента на экране"},
+        {"slug": "inventoryhudplus", "label": "Прочность брони и инструмента на экране"},
     ],
 
     # ------------------------- СКИНЫ И ПЛАЩИ -------------------------
@@ -3675,11 +3685,24 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> None:
                 status_cb("Не удалось скачать мод «%s» — пропускаю, это не критично." % label)
             continue
 
+    # Мод убрали из списка — убираем и у игрока. Без этого выбывший мод
+    # оставался бы в mods/ навсегда: список копируется из маркера целиком.
+    # Ровно так armor-durability-hud пережил бы свою замену в 1.26.1.
+    mods_dir = INSTANCE_DIR / "mods"
+    actual = {e.get("slug") for e in entries if e.get("slug")}
+    for slug in [s for s in installed if s not in actual]:
+        filename = installed.pop(slug)
+        changed = True
+        for stale in (mods_dir / filename, cache / filename):
+            try:
+                stale.unlink(missing_ok=True)
+            except OSError:
+                pass  # файл занят игрой — удалится при следующем запуске
+
     if changed:
         marker.write_text(json.dumps(installed), encoding="utf-8")
 
     # Копируем всё из кэша в mods/ (быстро, из интернета уже не тянем)
-    mods_dir = INSTANCE_DIR / "mods"
     mods_dir.mkdir(parents=True, exist_ok=True)
     for slug, filename in installed.items():
         src = cache / filename
