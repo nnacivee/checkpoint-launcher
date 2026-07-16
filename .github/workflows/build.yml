@@ -14,6 +14,7 @@ on:
       - "logo.png"
       - "mods_ru.json"
       - "icons/**"
+      - "fonts/**"
       # Сам файл сборки тоже отслеживаем. Без этой строки правка build.yml
       # не запускала пересборку: однажды из-за этого вышла версия, куда не
       # попал фон — лаунчер показывал чёрное окно вместо арта.
@@ -87,6 +88,12 @@ jobs:
           }
           if (Test-Path "mods_ru.json") {
             $args += "--add-data=mods_ru.json;."
+          }
+          # Lato для интерфейса. Без этой строки шрифты не попадут в сборку,
+          # load_bundled_fonts() не найдёт файлы и лаунчер молча останется на
+          # Segoe UI — ошибки не будет, поэтому проверять надо глазами.
+          if (Test-Path "fonts") {
+            $args += "--add-data=fonts;fonts"
           }
           $args += "launcher.py"
           pyinstaller @args
