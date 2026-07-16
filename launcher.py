@@ -14,6 +14,7 @@
 Больше нигде в коде ничего менять не нужно.
 """
 
+import ctypes
 import hashlib
 import io
 import json
@@ -35,7 +36,7 @@ import uuid
 import webbrowser
 import zipfile
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 try:
     import minecraft_launcher_lib as mll
@@ -351,7 +352,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.24.0",
+    "LAUNCHER_VERSION": "1.25.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -363,6 +364,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.25.0",
+            "date": "16 июля 2026",
+            "changes": [
+                "Лаунчер теперь нарисован шрифтом Lato — тем же, что и «Industrial "
+                "Horizon» на иконке. Шрифт лежит внутри лаунчера, ставить его в "
+                "систему не нужно и в систему он не лезет: подключается только "
+                "себе, на время работы. Если по какой-то причине не подключится — "
+                "интерфейс молча останется на старом Segoe UI, ничего не сломается.",
+            ],
+        },
         {
             "version": "1.24.0",
             "date": "15 июля 2026",
@@ -1725,7 +1737,7 @@ class _CanvasPill:
             self.bg = canvas.create_rectangle(x, y, x + w, y + h, fill=colors["accent"],
                                               outline="", tags=(self.tag,))
         self.text = canvas.create_text(x + w // 2, y + h // 2, text=label,
-                                       font=("Segoe UI", 17, "bold"),
+                                       font=(UI_FONT, 17, "bold"),
                                        fill=colors["accent_text"], tags=(self.tag,))
         canvas.tag_bind(self.tag, "<Button-1>", self._click)
         canvas.tag_bind(self.tag, "<Enter>", self._enter)
@@ -1981,7 +1993,68 @@ def resource_path(filename: str) -> Path:
     return base / filename
 
 
-ICON_NAMES = ["folder", "chat", "grid", "wrench", "list", "sun", "moon", "gauge", "gear",
+# ------------------------------- ШРИФТ ОКНА -------------------------------
+# Имя семейства, которым рисуется весь интерфейс. Здесь стоит ЗАПАСНОЙ
+# вариант: Segoe UI есть в любой Windows, поэтому лаунчер гарантированно
+# нарисуется, даже если с Lato что-то пойдёт не так.
+#
+# ВАЖНО, почему нельзя просто написать "Lato". tkinter ищет шрифт по имени
+# СЕМЕЙСТВА В СИСТЕМЕ, а Lato в Windows не установлен. На незнакомое имя
+# tkinter не ругается — он молча подставляет свой шрифт по умолчанию. То есть
+# ошибки не будет, а интерфейс станет хуже, и понять почему — не из чего.
+# Поэтому Lato кладётся в fonts/, вшивается в exe и подключается на старте
+# через AddFontResourceEx, и только если система его действительно увидела,
+# UI_FONT переключается на "Lato" (см. pick_ui_font).
+UI_FONT = "Segoe UI"
+
+# Regular и Bold: tkinter просит начертание отдельным файлом. Без Bold все
+# font=(UI_FONT, N, "bold") получили бы синтетическую жирность — она заметно
+# грязнее настоящей. OFL.txt лежит рядом: лицензия обязывает возить её с шрифтом.
+BUNDLED_FONTS = ("Lato-Regular.ttf", "Lato-Bold.ttf")
+
+
+def load_bundled_fonts() -> int:
+    """Подключает вшитые шрифты ТОЛЬКО для нашего процесса (FR_PRIVATE).
+
+    Без FR_PRIVATE шрифт прописался бы в систему целиком — лаунчер не имеет
+    права менять чужие настройки, да и прав администратора у него нет.
+    Приватная регистрация живёт ровно столько, сколько живёт процесс.
+
+    Возвращает число подключённых файлов. Ошибки глушим: не подключилось —
+    останется Segoe UI, это не повод не запускаться."""
+    if not sys.platform.startswith("win"):
+        return 0  # на других системах лаунчер не собирается, но пусть не падает
+    FR_PRIVATE = 0x10
+    loaded = 0
+    for name in BUNDLED_FONTS:
+        path = resource_path("fonts") / name
+        if not path.exists():
+            continue
+        try:
+            if ctypes.windll.gdi32.AddFontResourceExW(str(path), FR_PRIVATE, 0):
+                loaded += 1
+        except (OSError, AttributeError):
+            pass
+    return loaded
+
+
+def pick_ui_font(root) -> str:
+    """Переключает интерфейс на Lato, но только если tkinter его РЕАЛЬНО видит.
+
+    Проверка обязательна: молчаливая подстановка (см. коммент к UI_FONT) —
+    единственный способ отличить «шрифт подключился» от «шрифт не подключился».
+    Вызывать после создания root: список семейств спрашивается у Tk."""
+    global UI_FONT
+    try:
+        families = set(tkfont.families(root))
+    except tk.TclError:
+        return UI_FONT
+    if "Lato" in families:
+        UI_FONT = "Lato"
+    return UI_FONT
+
+
+ICON_NAMES =["folder", "chat", "grid", "wrench", "list", "sun", "moon", "gauge", "gear",
               "image", "shader", "discord", "skin", "telegram"]
 
 
@@ -4741,7 +4814,7 @@ class LauncherApp:
                                             fill="#28313f", outline="#3a4658", tags=(tag,))
             if self.icons.get(icon):
                 cv.create_image(x + tw // 2, sy + 23, image=self.icons[icon], tags=(tag,))
-            cv.create_text(x + tw // 2, sy + 50, text=label, font=("Segoe UI", 8),
+            cv.create_text(x + tw // 2, sy + 50, text=label, font=(UI_FONT, 8),
                            fill=colors["fg"], tags=(tag,))
 
             def enter(_e, i=bg_id, has=normal is not None):
@@ -4779,7 +4852,7 @@ class LauncherApp:
         self._refresh_head()
 
         nx = left + HEAD + 18
-        cv.create_text(nx, top + 10, text="ВАШ НИК", font=("Segoe UI", 8, "bold"),
+        cv.create_text(nx, top + 10, text="ВАШ НИК", font=(UI_FONT, 8, "bold"),
                        fill=muted, anchor="nw")
 
         field = render_rounded(256, 38, 9, (26, 33, 44, 240), (255, 255, 255, 50))
@@ -4787,7 +4860,7 @@ class LauncherApp:
             self._img_refs["field"] = ImageTk.PhotoImage(field)
             cv.create_image(nx, top + 25, image=self._img_refs["field"], anchor="nw")
         nick_entry = tk.Entry(
-            cv, textvariable=self.nick_var, font=("Segoe UI", 13),
+            cv, textvariable=self.nick_var, font=(UI_FONT, 13),
             bg="#1a2230", fg=colors["fg"], insertbackground=colors["fg"],
             relief="flat", highlightthickness=0, bd=0,
         )
@@ -4798,7 +4871,7 @@ class LauncherApp:
         # Версии — служебная справка, а не заголовок. Раньше она была жирной и
         # акцентным цветом: спорила за внимание со статусом сервера, который
         # куда важнее. Приглушаем, чтобы порядок чтения был правильный.
-        cv.create_text(left, top + 72, anchor="nw", font=("Segoe UI", 8),
+        cv.create_text(left, top + 72, anchor="nw", font=(UI_FONT, 8),
                        fill=muted,
                        text="Minecraft %s  ·  %s  ·  лаунчер %s" % (
                            CONFIG["MC_VERSION"],
@@ -4806,7 +4879,7 @@ class LauncherApp:
                                                     CONFIG["MOD_LOADER"].capitalize()),
                            CONFIG.get("LAUNCHER_VERSION", "?")))
         self.server_status_label = _CanvasText(
-            cv, cv.create_text(left, top + 89, anchor="nw", font=("Segoe UI", 9, "bold"),
+            cv, cv.create_text(left, top + 89, anchor="nw", font=(UI_FONT, 9, "bold"),
                                fill=colors[self.server_status_color_key],
                                text=self.server_status_var.get()))
         self.server_status_var.trace_add(
@@ -4821,7 +4894,7 @@ class LauncherApp:
             links.append(("тест localhost", self.on_play_test))
         lx = left
         for text, command in links:
-            item = cv.create_text(lx, top + 108, anchor="nw", font=("Segoe UI", 8, "underline"),
+            item = cv.create_text(lx, top + 108, anchor="nw", font=(UI_FONT, 8, "underline"),
                                   fill=muted, text=text, tags=("lnk%d" % len(cv.find_all()),))
             tag = cv.gettags(item)[0]
             cv.tag_bind(tag, "<Button-1>", lambda _e, c=command: c())
@@ -4847,7 +4920,7 @@ class LauncherApp:
                                                  fill=colors["accent"], outline="")
         self._progress_geom = (px, top + 76, pw, top + 82)
 
-        self.status_item = cv.create_text(px, top + 90, anchor="nw", font=("Segoe UI", 9),
+        self.status_item = cv.create_text(px, top + 90, anchor="nw", font=(UI_FONT, 9),
                                           fill=muted, text=self.status_var.get(), width=pw)
         self.status_var.trace_add(
             "write", lambda *a: cv.itemconfig(self.status_item, text=self.status_var.get()))
@@ -4870,7 +4943,7 @@ class LauncherApp:
                                                     tags=("upd",), state="hidden")
         self.update_banner = _CanvasText(
             cv, cv.create_text(width // 2, by, anchor="center",
-                               font=("Segoe UI", 10, "bold"), fill="#ffffff",
+                               font=(UI_FONT, 10, "bold"), fill="#ffffff",
                                text=self.update_banner_var.get(), tags=("upd",)))
 
         def show_banner(*_a):
@@ -4962,7 +5035,7 @@ class LauncherApp:
             y = widget.winfo_rooty() + widget.winfo_height() + 6
             win.wm_geometry("+%d+%d" % (x, y))
             tk.Label(
-                win, text=text, font=("Segoe UI", 8), bg=colors["fg"], fg=colors["bg_panel"],
+                win, text=text, font=(UI_FONT, 8), bg=colors["fg"], fg=colors["bg_panel"],
                 padx=8, pady=3,
             ).pack()
             state["win"] = win
@@ -4991,7 +5064,7 @@ class LauncherApp:
                 return
             fill = state["bg"] if state["enabled"] else disabled_bg
             _draw_rounded_rect(canvas, 1, 1, w - 1, h - 1, h // 2, fill=fill, outline="")
-            canvas.create_text(w // 2, h // 2, text=text, fill=fg, font=("Segoe UI", font_size, "bold"))
+            canvas.create_text(w // 2, h // 2, text=text, fill=fg, font=(UI_FONT, font_size, "bold"))
 
         def on_enter(_e):
             if state["enabled"]:
@@ -5103,10 +5176,10 @@ class LauncherApp:
 
         outer = tk.Frame(dialog, bg=colors["bg_panel"])
         outer.pack(fill="both", expand=True, padx=16, pady=16)
-        tk.Label(outer, text="Готовые ресурс-паки", font=("Segoe UI", 13, "bold"),
+        tk.Label(outer, text="Готовые ресурс-паки", font=(UI_FONT, 13, "bold"),
                  bg=colors["bg_panel"], fg=colors["fg"]).pack(anchor="w")
         tk.Label(outer, text="Проверенные паки — скачиваются с Modrinth одной кнопкой.",
-                 font=("Segoe UI", 9), bg=colors["bg_panel"],
+                 font=(UI_FONT, 9), bg=colors["bg_panel"],
                  fg=colors["fg_muted"]).pack(anchor="w", pady=(2, 10))
 
         buttons = {}
@@ -5146,21 +5219,21 @@ class LauncherApp:
 
             get_btn = tk.Button(
                 body, text="Установить", command=make_handler(pack_cfg, state),
-                font=("Segoe UI", 9),
+                font=(UI_FONT, 9),
                 bg=colors["accent"], fg=colors["accent_text"],
                 activebackground=colors["accent_hover"], activeforeground=colors["accent_text"],
                 relief="flat", cursor="hand2", bd=0, padx=12, pady=4)
             get_btn.pack(side="right")
             buttons[pack_cfg["slug"]] = get_btn
 
-            tk.Label(body, textvariable=state, font=("Segoe UI", 8),
+            tk.Label(body, textvariable=state, font=(UI_FONT, 8),
                      bg=colors["bg_field"], fg=colors["fg_muted"]).pack(side="right", padx=(0, 10))
 
             mid = tk.Frame(body, bg=colors["bg_field"])
             mid.pack(side="left", fill="x", expand=True)
-            tk.Label(mid, text=pack_cfg["name"], font=("Segoe UI", 11, "bold"),
+            tk.Label(mid, text=pack_cfg["name"], font=(UI_FONT, 11, "bold"),
                      bg=colors["bg_field"], fg=colors["fg"], anchor="w").pack(anchor="w")
-            tk.Label(mid, text=pack_cfg.get("description", ""), font=("Segoe UI", 8),
+            tk.Label(mid, text=pack_cfg.get("description", ""), font=(UI_FONT, 8),
                      bg=colors["bg_field"], fg=colors["fg_muted"], anchor="w",
                      justify="left", wraplength=340).pack(anchor="w")
 
@@ -5203,10 +5276,10 @@ class LauncherApp:
 
         head = tk.Frame(outer, bg=colors["bg_panel"])
         head.pack(fill="x")
-        tk.Label(head, text=title, font=("Segoe UI", 14, "bold"),
+        tk.Label(head, text=title, font=(UI_FONT, 14, "bold"),
                  bg=colors["bg_panel"], fg=colors["fg"]).pack(side="left")
 
-        tk.Label(outer, text=subtitle, font=("Segoe UI", 9), justify="left",
+        tk.Label(outer, text=subtitle, font=(UI_FONT, 9), justify="left",
                  bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(anchor="w", pady=(2, 12))
 
         list_container = tk.Frame(outer, bg=colors["bg_panel"],
@@ -5290,10 +5363,10 @@ class LauncherApp:
                     icon_label.configure(image=photo)
                 except Exception:
                     icon_label.configure(text=pack["name"][:1].upper(),
-                                         fg=colors["accent"], font=("Segoe UI", 20, "bold"))
+                                         fg=colors["accent"], font=(UI_FONT, 20, "bold"))
             else:
                 icon_label.configure(text=pack["name"][:1].upper(),
-                                     fg=colors["accent"], font=("Segoe UI", 20, "bold"))
+                                     fg=colors["accent"], font=(UI_FONT, 20, "bold"))
             icon_label.pack(fill="both", expand=True)
 
             # Своей картинки внутри архива нет (у шейдеров pack.png не бывает) —
@@ -5334,7 +5407,7 @@ class LauncherApp:
                 refresh()
 
             tk.Button(actions, text="Удалить", command=on_delete,
-                      font=("Segoe UI", 9), bg=colors["bg_panel"], fg=colors["status_offline"],
+                      font=(UI_FONT, 9), bg=colors["bg_panel"], fg=colors["status_offline"],
                       activebackground=colors["border"], activeforeground=colors["status_offline"],
                       relief="flat", cursor="hand2", bd=0, padx=10, pady=4).pack(side="right")
 
@@ -5348,17 +5421,17 @@ class LauncherApp:
                     messagebox.showerror("Не удалось переключить", str(exc), parent=dialog)
 
             tk.Checkbutton(actions, text="Включён", variable=var, command=on_toggle,
-                           font=("Segoe UI", 9), bg=colors["bg_field"], fg=colors["fg"],
+                           font=(UI_FONT, 9), bg=colors["bg_field"], fg=colors["fg"],
                            activebackground=colors["bg_field"], activeforeground=colors["fg"],
                            selectcolor=colors["bg_panel"], highlightthickness=0, bd=0,
                            cursor="hand2").pack(side="right", padx=(0, 8))
 
             mid = tk.Frame(body, bg=colors["bg_field"])
             mid.pack(side="left", fill="x", expand=True)
-            tk.Label(mid, text=pack["name"], font=("Segoe UI", 11, "bold"),
+            tk.Label(mid, text=pack["name"], font=(UI_FONT, 11, "bold"),
                      bg=colors["bg_field"], fg=colors["fg"], anchor="w").pack(anchor="w")
             if pack.get("description"):
-                desc = tk.Label(mid, text=pack["description"], font=("Segoe UI", 8),
+                desc = tk.Label(mid, text=pack["description"], font=(UI_FONT, 8),
                                 bg=colors["bg_field"], fg=colors["fg_muted"], anchor="w",
                                 justify="left", wraplength=max(150, grid["cell"] - 200))
                 desc.pack(anchor="w")
@@ -5378,7 +5451,7 @@ class LauncherApp:
             holder.pack_propagate(False)
             icon_label = tk.Label(holder, bg=colors["bg_field"],
                                   text=cfg["name"][:1].upper(), fg=colors["accent"],
-                                  font=("Segoe UI", 20, "bold"))
+                                  font=(UI_FONT, 20, "bold"))
             icon_label.pack(fill="both", expand=True)
 
             # Картинку пака тянем с Modrinth в фоне, чтобы окно не подвисало.
@@ -5419,7 +5492,7 @@ class LauncherApp:
 
                 threading.Thread(target=worker, daemon=True).start()
 
-            tk.Button(btn_holder, text="Установить", command=on_get, font=("Segoe UI", 9),
+            tk.Button(btn_holder, text="Установить", command=on_get, font=(UI_FONT, 9),
                       bg=colors["accent"], fg=colors["accent_text"],
                       activebackground=colors["accent_hover"],
                       activeforeground=colors["accent_text"],
@@ -5429,7 +5502,7 @@ class LauncherApp:
             mid.pack(side="left", fill="x", expand=True)
             title_row = tk.Frame(mid, bg=colors["bg_panel"])
             title_row.pack(anchor="w", fill="x")
-            tk.Label(title_row, text=cfg["name"], font=("Segoe UI", 11, "bold"),
+            tk.Label(title_row, text=cfg["name"], font=(UI_FONT, 11, "bold"),
                      bg=colors["bg_panel"], fg=colors["fg"]).pack(side="left")
             # Пометка нагрузки — только у шейдеров: они сильнее всего бьют по FPS,
             # и это надо видеть ДО установки.
@@ -5439,18 +5512,18 @@ class LauncherApp:
                                  "Средний": colors["accent"],
                                  "Тяжеловат": "#e0a33c",
                                  "Тяжёлый": colors["status_offline"]}
-                tk.Label(title_row, text="  ● %s" % weight, font=("Segoe UI", 8, "bold"),
+                tk.Label(title_row, text="  ● %s" % weight, font=(UI_FONT, 8, "bold"),
                          bg=colors["bg_panel"],
                          fg=weight_colors.get(weight, colors["fg_muted"])).pack(side="left")
             else:
-                tk.Label(title_row, text="  готовый пак", font=("Segoe UI", 8),
+                tk.Label(title_row, text="  готовый пак", font=(UI_FONT, 8),
                          bg=colors["bg_panel"], fg=colors["accent"]).pack(side="left")
-            desc = tk.Label(mid, text=cfg.get("description", ""), font=("Segoe UI", 8),
+            desc = tk.Label(mid, text=cfg.get("description", ""), font=(UI_FONT, 8),
                             bg=colors["bg_panel"], fg=colors["fg_muted"], anchor="w",
                             justify="left", wraplength=max(150, grid["cell"] - 200))
             desc.pack(anchor="w")
             wrap_labels.append(desc)
-            tk.Label(mid, textvariable=state, font=("Segoe UI", 8),
+            tk.Label(mid, textvariable=state, font=(UI_FONT, 8),
                      bg=colors["bg_panel"], fg=colors["fg_muted"], anchor="w").pack(anchor="w")
 
         def refresh():
@@ -5484,7 +5557,7 @@ class LauncherApp:
                     if cell["n"] % cols:
                         cell["n"] += cols - cell["n"] % cols
                     tk.Label(scroll_frame, text="ГОТОВЫЕ — СТАВЯТСЯ В ОДИН КЛИК",
-                             font=("Segoe UI", 8, "bold"), bg=colors["bg_panel"],
+                             font=(UI_FONT, 8, "bold"), bg=colors["bg_panel"],
                              fg=colors["fg_muted"]).grid(
                         row=cell["n"] // cols, column=0, columnspan=cols,
                         sticky="w", padx=8, pady=(12, 4))
@@ -5493,7 +5566,7 @@ class LauncherApp:
                         build_available_row(cfg)
 
             if not packs and not recommended:
-                hint = tk.Label(scroll_frame, text=empty_hint, font=("Segoe UI", 9),
+                hint = tk.Label(scroll_frame, text=empty_hint, font=(UI_FONT, 9),
                                 bg=colors["bg_panel"], fg=colors["fg_muted"],
                                 justify="left",
                                 wraplength=max(150, grid["cell"] * grid["cols"] - 40))
@@ -5516,7 +5589,7 @@ class LauncherApp:
                 refresh()
 
         tk.Button(head, text="Установить из ZIP...", command=on_install,
-                  font=("Segoe UI", 10), bg=colors["accent"], fg=colors["accent_text"],
+                  font=(UI_FONT, 10), bg=colors["accent"], fg=colors["accent_text"],
                   activebackground=colors["accent_hover"], activeforeground=colors["accent_text"],
                   relief="flat", cursor="hand2", bd=0, padx=14, pady=6).pack(side="right")
 
@@ -5580,12 +5653,12 @@ class LauncherApp:
         outer = tk.Frame(dialog, bg=colors["bg_panel"])
         outer.pack(fill="both", expand=True, padx=16, pady=16)
 
-        tk.Label(outer, text="Скины и плащи", font=("Segoe UI", 14, "bold"),
+        tk.Label(outer, text="Скины и плащи", font=(UI_FONT, 14, "bold"),
                  bg=colors["bg_panel"], fg=colors["fg"]).pack(anchor="w")
         tk.Label(outer,
                  text="Выберите картинку. Чтобы увидеть её на себе — выйдите в главное меню\n"
                       "игры и зайдите на сервер заново (мод подхватывает скин при входе).",
-                 font=("Segoe UI", 9), justify="left",
+                 font=(UI_FONT, 9), justify="left",
                  bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(anchor="w", pady=(2, 10))
 
         # ---- Шапка: разделы, поиск, свой файл ----
@@ -5598,16 +5671,16 @@ class LauncherApp:
 
         search_var = tk.StringVar()
         search_entry = tk.Entry(
-            head, textvariable=search_var, font=("Segoe UI", 10),
+            head, textvariable=search_var, font=(UI_FONT, 10),
             bg=colors["bg_field"], fg=colors["fg"], insertbackground=colors["fg"],
             relief="flat", highlightthickness=1, width=22,
             highlightbackground=colors["border"], highlightcolor=colors["accent"])
         search_entry.pack(side="right", ipady=4)
-        tk.Label(head, text="Поиск", font=("Segoe UI", 9),
+        tk.Label(head, text="Поиск", font=(UI_FONT, 9),
                  bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(side="right", padx=(0, 6))
 
         status_var = tk.StringVar(value="")
-        status_label = tk.Label(outer, textvariable=status_var, font=("Segoe UI", 9),
+        status_label = tk.Label(outer, textvariable=status_var, font=(UI_FONT, 9),
                                 bg=colors["bg_panel"], fg=colors["fg_muted"],
                                 anchor="w", justify="left")
         status_label.pack(fill="x", pady=(0, 6))
@@ -5710,11 +5783,11 @@ class LauncherApp:
             holder.pack_propagate(False)
             image_label = tk.Label(holder, bg=colors["bg_panel"],
                                    text="…", fg=colors["fg_muted"],
-                                   font=("Segoe UI", 9))
+                                   font=(UI_FONT, 9))
             image_label.pack(fill="both", expand=True)
 
             name_label = tk.Label(
-                card, text=item["name"], font=("Segoe UI", 9,
+                card, text=item["name"], font=(UI_FONT, 9,
                                                "bold" if selected else "normal"),
                 bg=colors["bg_field"],
                 fg=colors["accent"] if selected else colors["fg"],
@@ -5722,7 +5795,7 @@ class LauncherApp:
             name_label.pack(padx=8, pady=(0, 4))
 
             mark = tk.Label(card, text="Выбрано" if selected else "",
-                            font=("Segoe UI", 8), bg=colors["bg_field"],
+                            font=(UI_FONT, 8), bg=colors["bg_field"],
                             fg=colors["accent"])
             mark.pack(pady=(0, 8))
 
@@ -5762,7 +5835,7 @@ class LauncherApp:
                 tk.Label(grid_frame,
                          text="Ничего не найдено." if query else
                               "Список пуст — похоже, нет связи с интернетом.",
-                         font=("Segoe UI", 10), bg=colors["bg_panel"],
+                         font=(UI_FONT, 10), bg=colors["bg_panel"],
                          fg=colors["fg_muted"]).grid(row=0, column=0, padx=16, pady=16)
                 return
 
@@ -5809,7 +5882,7 @@ class LauncherApp:
         for key, label in (("skins", "Скины"), ("capes", "Плащи")):
             active = key == state["kind"]
             button = tk.Button(
-                tabs, text=label, font=("Segoe UI", 9, "bold"),
+                tabs, text=label, font=(UI_FONT, 9, "bold"),
                 bg=colors["accent"] if active else colors["bg_field"],
                 fg=colors["accent_text"] if active else colors["fg_muted"],
                 activebackground=colors["accent_hover"],
@@ -5824,17 +5897,17 @@ class LauncherApp:
         # ---- Низ окна ----
         footer = tk.Frame(outer, bg=colors["bg_panel"])
         footer.pack(fill="x", pady=(10, 0))
-        tk.Button(footer, text="Загрузить свой…", font=("Segoe UI", 9),
+        tk.Button(footer, text="Загрузить свой…", font=(UI_FONT, 9),
                   bg=colors["bg_field"], fg=colors["fg"], relief="flat", bd=0,
                   padx=12, pady=6, cursor="hand2",
                   activebackground=colors["accent_dim"],
                   command=on_own_file).pack(side="left")
-        tk.Button(footer, text="Убрать выбор", font=("Segoe UI", 9),
+        tk.Button(footer, text="Убрать выбор", font=(UI_FONT, 9),
                   bg=colors["bg_field"], fg=colors["fg_muted"], relief="flat", bd=0,
                   padx=12, pady=6, cursor="hand2",
                   activebackground=colors["accent_dim"],
                   command=on_clear).pack(side="left", padx=(8, 0))
-        tk.Button(footer, text="Закрыть", font=("Segoe UI", 9, "bold"),
+        tk.Button(footer, text="Закрыть", font=(UI_FONT, 9, "bold"),
                   bg=colors["accent"], fg=colors["accent_text"], relief="flat", bd=0,
                   padx=18, pady=6, cursor="hand2",
                   activebackground=colors["accent_hover"],
@@ -5861,10 +5934,10 @@ class LauncherApp:
         # ---- Оперативная память (переехала сюда с главного окна) ----
         ram_row = tk.Frame(outer, bg=colors["bg_panel"])
         ram_row.pack(fill="x")
-        tk.Label(ram_row, text="ОПЕРАТИВНАЯ ПАМЯТЬ", font=("Segoe UI", 8, "bold"),
+        tk.Label(ram_row, text="ОПЕРАТИВНАЯ ПАМЯТЬ", font=(UI_FONT, 8, "bold"),
                  bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(side="left")
         self.ram_value_label = tk.Label(
-            ram_row, text=self._format_gb(self.memory_var.get()), font=("Segoe UI", 9, "bold"),
+            ram_row, text=self._format_gb(self.memory_var.get()), font=(UI_FONT, 9, "bold"),
             bg=colors["bg_panel"], fg=colors["accent"])
         self.ram_value_label.pack(side="right")
 
@@ -5879,9 +5952,9 @@ class LauncherApp:
 
         range_row = tk.Frame(outer, bg=colors["bg_panel"])
         range_row.pack(fill="x", pady=(0, 12))
-        tk.Label(range_row, text=self._format_gb(self.memory_min), font=("Segoe UI", 8),
+        tk.Label(range_row, text=self._format_gb(self.memory_min), font=(UI_FONT, 8),
                  bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(side="left")
-        tk.Label(range_row, text=self._format_gb(self.memory_max), font=("Segoe UI", 8),
+        tk.Label(range_row, text=self._format_gb(self.memory_max), font=(UI_FONT, 8),
                  bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(side="right")
 
         # ---- Режим для слабых ПК ----
@@ -5893,7 +5966,7 @@ class LauncherApp:
             outer, text=" Режим для слабых ПК — проще графика, выше FPS,\n"
                         " автоматически включается облегчённый ресурс-пак",
             image=self.icons.get("gauge"), compound="left",
-            variable=self.low_end_var, font=("Segoe UI", 9), command=on_low_end_toggle,
+            variable=self.low_end_var, font=(UI_FONT, 9), command=on_low_end_toggle,
             bg=colors["bg_panel"], fg=colors["fg"], activebackground=colors["bg_panel"],
             activeforeground=colors["fg"], selectcolor=colors["bg_field"],
             highlightthickness=0, bd=0, cursor="hand2", anchor="w", justify="left",
@@ -5906,21 +5979,21 @@ class LauncherApp:
 
         tk.Frame(outer, bg=colors["border"], height=1).pack(fill="x", pady=(6, 14))
 
-        tk.Label(outer, text="Папка установки игры", font=("Segoe UI", 14, "bold"),
+        tk.Label(outer, text="Папка установки игры", font=(UI_FONT, 14, "bold"),
                  bg=colors["bg_panel"], fg=colors["fg"]).pack(anchor="w")
         tk.Label(
             outer,
             text="Здесь лежат Minecraft, моды и ваши миры. Игру можно перенести на\n"
                  "другой диск — все миры, настройки и скриншоты переедут вместе с ней.",
-            font=("Segoe UI", 9), bg=colors["bg_panel"], fg=colors["fg_muted"],
+            font=(UI_FONT, 9), bg=colors["bg_panel"], fg=colors["fg_muted"],
             justify="left",
         ).pack(anchor="w", pady=(2, 14))
 
-        tk.Label(outer, text="ТЕКУЩАЯ ПАПКА", font=("Segoe UI", 8, "bold"),
+        tk.Label(outer, text="ТЕКУЩАЯ ПАПКА", font=(UI_FONT, 8, "bold"),
                  bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(anchor="w")
         path_var = tk.StringVar(value=str(INSTANCE_DIR))
         path_box = tk.Entry(
-            outer, textvariable=path_var, font=("Segoe UI", 10), state="readonly",
+            outer, textvariable=path_var, font=(UI_FONT, 10), state="readonly",
             readonlybackground=colors["bg_field"], fg=colors["fg"],
             relief="flat", highlightthickness=1,
             highlightbackground=colors["border"], highlightcolor=colors["accent"],
@@ -5929,7 +6002,7 @@ class LauncherApp:
 
         status_var = tk.StringVar(value="")
         status_label = tk.Label(
-            outer, textvariable=status_var, font=("Segoe UI", 9), wraplength=510,
+            outer, textvariable=status_var, font=(UI_FONT, 9), wraplength=510,
             justify="left", bg=colors["bg_panel"], fg=colors["fg_muted"], anchor="w")
         status_label.pack(fill="x", pady=(0, 12))
 
@@ -5995,7 +6068,7 @@ class LauncherApp:
 
         change_btn = tk.Button(
             buttons, text="Выбрать другую папку...", command=on_change,
-            font=("Segoe UI", 10), bg=colors["accent"], fg=colors["accent_text"],
+            font=(UI_FONT, 10), bg=colors["accent"], fg=colors["accent_text"],
             activebackground=colors["accent_hover"], activeforeground=colors["accent_text"],
             relief="flat", cursor="hand2", bd=0, padx=14, pady=7,
         )
@@ -6003,7 +6076,7 @@ class LauncherApp:
 
         default_btn = tk.Button(
             buttons, text="Вернуть на диск C", command=on_default,
-            font=("Segoe UI", 10), bg=colors["bg_field"], fg=colors["fg"],
+            font=(UI_FONT, 10), bg=colors["bg_field"], fg=colors["fg"],
             activebackground=colors["border"], activeforeground=colors["fg"],
             relief="flat", cursor="hand2", bd=0, padx=14, pady=7,
         )
@@ -6011,7 +6084,7 @@ class LauncherApp:
 
         tk.Button(
             buttons, text="Открыть папку", command=lambda: open_folder(INSTANCE_DIR),
-            font=("Segoe UI", 10), bg=colors["bg_field"], fg=colors["fg"],
+            font=(UI_FONT, 10), bg=colors["bg_field"], fg=colors["fg"],
             activebackground=colors["border"], activeforeground=colors["fg"],
             relief="flat", cursor="hand2", bd=0, padx=14, pady=7,
         ).pack(side="right")
@@ -6043,31 +6116,31 @@ class LauncherApp:
         # ---- Шапка: заголовок + поиск + сортировка ----
         head = tk.Frame(outer, bg=colors["bg_panel"])
         head.pack(fill="x")
-        tk.Label(head, text="Клиентские моды", font=("Segoe UI", 14, "bold"),
+        tk.Label(head, text="Клиентские моды", font=(UI_FONT, 14, "bold"),
                  bg=colors["bg_panel"], fg=colors["fg"]).pack(side="left")
 
         sort_var = tk.StringVar(value="Сначала включённые")
         sort_box = ttk.Combobox(head, textvariable=sort_var, state="readonly", width=20,
                                 values=["Сначала включённые", "По названию", "По категории"])
         sort_box.pack(side="right")
-        tk.Label(head, text="Сортировка:", font=("Segoe UI", 9), bg=colors["bg_panel"],
+        tk.Label(head, text="Сортировка:", font=(UI_FONT, 9), bg=colors["bg_panel"],
                  fg=colors["fg_muted"]).pack(side="right", padx=(0, 6))
 
         search_var = tk.StringVar()
         search_entry = tk.Entry(
-            head, textvariable=search_var, font=("Segoe UI", 10), width=26,
+            head, textvariable=search_var, font=(UI_FONT, 10), width=26,
             bg=colors["bg_field"], fg=colors["fg"], insertbackground=colors["fg"],
             relief="flat", highlightthickness=1,
             highlightbackground=colors["border"], highlightcolor=colors["accent"])
         search_entry.pack(side="right", padx=(16, 24), ipady=4)
-        tk.Label(head, text="Поиск:", font=("Segoe UI", 9), bg=colors["bg_panel"],
+        tk.Label(head, text="Поиск:", font=(UI_FONT, 9), bg=colors["bg_panel"],
                  fg=colors["fg_muted"]).pack(side="right", padx=(0, 6))
 
         tk.Label(
             outer,
             text="Эти моды безопасно включать и выключать в любой момент — "
                  "включили галочку, мод сразу скачается; убрали — сразу удалится.",
-            font=("Segoe UI", 9), bg=colors["bg_panel"], fg=colors["fg_muted"],
+            font=(UI_FONT, 9), bg=colors["bg_panel"], fg=colors["fg_muted"],
             justify="left",
         ).pack(anchor="w", pady=(4, 8))
 
@@ -6094,7 +6167,7 @@ class LauncherApp:
 
         for name in categories:
             button = tk.Button(
-                chips, text=name, font=("Segoe UI", 9), relief="flat", bd=0,
+                chips, text=name, font=(UI_FONT, 9), relief="flat", bd=0,
                 cursor="hand2", padx=12, pady=4,
                 bg=colors["bg_field"], fg=colors["fg_muted"],
                 activebackground=colors["accent_hover"],
@@ -6234,7 +6307,7 @@ class LauncherApp:
             icon_holder.pack(side="left", padx=(0, 10))
             icon_holder.pack_propagate(False)
             icon_lbl = tk.Label(icon_holder, bg=colors["bg_panel"],
-                                text=mod["name"][:1].upper(), font=("Segoe UI", 15, "bold"),
+                                text=mod["name"][:1].upper(), font=(UI_FONT, 15, "bold"),
                                 fg=colors["accent"])
             icon_lbl.pack(fill="both", expand=True)
             icon_labels[mod["id"]] = icon_lbl
@@ -6252,17 +6325,17 @@ class LauncherApp:
             mid.pack(side="left", fill="both", expand=True)
             title_row = tk.Frame(mid, bg=colors["bg_field"])
             title_row.pack(anchor="w", fill="x")
-            tk.Label(title_row, text=mod["name"], font=("Segoe UI", 10, "bold"),
+            tk.Label(title_row, text=mod["name"], font=(UI_FONT, 10, "bold"),
                      bg=colors["bg_field"], fg=colors["fg"]).pack(side="left")
             tk.Label(title_row, text="  " + (mod.get("category") or "Прочее"),
-                     font=("Segoe UI", 7), bg=colors["bg_field"],
+                     font=(UI_FONT, 7), bg=colors["bg_field"],
                      fg=colors["accent"]).pack(side="left")
             description = mod.get("description")
             if description:
-                tk.Label(mid, text=description, font=("Segoe UI", 8),
+                tk.Label(mid, text=description, font=(UI_FONT, 8),
                          bg=colors["bg_field"], fg=colors["fg_muted"], anchor="w",
                          justify="left", wraplength=card_width - 90).pack(anchor="w")
-            status_label = tk.Label(mid, text="", font=("Segoe UI", 8),
+            status_label = tk.Label(mid, text="", font=(UI_FONT, 8),
                                     bg=colors["bg_field"], fg=colors["fg_muted"], anchor="w")
             status_label.pack(anchor="w")
             status_labels[mod["id"]] = status_label
@@ -6307,7 +6380,7 @@ class LauncherApp:
                     not selection.get(m["id"], m.get("default", True)), m["name"].lower()))
 
             if not mods:
-                tk.Label(scroll_frame, text="Ничего не найдено.", font=("Segoe UI", 9),
+                tk.Label(scroll_frame, text="Ничего не найдено.", font=(UI_FONT, 9),
                          bg=colors["bg_panel"], fg=colors["fg_muted"]).grid(
                     row=0, column=0, padx=14, pady=18, sticky="w")
                 return
@@ -6511,21 +6584,21 @@ class LauncherApp:
         outer.pack(fill="both", expand=True, padx=16, pady=16)
 
         title_var = tk.StringVar(value="Моды сборки")
-        tk.Label(outer, textvariable=title_var, font=("Segoe UI", 14, "bold"),
+        tk.Label(outer, textvariable=title_var, font=(UI_FONT, 14, "bold"),
                  bg=colors["bg_panel"], fg=colors["fg"]).pack(anchor="w")
         status_var = tk.StringVar(value="Читаю папку модов…")
-        tk.Label(outer, textvariable=status_var, font=("Segoe UI", 9),
+        tk.Label(outer, textvariable=status_var, font=(UI_FONT, 9),
                  bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(anchor="w", pady=(2, 10))
 
         head = tk.Frame(outer, bg=colors["bg_panel"])
         head.pack(fill="x", pady=(0, 6))
         search_var = tk.StringVar()
-        entry = tk.Entry(head, textvariable=search_var, font=("Segoe UI", 10),
+        entry = tk.Entry(head, textvariable=search_var, font=(UI_FONT, 10),
                          bg=colors["bg_field"], fg=colors["fg"], insertbackground=colors["fg"],
                          relief="flat", highlightthickness=1, width=26,
                          highlightbackground=colors["border"], highlightcolor=colors["accent"])
         entry.pack(side="right", ipady=4)
-        tk.Label(head, text="Поиск", font=("Segoe UI", 9), bg=colors["bg_panel"],
+        tk.Label(head, text="Поиск", font=(UI_FONT, 9), bg=colors["bg_panel"],
                  fg=colors["fg_muted"]).pack(side="right", padx=(0, 6))
 
         sort_var = tk.StringVar(value="По названию")
@@ -6533,7 +6606,7 @@ class LauncherApp:
                                 values=("По названию", "По категории", "По размеру файла"))
         sort_box.pack(side="left")
         sort_box.bind("<<ComboboxSelected>>", lambda e: render())
-        tk.Label(head, text="Сортировка", font=("Segoe UI", 9), bg=colors["bg_panel"],
+        tk.Label(head, text="Сортировка", font=(UI_FONT, 9), bg=colors["bg_panel"],
                  fg=colors["fg_muted"]).pack(side="left", padx=(8, 0))
 
         chips_row = tk.Frame(outer, bg=colors["bg_panel"])
@@ -6627,30 +6700,30 @@ class LauncherApp:
             else:
                 ids.append(grid_cv.create_text(x0 + 34, y + ROW_H // 2,
                                                text=m["title"][:1].upper(),
-                                               font=("Segoe UI", 15, "bold"),
+                                               font=(UI_FONT, 15, "bold"),
                                                fill=cat_color, tags=(tag,)))
             self._modlist_labels[m["hash"]] = i
 
             tx = x0 + 66
             ids.append(grid_cv.create_text(tx, y + 16, anchor="w", text=m["title"],
-                                           font=("Segoe UI", 10, "bold"),
+                                           font=(UI_FONT, 10, "bold"),
                                            fill=colors["fg"], tags=(tag,)))
             if m["version"]:
                 ids.append(grid_cv.create_text(right, y + 16, anchor="e",
                                                text="v" + m["version"],
-                                               font=("Segoe UI", 8, "bold"),
+                                               font=(UI_FONT, 8, "bold"),
                                                fill=colors["fg_muted"], tags=(tag,)))
             # Тег категории плашкой
             tw = 7 * len(m["category"]) + 12
             ids.append(grid_cv.create_rectangle(tx, y + 27, tx + tw, y + 41,
                                                 fill="", outline=cat_color, tags=(tag,)))
             ids.append(grid_cv.create_text(tx + tw // 2, y + 34, text=m["category"],
-                                           font=("Segoe UI", 7, "bold"),
+                                           font=(UI_FONT, 7, "bold"),
                                            fill=cat_color, tags=(tag,)))
             if m["author"]:
                 ids.append(grid_cv.create_text(right, y + 34, anchor="e",
                                                text=m["author"][:18],
-                                               font=("Segoe UI", 7),
+                                               font=(UI_FONT, 7),
                                                fill=colors["fg_muted"], tags=(tag,)))
             if m["description"]:
                 # Текст режем по ширине колонки, а не по числу символов наугад.
@@ -6659,11 +6732,11 @@ class LauncherApp:
                 if len(text) > limit:
                     text = text[:limit - 1].rstrip(" ,.") + "…"
                 ids.append(grid_cv.create_text(tx, y + 54, anchor="w", text=text,
-                                               font=("Segoe UI", 8),
+                                               font=(UI_FONT, 8),
                                                fill=colors["fg_muted"], tags=(tag,)))
             if m["url"]:
                 lid = grid_cv.create_text(right, y + 54, anchor="e", text="подробнее ↗",
-                                          font=("Segoe UI", 7, "underline"),
+                                          font=(UI_FONT, 7, "underline"),
                                           fill=colors["accent"], tags=(tag, "lnk%d" % i))
                 ids.append(lid)
                 grid_cv.tag_bind("lnk%d" % i, "<Button-1>",
@@ -6705,7 +6778,7 @@ class LauncherApp:
                 grid_cv.create_text(inner_w // 2, 40, text="Ничего не найдено."
                                     if state["query"] else
                                     "Моды не найдены — сборка ещё не установлена.",
-                                    font=("Segoe UI", 10), fill=colors["fg_muted"])
+                                    font=(UI_FONT, 10), fill=colors["fg_muted"])
                 return
             rows = (len(items) + COLS - 1) // COLS      # округляем вверх
             grid_cv.configure(scrollregion=(0, 0, inner_w, rows * ROW_H))
@@ -6762,7 +6835,7 @@ class LauncherApp:
                     count = len(mods) if name == "Все" else sum(
                         1 for m in mods if m["category"] == name)
                     b = tk.Button(chips_row, text="%s (%d)" % (name, count),
-                                  font=("Segoe UI", 8, "bold"),
+                                  font=(UI_FONT, 8, "bold"),
                                   bg=colors["accent"] if name == "Все" else colors["bg_field"],
                                   fg=colors["accent_text"] if name == "Все" else colors["fg_muted"],
                                   activebackground=colors["accent_hover"],
@@ -6805,11 +6878,11 @@ class LauncherApp:
         outer.pack(fill="both", expand=True, padx=16, pady=16)
 
         tk.Label(
-            outer, text="История изменений", font=("Segoe UI", 14, "bold"),
+            outer, text="История изменений", font=(UI_FONT, 14, "bold"),
             bg=colors["bg_panel"], fg=colors["fg"],
         ).pack(anchor="w")
         tk.Label(
-            outer, text="%s launcher" % CONFIG["PACK_NAME"], font=("Segoe UI", 9),
+            outer, text="%s launcher" % CONFIG["PACK_NAME"], font=(UI_FONT, 9),
             bg=colors["bg_panel"], fg=colors["fg_muted"],
         ).pack(anchor="w", pady=(2, 12))
 
@@ -6838,7 +6911,7 @@ class LauncherApp:
 
         if not entries:
             tk.Label(
-                scroll_frame, text="Пока пусто.", font=("Segoe UI", 9),
+                scroll_frame, text="Пока пусто.", font=(UI_FONT, 9),
                 bg=colors["bg_panel"], fg=colors["fg_muted"],
             ).pack(padx=10, pady=10, anchor="w")
 
@@ -6849,18 +6922,18 @@ class LauncherApp:
             header = tk.Frame(block, bg=colors["bg_panel"])
             header.pack(fill="x")
             tk.Label(
-                header, text="v%s" % entry.get("version", "?"), font=("Segoe UI", 10, "bold"),
+                header, text="v%s" % entry.get("version", "?"), font=(UI_FONT, 10, "bold"),
                 bg=colors["bg_panel"], fg=colors["accent"],
             ).pack(side="left")
             if entry.get("date"):
                 tk.Label(
-                    header, text=entry["date"], font=("Segoe UI", 8),
+                    header, text=entry["date"], font=(UI_FONT, 8),
                     bg=colors["bg_panel"], fg=colors["fg_muted"],
                 ).pack(side="right")
 
             for change in entry.get("changes", []):
                 tk.Label(
-                    block, text="•  %s" % change, font=("Segoe UI", 9),
+                    block, text="•  %s" % change, font=(UI_FONT, 9),
                     bg=colors["bg_panel"], fg=colors["fg"], justify="left", anchor="w",
                     wraplength=340,
                 ).pack(fill="x", pady=(4, 0), anchor="w")
@@ -7173,7 +7246,13 @@ def main():
     # как что-либо начнёт обращаться к файлам установки.
     set_install_dir(get_saved_install_dir())
 
+    # Строго до tk.Tk(): Tk спрашивает у Windows список шрифтов при старте,
+    # и незарегистрированного к тому моменту Lato он просто не увидит.
+    load_bundled_fonts()
+
     root = tk.Tk()
+    # А это — строго после: список семейств можно спросить только у живого Tk.
+    pick_ui_font(root)
     LauncherApp(root)
     root.mainloop()
     # Жёстко завершаем процесс: иначе после закрытия окна exe иногда

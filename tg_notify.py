@@ -19,9 +19,15 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from pathlib import Path
 
 API = "https://api.telegram.org/bot%s/sendMessage"
+API_PHOTO = "https://api.telegram.org/bot%s/sendPhoto"
+
+# Лимит Telegram на подпись к фото. У обычного сообщения — 4096, поэтому
+# длинный список изменений уходит вторым сообщением вслед за карточкой.
+CAPTION_LIMIT = 1000
 
 
 def read_changelog(launcher_path: Path) -> list:
@@ -76,6 +82,90 @@ def build_message(version: str, changelog: list, release_url: str = "") -> str:
             size += len(line) + 1
         text = "\n".join(cut)
     return text
+
+
+def render_card(version: str, date: str) -> Path | None:
+    """Карточка для поста: арт сборки, логотип, крупно версия и дата.
+
+    Рисуется теми же файлами, что и главное окно лаунчера (background.png,
+    logo.png, fonts/Lato-*.ttf) — пост выглядит продолжением лаунчера, а не
+    чужой картинкой. Любая проблема (нет Pillow, нет арта, нет шрифтов) —
+    возвращаем None и бот шлёт обычный текст: пост важнее красоты.
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFilter, ImageFont
+    except Exception:  # noqa: BLE001
+        return None
+    here = Path(__file__).parent
+    try:
+        W, H = 1200, 630   # пропорция карточек ссылок, Telegram её не режет
+        art = Image.open(here / "background.png").convert("RGB")
+        k = max(W / art.width, H / art.height)
+        art = art.resize((round(art.width * k), round(art.height * k)),
+                         Image.LANCZOS)
+        x = (art.width - W) // 2
+        img = art.crop((x, 0, x + W, H)).convert("RGBA")
+
+        # Затемнение снизу — иначе белый текст утонет в ярком арте.
+        shade = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(shade)
+        for i in range(260):
+            d.line([(0, H - 260 + i), (W, H - 260 + i)],
+                   fill=(8, 11, 16, int(235 * i / 260)))
+        img.alpha_composite(shade)
+
+        logo = Image.open(here / "logo.png").convert("RGBA")
+        k = 260 / max(logo.size)
+        logo = logo.resize((round(logo.width * k), round(logo.height * k)),
+                           Image.LANCZOS)
+        img.alpha_composite(logo, ((W - logo.width) // 2, 36))
+
+        def font(size, bold=False):
+            name = "Lato-Bold.ttf" if bold else "Lato-Regular.ttf"
+            return ImageFont.truetype(str(here / "fonts" / name), size)
+
+        d = ImageDraw.Draw(img)
+        d.text((W // 2, H - 150), "Обновление лаунчера",
+               font=font(30), fill=(170, 182, 198), anchor="mm")
+        d.text((W // 2, H - 95), version,
+               font=font(72, bold=True), fill=(63, 169, 245), anchor="mm")
+        if date:
+            d.text((W // 2, H - 40), date,
+                   font=font(24), fill=(170, 182, 198), anchor="mm")
+
+        out = here / "tg_card.png"
+        img.convert("RGB").save(out, "PNG")
+        return out
+    except Exception as exc:  # noqa: BLE001
+        print("Карточка не собралась (%s) — пост уйдёт текстом." % exc)
+        return None
+
+
+def send_photo(token: str, chat_id: str, photo: Path, caption: str) -> dict:
+    """sendPhoto — multipart/form-data руками: requests в сборке нет,
+    а тянуть зависимость ради одного запроса не хочется."""
+    boundary = "----tg%s" % uuid.uuid4().hex
+    parts = []
+    for name, value in (("chat_id", chat_id), ("caption", caption),
+                        ("parse_mode", "HTML")):
+        parts.append(("--%s\r\nContent-Disposition: form-data; name=\"%s\""
+                      "\r\n\r\n%s\r\n" % (boundary, name, value)).encode("utf-8"))
+    parts.append(("--%s\r\nContent-Disposition: form-data; name=\"photo\"; "
+                  "filename=\"card.png\"\r\nContent-Type: image/png\r\n\r\n"
+                  % boundary).encode("utf-8"))
+    parts.append(photo.read_bytes())
+    parts.append(("\r\n--%s--\r\n" % boundary).encode("utf-8"))
+    body = b"".join(parts)
+
+    request = urllib.request.Request(
+        API_PHOTO % urllib.parse.quote(token, safe=":"), data=body,
+        headers={"Content-Type": "multipart/form-data; boundary=%s" % boundary})
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body_text = exc.read().decode("utf-8", "replace")
+        raise SystemExit("Telegram ответил %s: %s" % (exc.code, body_text))
 
 
 def send(token: str, chat_id: str, text: str) -> dict:
@@ -147,7 +237,25 @@ def main() -> None:
     text = build_message(version, changelog, release_url)
     print("Текст поста:\n" + text)
 
-    result = send(token, chat_id, text)
+    entry = next((e for e in changelog if str(e.get("version")) == version), {})
+    card = render_card(version, str(entry.get("date", "")))
+
+    if card is None:
+        # Красиво не вышло — шлём как раньше, текстом. Пост важнее карточки.
+        result = send(token, chat_id, text)
+    elif len(text) <= CAPTION_LIMIT:
+        result = send_photo(token, chat_id, card, text)
+    else:
+        # Подпись к фото — максимум 1024 символа, длинный список изменений
+        # туда не влезает. Карточка уходит с короткой шапкой, полный текст —
+        # следом обычным сообщением: ничего не теряется.
+        short = "🚀 <b>Industrial Horizon — лаунчер %s</b>" % html.escape(version)
+        if release_url:
+            short += '\n<a href="%s">Скачать</a>' % html.escape(release_url, quote=True)
+        result = send_photo(token, chat_id, card, short)
+        if result.get("ok"):
+            result = send(token, chat_id, text)
+
     if not result.get("ok"):
         raise SystemExit("Telegram не принял сообщение: %s" % result)
     print("Отправлено, message_id=%s" % result.get("result", {}).get("message_id"))
