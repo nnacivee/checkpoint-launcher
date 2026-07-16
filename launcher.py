@@ -352,7 +352,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.33.0",
+    "LAUNCHER_VERSION": "1.34.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -364,6 +364,20 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.34.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "Круговое меню быстрого доступа — зажми клавишу и выбирай: "
+                "карта, домой, на спавн, назад, случайный телепорт. Крупное "
+                "стеклянное кольцо с анимациями. Клавишу назначь в "
+                "Настройки → Управление → «Открыть круговое меню».",
+                "Текстуры модов пересобраны алгоритмом xBR — заметно чище "
+                "Scale2x из прошлой версии. Охват шире: 33 000 текстур, "
+                "теперь включая мобов, частицы и окружение. Старую сборку "
+                "лаунчер удалит сам.",
+            ],
+        },
         {
             "version": "1.33.0",
             "date": "17 июля 2026",
@@ -1298,6 +1312,16 @@ CONFIG = {
         {"slug": "better-third-person", "label": "Better Third Person (свободная камера)"},
         {"slug": "sodium-options-api", "label": "Sodium Options API (библиотека)"},
         {"slug": "sodium-dynamic-lights", "label": "Динамический свет (факел светит в руке)"},
+        # Круговое меню быстрого доступа (карта, /home, /spawn и т.д. — на
+        # клавишу). Одобрено владельцем 17.07 после теста. Чисто клиентский
+        # (server_side=unsupported на Modrinth), сервер не трогаем. Ссылка
+        # версионная — у всех одна и та же сборка мода. Преднастроенное меню
+        # и внешний вид (крупное стеклянное кольцо, анимации) едут в
+        # configpack v14: config/ezactions/*. Лицензия MIT.
+        {"slug": "ez-actions-2-0-3-5",
+         "url": "https://cdn.modrinth.com/data/gJiy6dk4/versions/z7npcqAM/ezactions-neoforge-1.21.1-2.0.3.5.jar",
+         "filename": "ezactions-neoforge-1.21.1-2.0.3.5.jar",
+         "label": "Круговое меню быстрого доступа"},
     ],
 
     # ------------------- УДАЛЕНИЕ МОДОВ У ИГРОКОВ -------------------
@@ -1493,14 +1517,33 @@ CONFIG = {
     # равно — все части включаются разом и работают как один пак.
     "AUTO_RESOURCE_PACKS": [
         {"slug": "faithful-32x", "name": "Faithful 32x (ваниль)"},
-        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale_32x_1.zip",
-         "filename": "IH_Upscale_32x_1.zip", "name": "Моды 32x, часть 1"},
-        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale_32x_2.zip",
-         "filename": "IH_Upscale_32x_2.zip", "name": "Моды 32x, часть 2"},
-        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale_32x_3.zip",
-         "filename": "IH_Upscale_32x_3.zip", "name": "Моды 32x, часть 3"},
-        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale_32x_4.zip",
-         "filename": "IH_Upscale_32x_4.zip", "name": "Моды 32x, часть 4"},
+        # v2 (17.07, ночная просьба владельца «улучшить все текстуры»):
+        # алгоритм xBR вместо Scale2x — чище скругляет диагонали и углы, и
+        # охват шире: не только блоки/предметы, а ещё мобы, частицы и
+        # окружение (33 066 текстур из 185 джарок; gui и шрифты намеренно
+        # не трогаем). Старые части v1 удаляет REMOVED_RESOURCE_PACKS ниже.
+        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_1.zip",
+         "filename": "IH_Upscale32v2_1.zip", "name": "Моды 32x v2, часть 1"},
+        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_2.zip",
+         "filename": "IH_Upscale32v2_2.zip", "name": "Моды 32x v2, часть 2"},
+        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_3.zip",
+         "filename": "IH_Upscale32v2_3.zip", "name": "Моды 32x v2, часть 3"},
+        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_4.zip",
+         "filename": "IH_Upscale32v2_4.zip", "name": "Моды 32x v2, часть 4"},
+        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_5.zip",
+         "filename": "IH_Upscale32v2_5.zip", "name": "Моды 32x v2, часть 5"},
+        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_6.zip",
+         "filename": "IH_Upscale32v2_6.zip", "name": "Моды 32x v2, часть 6"},
+    ],
+
+    # Устаревшие авто-паки: удаляются у игроков вместе с записью в
+    # options.txt (см. install_auto_resource_packs). Это первая сборка
+    # апскейла (Scale2x, только блоки/предметы) — заменена на v2 выше.
+    "REMOVED_RESOURCE_PACKS": [
+        "IH_Upscale_32x_1.zip",
+        "IH_Upscale_32x_2.zip",
+        "IH_Upscale_32x_3.zip",
+        "IH_Upscale_32x_4.zip",
     ],
 
     # Готовые шейдеры с Modrinth. weight — честная пометка о прожорливости:
@@ -3819,6 +3862,19 @@ def install_auto_resource_packs(status_cb=None, progress_cb=None) -> None:
 
     packs_dir = get_resourcepacks_dir()
     packs_dir.mkdir(parents=True, exist_ok=True)
+
+    # Устаревшие авто-паки (например, старые части апскейла, заменённые
+    # новой сборкой) убираем целиком: и файл, и запись в options.txt.
+    # Иначе старый пак остался бы включённым рядом с новым и перекрывал
+    # его текстуры — какая версия видна, решал бы порядок в списке.
+    for old_name in CONFIG.get("REMOVED_RESOURCE_PACKS", []):
+        try:
+            old_path = packs_dir / old_name
+            if old_path.exists():
+                set_resource_pack_enabled({"entry": "file/%s" % old_name}, False)
+                old_path.unlink()
+        except Exception:
+            pass
     marker_file = packs_dir / ".launcher_auto_packs.json"
     activated = []
     if marker_file.exists():
