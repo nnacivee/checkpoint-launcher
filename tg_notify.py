@@ -84,8 +84,12 @@ def build_message(version: str, changelog: list, release_url: str = "") -> str:
     return text
 
 
-def render_card(version: str, date: str) -> Path | None:
-    """Карточка для поста: арт сборки, логотип, крупно версия и дата.
+def render_card(version: str, date: str, changes=None) -> Path | None:
+    """Карточка для поста: арт сборки, логотип, версия и СПИСОК ИЗМЕНЕНИЙ.
+
+    Изменения печатаются прямо на картинке — пост показывает, что нового,
+    ещё до чтения подписи. Берётся первое предложение каждого пункта,
+    максимум пять пунктов, остальное — строкой «и ещё N изменений».
 
     Рисуется теми же файлами, что и главное окно лаунчера (background.png,
     logo.png, fonts/Lato-*.ttf) — пост выглядит продолжением лаунчера, а не
@@ -93,12 +97,60 @@ def render_card(version: str, date: str) -> Path | None:
     возвращаем None и бот шлёт обычный текст: пост важнее красоты.
     """
     try:
-        from PIL import Image, ImageDraw, ImageFilter, ImageFont
+        from PIL import Image, ImageDraw, ImageFont
     except Exception:  # noqa: BLE001
         return None
     here = Path(__file__).parent
     try:
-        W, H = 1200, 630   # пропорция карточек ссылок, Telegram её не режет
+        def font(size, bold=False):
+            name = "Lato-Bold.ttf" if bold else "Lato-Regular.ttf"
+            return ImageFont.truetype(str(here / "fonts" / name), size)
+
+        # --- готовим строки изменений заранее: от них зависит высота ---
+        f_item = font(28)
+        W = 1200
+        MAXW = W - 170          # поле текста: отступ слева 110 + справа 60
+        MAX_ITEMS = 5
+
+        def first_sentence(s: str) -> str:
+            s = " ".join(str(s).split())
+            for stop in (". ", "! ", "? "):
+                if stop in s:
+                    return s.split(stop, 1)[0] + stop.strip()
+            return s
+
+        def wrap(s: str, fnt, maxw: int, max_lines: int = 2):
+            words, lines, cur = s.split(), [], ""
+            for w_ in words:
+                probe = (cur + " " + w_).strip()
+                if fnt.getlength(probe) <= maxw:
+                    cur = probe
+                    continue
+                lines.append(cur)
+                cur = w_
+                if len(lines) == max_lines:
+                    lines[-1] = lines[-1].rstrip(",.;") + "…"
+                    return lines
+            if cur:
+                lines.append(cur)
+            return lines[:max_lines]
+
+        changes = [c for c in (changes or []) if str(c).strip()]
+        items = []
+        for c in changes[:MAX_ITEMS]:
+            items.append(wrap(first_sentence(c), f_item, MAXW))
+        rest = len(changes) - MAX_ITEMS
+        if rest > 0:
+            word = "изменение" if rest == 1 else (
+                "изменения" if rest in (2, 3, 4) else "изменений")
+            items.append(["… и ещё %d %s" % (rest, word)])
+
+        LINE_H, ITEM_GAP = 38, 14
+        list_h = sum(len(ls) * LINE_H + ITEM_GAP for ls in items)
+        HEAD_H = 300            # арт с логотипом сверху
+        TITLE_H = 130           # «Обновление 1.xx.0» + дата
+        H = max(630, HEAD_H + TITLE_H + list_h + 60)
+
         art = Image.open(here / "background.png").convert("RGB")
         k = max(W / art.width, H / art.height)
         art = art.resize((round(art.width * k), round(art.height * k)),
@@ -106,32 +158,39 @@ def render_card(version: str, date: str) -> Path | None:
         x = (art.width - W) // 2
         img = art.crop((x, 0, x + W, H)).convert("RGBA")
 
-        # Затемнение снизу — иначе белый текст утонет в ярком арте.
+        # Тёмная панель под текст: от логотипа и до низа, с мягким верхом.
         shade = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         d = ImageDraw.Draw(shade)
-        for i in range(260):
-            d.line([(0, H - 260 + i), (W, H - 260 + i)],
-                   fill=(8, 11, 16, int(235 * i / 260)))
+        top = HEAD_H - 80
+        for i in range(120):
+            d.line([(0, top + i), (W, top + i)],
+                   fill=(8, 11, 16, int(242 * i / 120)))
+        d.rectangle([0, top + 120, W, H], fill=(8, 11, 16, 242))
         img.alpha_composite(shade)
 
         logo = Image.open(here / "logo.png").convert("RGBA")
-        k = 260 / max(logo.size)
+        k = 230 / max(logo.size)
         logo = logo.resize((round(logo.width * k), round(logo.height * k)),
                            Image.LANCZOS)
-        img.alpha_composite(logo, ((W - logo.width) // 2, 36))
-
-        def font(size, bold=False):
-            name = "Lato-Bold.ttf" if bold else "Lato-Regular.ttf"
-            return ImageFont.truetype(str(here / "fonts" / name), size)
+        img.alpha_composite(logo, ((W - logo.width) // 2, 26))
 
         d = ImageDraw.Draw(img)
-        d.text((W // 2, H - 150), "Обновление лаунчера",
-               font=font(30), fill=(170, 182, 198), anchor="mm")
-        d.text((W // 2, H - 95), version,
-               font=font(72, bold=True), fill=(63, 169, 245), anchor="mm")
+        y = HEAD_H + 26
+        d.text((W // 2, y), "Обновление  %s" % version,
+               font=font(56, bold=True), fill=(63, 169, 245), anchor="mm")
         if date:
-            d.text((W // 2, H - 40), date,
-                   font=font(24), fill=(170, 182, 198), anchor="mm")
+            d.text((W // 2, y + 52), date, font=font(24),
+                   fill=(150, 162, 178), anchor="mm")
+
+        y = HEAD_H + TITLE_H
+        for lines in items:
+            d.text((70, y + LINE_H // 2), "•", font=font(28, bold=True),
+                   fill=(63, 169, 245), anchor="lm")
+            for line in lines:
+                d.text((110, y + LINE_H // 2), line, font=f_item,
+                       fill=(232, 238, 246), anchor="lm")
+                y += LINE_H
+            y += ITEM_GAP
 
         out = here / "tg_card.png"
         img.convert("RGB").save(out, "PNG")
@@ -238,7 +297,8 @@ def main() -> None:
     print("Текст поста:\n" + text)
 
     entry = next((e for e in changelog if str(e.get("version")) == version), {})
-    card = render_card(version, str(entry.get("date", "")))
+    card = render_card(version, str(entry.get("date", "")),
+                       entry.get("changes"))
 
     if card is None:
         # Красиво не вышло — шлём как раньше, текстом. Пост важнее карточки.
