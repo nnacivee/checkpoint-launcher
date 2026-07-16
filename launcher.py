@@ -352,7 +352,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.31.0",
+    "LAUNCHER_VERSION": "1.32.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -364,6 +364,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.32.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "Шесть новых клиентских модов (ставятся сами): Entity Culling "
+                "— заметный прирост FPS, Mouse Tweaks — перетаскивание "
+                "предметов мышью, Neat — полоски здоровья над мобами, "
+                "Better Third Person — свободная камера от третьего лица, "
+                "динамический свет — факел в руке освещает дорогу.",
+            ],
+        },
         {
             "version": "1.31.0",
             "date": "16 июля 2026",
@@ -1264,6 +1275,19 @@ CONFIG = {
         {"slug": "ae2wtlib-19-5-0",
          "url": "https://cdn.modrinth.com/data/pNabrMMw/versions/y9YgjcrO/ae2wtlib-19.5.0.jar",
          "label": "Беспроводные терминалы AE2"},
+        # Шесть модов ниже — по списку владельца от 17.07 (скрин чужой
+        # сборки). Все шесть: client_side=required, server_side=unsupported
+        # на Modrinth — сервер о них не знает, лить на него ничего не надо.
+        # Из того списка НЕ взяты: REI (у нас EMI), Rubidium/Oculus/Canary
+        # (форджевые двойники Sodium/Iris/Lithium), The One Probe (есть
+        # Jade), FpsReducer2 (есть Dynamic FPS), InventoryEssentials (есть
+        # Inventory Sorter), Farsight (на 1.21.1 NeoForge не существует).
+        {"slug": "entityculling", "label": "Entity Culling (FPS: не рисовать невидимое)"},
+        {"slug": "mouse-tweaks", "label": "Mouse Tweaks (перетаскивание предметов мышью)"},
+        {"slug": "neat", "label": "Neat (полоски здоровья над мобами)"},
+        {"slug": "better-third-person", "label": "Better Third Person (свободная камера)"},
+        {"slug": "sodium-options-api", "label": "Sodium Options API (библиотека)"},
+        {"slug": "sodium-dynamic-lights", "label": "Динамический свет (факел светит в руке)"},
     ],
 
     # ------------------- УДАЛЕНИЕ МОДОВ У ИГРОКОВ -------------------
