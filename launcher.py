@@ -352,7 +352,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.27.0",
+    "LAUNCHER_VERSION": "1.28.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -364,6 +364,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.28.0",
+            "date": "16 июля 2026",
+            "changes": [
+                "Ad Astra! Луна, Марс, Венера, Меркурий, ракеты и скафандры — "
+                "мод ставится сам при запуске. Мир на сервере уже пересоздан "
+                "под него: руда 30%, меди 15%, строений Create в 20 раз меньше.",
+                "ОБНОВИТЬСЯ ОБЯЗАТЕЛЬНО: без Ad Astra сервер не пустит.",
+            ],
+        },
         {
             "version": "1.27.0",
             "date": "16 июля 2026",
@@ -1183,6 +1193,18 @@ CONFIG = {
         # optional, активируется с его рестартом), клиенты без неё тоже
         # работают. Лицензия MIT.
         {"slug": "chatimage", "label": "ChatImage (картинки в чате)"},
+        # Ad Astra: Луна, Марс, Венера, ракеты. Порт на 1.21.1, которого НЕТ
+        # на Modrinth — качается по прямой ссылке из нашего релиза modpack.
+        # ОБЕ стороны: на сервере уже стоит (порядок «сначала сервер»
+        # соблюдён). Лицензия Terrarium License — распространение в сборках
+        # разрешено. Зависимости resourcefullib/resourcefulconfig уже в паке,
+        # не хватает только common-storage-lib — он строкой ниже.
+        {"slug": "adastra-github",
+         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/adastra-1.21.1-1.16.14-neoforge.jar",
+         "label": "Ad Astra (космос: Луна, Марс, ракеты)"},
+        {"slug": "common-storage-lib-github",
+         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/common-storage-lib-neoforge-1.21.1-0.0.9.jar",
+         "label": "Common Storage Lib (библиотека Ad Astra)"},
     ],
 
     # ------------------------- СКИНЫ И ПЛАЩИ -------------------------
@@ -3686,9 +3708,17 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> None:
         if status_cb:
             status_cb("Ищу мод «%s»..." % label)
         try:
-            filename, url = _find_modrinth_download(
-                slug, CONFIG["MC_VERSION"], [CONFIG["MOD_LOADER"]]
-            )
+            # Мод с прямой ссылкой (наш GitHub-релиз). Так доставляются моды,
+            # которых нет на Modrinth, — например порт Ad Astra на 1.21.1.
+            # Качать по ссылке дешевле, чем перезаливать весь modpack.zip:
+            # игрок докачивает мегабайты, а не 400 МБ сборки заново.
+            if entry.get("url"):
+                filename = entry.get("filename") or entry["url"].rsplit("/", 1)[-1]
+                url = entry["url"]
+            else:
+                filename, url = _find_modrinth_download(
+                    slug, CONFIG["MC_VERSION"], [CONFIG["MOD_LOADER"]]
+                )
             if not filename or not url:
                 if status_cb:
                     status_cb("Мод «%s» недоступен для %s — пропускаю." % (label, CONFIG["MC_VERSION"]))
