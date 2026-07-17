@@ -352,7 +352,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.36.0",
+    "LAUNCHER_VERSION": "1.37.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -364,6 +364,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.37.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "Починена клавиша шейдеров: O открывала настройки "
+                "InventoryHUD, потому что на неё сели сразу два мода. "
+                "Шейдеры переехали на F6 — и в круговом меню теперь тоже "
+                "открываются они.",
+            ],
+        },
         {
             "version": "1.36.0",
             "date": "17 июля 2026",
@@ -4004,6 +4014,35 @@ def disable_shaders_once(status_cb=None) -> None:
         pass  # не критично: не вышло — игра всё равно запустится
 
 
+def fix_key_conflicts_once(status_cb=None) -> None:
+    """Разводит клавиши, которые моды заняли вдвоём — один раз на компьютер.
+
+    Iris («Список наборов шейдеров») и InventoryHUD+ («Открыть конфиг») оба
+    садятся на O. Выигрывает InventoryHUD: жмёшь O — вместо шейдеров
+    открывается его настройка. Всплыло 17.07 через круговое меню (оно жмёт
+    ту же клавишу), но конфликт был и при обычном нажатии.
+
+    Переносим Iris на F6 — она свободна во всей сборке.
+
+    Один раз: если игрок сам переназначит клавишу, второй раз не лезем."""
+    marker = APP_DATA_DIR / ".key_conflicts_fixed_once"
+    if marker.exists():
+        return
+    try:
+        key = "key_iris.keybind.shaderPackSelection"
+        current = _read_options_value(key, "")
+        # Трогаем, только если Iris и правда на O — иначе конфликта нет и
+        # чужой выбор ломать незачем.
+        if current == "key.keyboard.o":
+            _write_options_value(key, "key.keyboard.f6")
+            if status_cb:
+                status_cb("Шейдеры переехали на F6 — раньше O открывала чужое окно.")
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("1", encoding="utf-8")
+    except Exception:
+        pass  # не критично: клавишу можно переназначить руками
+
+
 def set_russian_once(status_cb=None) -> None:
     """Ставит русский язык игры — один раз на компьютер.
 
@@ -4959,6 +4998,7 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     install_auto_resource_packs(extras_status, extras_progress)
     disable_shaders_once(extras_status)
     set_russian_once(extras_status)
+    fix_key_conflicts_once(extras_status)
     install_game_window_icon(extras_status)
     install_extra_client_mods(extras_status, extras_progress)
     install_skin_config(extras_status)
