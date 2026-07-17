@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.43.0",
+    "LAUNCHER_VERSION": "1.44.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.44.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "Исправлено «Соединение потеряно: канал мода отсутствует на "
+                "стороне клиента» при заходе на сервер. Если мод, который "
+                "есть на сервере, не скачался — лаунчер скажет об этом "
+                "прямо и не станет запускать игру, а старая версия мода "
+                "больше не удаляется, пока не встанет новая.",
+            ],
+        },
         {
             "version": "1.43.0",
             "date": "17 июля 2026",
@@ -1427,8 +1438,17 @@ CONFIG = {
         # REMOVED_MODS ниже, новый качается по ссылке на ТОЧНУЮ версию.
         # Ссылка именно версионная, не «последняя»: сервер должен совпадать
         # с клиентами байт в байт, автообновление тут устроило бы рассинхрон.
+        # required=True: этот мод есть на сервере, и без него он не пустит
+        # («Канал мода отсутствует на стороне клиента»). Не скачался — лаунчер
+        # честно скажет об этом и не станет запускать игру, вместо того чтобы
+        # человек ловил отказ уже на входе.
+        # replaces: старый jar сносим ТОЛЬКО когда новый лежит в mods/. Раньше
+        # 2.5.2 удалялся безусловно через REMOVED_MODS: стоило докачке
+        # сорваться — и у игрока не оставалось ни одной версии мода.
         {"slug": "modern-industrialization-2-5-3",
          "url": "https://cdn.modrinth.com/data/Gov5Dboq/versions/F4wdAfHV/Modern-Industrialization-2.5.3.jar",
+         "required": True,
+         "replaces": ["Modern-Industrialization-2.5.2.jar"],
          "label": "Modern Industrialization 2.5.3 (обновление)"},
         # Беспроводные терминалы AE2. ОБЕ стороны (server_side=required):
         # на сервер jar залит 16.07 — порядок «сначала сервер» соблюдён.
@@ -1441,6 +1461,7 @@ CONFIG = {
         # Лицензия MIT.
         {"slug": "ae2wtlib-19-5-0",
          "url": "https://cdn.modrinth.com/data/pNabrMMw/versions/y9YgjcrO/ae2wtlib-19.5.0.jar",
+         "required": True,
          "label": "Беспроводные терминалы AE2"},
         # Шесть модов ниже — по списку владельца от 17.07 (скрин чужой
         # сборки). Все шесть: client_side=required, server_side=unsupported
@@ -1479,8 +1500,11 @@ CONFIG = {
         # (олово/свинец/уран) продолжает генерировать Mekanism — включён
         # в world.toml на 30%.
         "ic3-2.19.0.jar",
-        # Заменён на 2.5.3 через EXTRA_CLIENT_MODS выше.
-        "Modern-Industrialization-2.5.2.jar",
+        # Modern-Industrialization-2.5.2.jar здесь БОЛЬШЕ НЕТ намеренно: он
+        # удаляется через "replaces" у записи 2.5.3 в EXTRA_CLIENT_MODS, то
+        # есть только когда новая версия реально скачалась. Отсюда его сносило
+        # безусловно — и при сбое докачки игрок оставался вообще без мода,
+        # а сервер такого не пускает.
         # Заменён на 3.9.8 (роняла игру при включении ресурс-паков).
         # Страховка: обычно выбывший slug лаунчер вычищает сам, но если у
         # кого-то jar остался — две версии FancyMenu рядом не запустятся.
@@ -2365,6 +2389,14 @@ def get_system_ram_mb():
         return int(stat.ullTotalPhys / (1024 * 1024))
     except Exception:
         return None
+
+
+class RequiredModsMissing(Exception):
+    """Не скачались моды, которые есть на сервере.
+
+    Отдельный тип, а не обычная ошибка: показывать её как «что-то пошло не
+    так, покажите автору сборки» неправильно — человек ничего не сломал, ему
+    достаточно нажать «Играть» ещё раз."""
 
 
 def apply_window_icon(win) -> None:
@@ -4264,16 +4296,24 @@ def set_russian_once(status_cb=None) -> None:
         pass  # не критично: язык переключается и руками
 
 
-def install_extra_client_mods(status_cb=None, progress_cb=None) -> None:
+def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
     """Скачивает доп. клиентские моды из CONFIG["EXTRA_CLIENT_MODS"] с
     Modrinth и кладёт в mods/. Скачивается каждый один раз в постоянный кэш
     (APP_DATA), а в mods/ просто копируется при каждом запуске — поэтому
     даже после переустановки/теста повторно из интернета не тянется.
-    Некритично: если мод недоступен или Modrinth молчит — тихо пропускаем,
-    игра всё равно запустится."""
+
+    Возвращает список названий модов с "required": True, которые скачать не
+    вышло. Остальные — некритичны: не скачался мод на звук или интерфейс,
+    игра всё равно запустится, просто без него.
+
+    Зачем разделение (случай 17.07): Modern Industrialization и ae2wtlib есть
+    на сервере, и без них он отвечает «Канал мода отсутствует на стороне
+    клиента» и рвёт соединение. Раньше их сбой тоже был «не критичным» —
+    лаунчер молча запускал игру, а человек упирался в отказ уже на входе и
+    не понимал почему."""
     entries = CONFIG.get("EXTRA_CLIENT_MODS", [])
     if not entries:
-        return
+        return []
 
     cache = APP_DATA_DIR / "extra_client_mods_cache"
     cache.mkdir(parents=True, exist_ok=True)
@@ -4286,6 +4326,7 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> None:
             installed = {}
 
     changed = False
+    missing_required = []
     for entry in entries:
         slug = entry.get("slug")
         if not slug:
@@ -4309,6 +4350,8 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> None:
                     slug, CONFIG["MC_VERSION"], [CONFIG["MOD_LOADER"]]
                 )
             if not filename or not url:
+                if entry.get("required"):
+                    missing_required.append(label)
                 if status_cb:
                     status_cb("Мод «%s» недоступен для %s — пропускаю." % (label, CONFIG["MC_VERSION"]))
                 continue
@@ -4318,7 +4361,11 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> None:
             installed[slug] = filename
             changed = True
         except Exception:
-            if status_cb:
+            if entry.get("required"):
+                missing_required.append(label)
+                if status_cb:
+                    status_cb("Не удалось скачать мод «%s» — он обязателен." % label)
+            elif status_cb:
                 status_cb("Не удалось скачать мод «%s» — пропускаю, это не критично." % label)
             continue
 
@@ -4346,6 +4393,32 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> None:
         if src.exists() and not (mods_dir / filename).exists():
             shutil.copy2(src, mods_dir / filename)
 
+    # Старые версии сносим ТОЛЬКО после того, как новая легла в mods/. Мод,
+    # который обновляется поверх модпака, иначе рискует исчезнуть совсем:
+    # старый файл удалён, новый не скачался.
+    for entry in entries:
+        slug = entry.get("slug")
+        new_name = installed.get(slug)
+        if not new_name or not (mods_dir / new_name).exists():
+            continue
+        for old_name in entry.get("replaces", []):
+            if old_name == new_name:
+                continue
+            try:
+                (mods_dir / old_name).unlink(missing_ok=True)
+            except OSError:
+                pass  # занят игрой — уйдёт при следующем запуске
+
+    # Обязательный мод мог не доехать в прошлый раз: проверяем не только
+    # свежие загрузки, но и то, что реально лежит в mods/ прямо сейчас.
+    for entry in entries:
+        if not entry.get("required"):
+            continue
+        label = entry.get("label", entry.get("slug"))
+        filename = installed.get(entry.get("slug"))
+        if (not filename or not (mods_dir / filename).exists()) and label not in missing_required:
+            missing_required.append(label)
+
     # Моды, выброшенные из сборки (см. CONFIG["REMOVED_MODS"]): их принёс
     # modpack.zip, и без этой чистки они жили бы у игрока вечно.
     for filename in CONFIG.get("REMOVED_MODS", []):
@@ -4353,6 +4426,8 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> None:
             (mods_dir / filename).unlink(missing_ok=True)
         except OSError:
             pass  # файл занят — удалится при следующем запуске
+
+    return missing_required
 
 
 WINDOW_ICON_MOD_SLUG = "custom-window-title"
@@ -5194,8 +5269,16 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     set_russian_once(extras_status)
     fix_key_conflicts_once(extras_status)
     install_game_window_icon(extras_status)
-    install_extra_client_mods(extras_status, extras_progress)
+    missing_required = install_extra_client_mods(extras_status, extras_progress)
     install_skin_config(extras_status)
+
+    # Мода, который есть на сервере, у игрока нет — запускать игру бессмысленно:
+    # сервер оборвёт соединение на входе («Канал мода отсутствует на стороне
+    # клиента»), и человек будет гадать, что случилось. Лучше честно сказать
+    # сейчас: скорее всего, это временный сбой сети или Modrinth, и достаточно
+    # нажать «Играть» ещё раз.
+    if missing_required:
+        raise RequiredModsMissing("\n".join("• " + m for m in missing_required))
 
     # Строго последним. install_modpack() стирает config/ и mods/ целиком, а
     # тест-режим пересобирает mods/ — поэтому пак настроек кладётся в самом
@@ -7332,6 +7415,17 @@ class LauncherApp:
                     self.game_process = process
                     self.root.after(0, self._on_game_started)
                     process.wait()  # ждём здесь, в фоновом потоке — интерфейс не подвисает
+            except RequiredModsMissing as exc:
+                friendly = (
+                    "Эти моды есть на сервере, но не скачались вам:\n\n%s\n\n"
+                    "Без них сервер не пустит, поэтому игру не запускаю.\n\n"
+                    "Обычно это временный сбой сети — нажмите «Играть» ещё раз, "
+                    "лаунчер докачает недостающее. Если повторяется, нажмите "
+                    "«Починить» в разделе «Сборка»." % exc
+                )
+                self.set_status("Не скачались обязательные моды — см. окно.")
+                self.root.after(
+                    0, lambda: messagebox.showerror("Не хватает модов", friendly))
             except (urllib.error.URLError, socket.timeout, ConnectionError):
                 friendly = (
                     "Не получилось скачать файлы. Проверьте подключение к "
