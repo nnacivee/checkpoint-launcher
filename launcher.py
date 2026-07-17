@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.45.0",
+    "LAUNCHER_VERSION": "1.46.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.46.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "Исправлена ошибка «Обрыв связи при скачивании»: сайт с "
+                "модами стал недоступен у части игроков, и обязательные "
+                "моды не скачивались. Теперь они раздаются с нашего "
+                "сервера обновлений — как и вся сборка.",
+            ],
+        },
         {
             "version": "1.45.0",
             "date": "17 июля 2026",
@@ -1387,14 +1397,20 @@ CONFIG = {
         # «сначала сервер» соблюдён. Версии совпадают с серверными байт в байт,
         # ссылки версионные: KubeJS ломает совместимость между сборками.
         # required=True: без них сервер не пустит. Лицензии LGPL-3.0.
+        # Имена файлов у этих двух НЕ совпадают с именами в релизе намеренно.
+        # У игроков, чья закачка с Modrinth оборвалась, в кэше остались
+        # .part-огрызки под старыми именами; докачка продолжается по HTTP
+        # Range, и продолжение С ДРУГОГО источника склеило бы битый jar —
+        # размеры сборок Modrinth и CurseForge совпадают, байты нет. Новое имя
+        # означает новый .part, огрызки остаются лежать безобидным мусором.
         {"slug": "rhino-2101-2-7-85",
-         "url": "https://cdn.modrinth.com/data/sk9knFPE/versions/cQ4POTah/rhino-2101.2.7-build.85.jar",
-         "filename": "rhino-2101.2.7-build.85.jar",
+         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/rhino-2101.2.7-build.85.jar",
+         "filename": "rhino-2101.2.7-85.jar",
          "required": True,
          "label": "Rhino (движок скриптов)"},
         {"slug": "kubejs-2101-7-2-368",
-         "url": "https://cdn.modrinth.com/data/umyGl7zF/versions/F2nzeC19/kubejs-neoforge-2101.7.2-build.368.jar",
-         "filename": "kubejs-neoforge-2101.7.2-build.368.jar",
+         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/kubejs-neoforge-2101.7.2-build.368.jar",
+         "filename": "kubejs-2101.7.2-368.jar",
          "required": True,
          "label": "KubeJS (эпохи и рецепты)"},
         # Единственный в списке, кому нужна пара на сервере: голос ходит между
@@ -1476,8 +1492,13 @@ CONFIG = {
         # replaces: старый jar сносим ТОЛЬКО когда новый лежит в mods/. Раньше
         # 2.5.2 удалялся безусловно через REMOVED_MODS: стоило докачке
         # сорваться — и у игрока не оставалось ни одной версии мода.
+        # Четыре обязательных мода ниже раздаются с НАШЕГО GitHub-релиза, а не
+        # с Modrinth. Причина (17.07): у игроков лёг доступ к cdn.modrinth.com
+        # — все четыре не скачались, и сервер никого не пускал. GitHub при
+        # этом работал. Лицензии позволяют (MIT/LGPL), а джарки взяты байт в
+        # байт с сервера — клиент и сервер гарантированно совпадают.
         {"slug": "modern-industrialization-2-5-3",
-         "url": "https://cdn.modrinth.com/data/Gov5Dboq/versions/F4wdAfHV/Modern-Industrialization-2.5.3.jar",
+         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/Modern-Industrialization-2.5.3.jar",
          "required": True,
          "replaces": ["Modern-Industrialization-2.5.2.jar"],
          "label": "Modern Industrialization 2.5.3 (обновление)"},
@@ -1491,7 +1512,7 @@ CONFIG = {
         #   - ExtendedAE 2.2.33 вне несовместимого диапазона (,1.1.4].
         # Лицензия MIT.
         {"slug": "ae2wtlib-19-5-0",
-         "url": "https://cdn.modrinth.com/data/pNabrMMw/versions/y9YgjcrO/ae2wtlib-19.5.0.jar",
+         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/ae2wtlib-19.5.0.jar",
          "required": True,
          "label": "Беспроводные терминалы AE2"},
         # Шесть модов ниже — по списку владельца от 17.07 (скрин чужой
