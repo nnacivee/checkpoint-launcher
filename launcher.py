@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.42.0",
+    "LAUNCHER_VERSION": "1.43.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.43.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "Окна со списками модов стали спокойнее: убраны рамки вокруг "
+                "списка и карточек, шапка чище.",
+                "У всех окон лаунчера теперь иконка сборки вместо стандартной "
+                "картинки Python.",
+                "Кнопка «Играть» скруглена так же, как остальные кнопки.",
+            ],
+        },
         {
             "version": "1.42.0",
             "date": "17 июля 2026",
@@ -2110,11 +2121,14 @@ class _CanvasText:
 
 
 class _CanvasPill:
-    """Кнопка-«пилюля», нарисованная на холсте.
+    """Главная кнопка окна, нарисованная на холсте.
 
     Обычная tk.Button на картинке даёт серый прямоугольник вокруг себя:
     прозрачного фона у виджетов нет. Поэтому кнопка — это три картинки
     (обычная/наведение/выключена) и текст поверх.
+
+    Скругление — как у плиток, а не «пилюлей» на всю высоту: раньше кнопка
+    была овальной и одна во всём окне жила по своим правилам.
     """
 
     def __init__(self, canvas, x, y, w, h, label, colors, command, refs):
@@ -2130,7 +2144,7 @@ class _CanvasPill:
         for key, rgb, glow in (("normal", accent, accent + (140,)),
                                ("hover", hover, hover + (170,)),
                                ("off", dim, None)):
-            img = render_rounded(w, h, h // 2, rgb + (255,), glow=glow, pad=pad)
+            img = render_rounded(w, h, 12, rgb + (255,), glow=glow, pad=pad)
             if img is not None:
                 self._imgs[key] = ImageTk.PhotoImage(img)
                 refs["pill_" + key + self.tag] = self._imgs[key]
@@ -2351,6 +2365,22 @@ def get_system_ram_mb():
         return int(stat.ullTotalPhys / (1024 * 1024))
     except Exception:
         return None
+
+
+def apply_window_icon(win) -> None:
+    """Ставит окну иконку сборки.
+
+    Главному окну её выдаёт iconbitmap при старте, а вот дочерние окна
+    (списки модов, настройки, скины) заводились без неё — и Windows рисовала
+    им стандартное перо tkinter, что выглядело чужеродно в панели задач и в
+    заголовке. Наследования иконки в tkinter нет, поэтому вызываем руками.
+
+    Иконки может не быть рядом (запуск из исходников на другой ОС) — тогда
+    просто оставляем окно как есть."""
+    try:
+        win.iconbitmap(str(resource_path("icon.ico")))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def set_titlebar_dark(root: tk.Tk, dark: bool) -> None:
@@ -5879,6 +5909,7 @@ class LauncherApp:
             if state["win"] is not None:
                 return
             win = tk.Toplevel(widget)
+            apply_window_icon(win)
             win.wm_overrideredirect(True)
             win.attributes("-topmost", True)
             x = widget.winfo_rootx() + widget.winfo_width() // 2
@@ -6020,6 +6051,7 @@ class LauncherApp:
         """Окошко с готовыми паками: ставятся с Modrinth в один клик."""
         colors = THEMES[self.theme_name]
         dialog = tk.Toplevel(parent)
+        apply_window_icon(dialog)
         dialog.title("Готовые ресурс-паки")
         dialog.configure(bg=colors["bg_panel"])
         dialog.resizable(False, False)
@@ -6101,6 +6133,7 @@ class LauncherApp:
         colors = THEMES[self.theme_name]
 
         dialog = tk.Toplevel(self.root)
+        apply_window_icon(dialog)
         dialog.title(title)
         dialog.configure(bg=colors["bg_panel"])
         dialog.transient(self.root)
@@ -6486,6 +6519,7 @@ class LauncherApp:
         colors = THEMES[self.theme_name]
 
         dialog = tk.Toplevel(self.root)
+        apply_window_icon(dialog)
         dialog.title("Скины и плащи")
         dialog.configure(bg=colors["bg_panel"])
         dialog.transient(self.root)
@@ -6774,6 +6808,7 @@ class LauncherApp:
         colors = THEMES[self.theme_name]
 
         dialog = tk.Toplevel(self.root)
+        apply_window_icon(dialog)
         dialog.title("Настройки")
         dialog.configure(bg=colors["bg_panel"])
         dialog.resizable(False, False)
@@ -6949,6 +6984,7 @@ class LauncherApp:
         current = get_optional_mods_selection()
 
         dialog = tk.Toplevel(self.root)
+        apply_window_icon(dialog)
         dialog.title("Клиентские моды")
         dialog.configure(bg=colors["bg_panel"])
         dialog.resizable(False, False)
@@ -6967,35 +7003,34 @@ class LauncherApp:
         outer.pack(fill="both", expand=True, padx=16, pady=14)
 
         # ---- Шапка: заголовок + поиск + сортировка ----
+        # Подписи «Поиск:» и «Сортировка:» убраны: поле с подсказкой внутри и
+        # выпадающий список говорят сами за себя, а лишние слова только
+        # засоряли шапку.
         head = tk.Frame(outer, bg=colors["bg_panel"])
         head.pack(fill="x")
-        tk.Label(head, text="Клиентские моды", font=(UI_FONT, 14, "bold"),
+        tk.Label(head, text="Клиентские моды", font=(UI_FONT, 15, "bold"),
                  bg=colors["bg_panel"], fg=colors["fg"]).pack(side="left")
 
         sort_var = tk.StringVar(value="Сначала включённые")
         sort_box = ttk.Combobox(head, textvariable=sort_var, state="readonly", width=20,
                                 values=["Сначала включённые", "По названию", "По категории"])
         sort_box.pack(side="right")
-        tk.Label(head, text="Сортировка:", font=(UI_FONT, 9), bg=colors["bg_panel"],
-                 fg=colors["fg_muted"]).pack(side="right", padx=(0, 6))
 
         search_var = tk.StringVar()
         search_entry = tk.Entry(
             head, textvariable=search_var, font=(UI_FONT, 10), width=26,
             bg=colors["bg_field"], fg=colors["fg"], insertbackground=colors["fg"],
-            relief="flat", highlightthickness=1,
-            highlightbackground=colors["border"], highlightcolor=colors["accent"])
-        search_entry.pack(side="right", padx=(16, 24), ipady=4)
-        tk.Label(head, text="Поиск:", font=(UI_FONT, 9), bg=colors["bg_panel"],
-                 fg=colors["fg_muted"]).pack(side="right", padx=(0, 6))
+            relief="flat", highlightthickness=0)
+        search_entry.pack(side="right", padx=(16, 12), ipady=5, ipadx=8)
+        tk.Label(head, text="Поиск", font=(UI_FONT, 9), bg=colors["bg_panel"],
+                 fg=colors["fg_muted"]).pack(side="right", padx=(0, 8))
 
         tk.Label(
             outer,
-            text="Эти моды безопасно включать и выключать в любой момент — "
-                 "включили галочку, мод сразу скачается; убрали — сразу удалится.",
+            text="Включили галочку — мод скачается, убрали — удалится.",
             font=(UI_FONT, 9), bg=colors["bg_panel"], fg=colors["fg_muted"],
             justify="left",
-        ).pack(anchor="w", pady=(4, 8))
+        ).pack(anchor="w", pady=(6, 10))
 
         # ---- Фильтр по категориям ----
         categories = ["Все"]
@@ -7028,9 +7063,9 @@ class LauncherApp:
             button.pack(side="left", padx=(0, 6))
             chip_buttons[name] = button
 
-        # Прокручиваемая сетка карточек
-        list_container = tk.Frame(outer, bg=colors["bg_panel"], highlightbackground=colors["border"],
-                                   highlightthickness=1)
+        # Прокручиваемая сетка карточек. Рамки вокруг списка нет намеренно:
+        # окно и так тёмное, а контур делал из него «коробку в коробке».
+        list_container = tk.Frame(outer, bg=colors["bg_panel"], highlightthickness=0)
         list_container.pack(fill="both", expand=True)
 
         canvas = tk.Canvas(list_container, bg=colors["bg_panel"], highlightthickness=0)
@@ -7147,8 +7182,9 @@ class LauncherApp:
                 var = tk.BooleanVar(value=current.get(mod["id"], mod.get("default", True)))
                 checkbox_vars[mod["id"]] = var
 
-            card = tk.Frame(scroll_frame, bg=colors["bg_field"],
-                            highlightbackground=colors["border"], highlightthickness=1,
+            # Карточка держится на своём фоне, без контура: границы рисуют
+            # сетку из линий, а нам нужен спокойный список.
+            card = tk.Frame(scroll_frame, bg=colors["bg_field"], highlightthickness=0,
                             width=card_width)
             card.grid(row=row, column=column, padx=6, pady=5, sticky="nsew")
             card.grid_propagate(False)
@@ -7415,6 +7451,7 @@ class LauncherApp:
         colors = THEMES[self.theme_name]
 
         dialog = tk.Toplevel(self.root)
+        apply_window_icon(dialog)
         dialog.title("Моды сборки")
         dialog.configure(bg=colors["bg_panel"])
         dialog.transient(self.root)
@@ -7448,9 +7485,8 @@ class LauncherApp:
         search_var = tk.StringVar()
         entry = tk.Entry(head, textvariable=search_var, font=(UI_FONT, 10),
                          bg=colors["bg_field"], fg=colors["fg"], insertbackground=colors["fg"],
-                         relief="flat", highlightthickness=1, width=26,
-                         highlightbackground=colors["border"], highlightcolor=colors["accent"])
-        entry.pack(side="right", ipady=4)
+                         relief="flat", highlightthickness=0, width=26)
+        entry.pack(side="right", ipady=5, ipadx=8)
         tk.Label(head, text="Поиск", font=(UI_FONT, 9), bg=colors["bg_panel"],
                  fg=colors["fg_muted"]).pack(side="right", padx=(0, 6))
 
@@ -7474,8 +7510,7 @@ class LauncherApp:
                             fg=colors["accent_text"] if active else colors["fg_muted"])
             render()
 
-        box = tk.Frame(outer, bg=colors["bg_panel"],
-                       highlightbackground=colors["border"], highlightthickness=1)
+        box = tk.Frame(outer, bg=colors["bg_panel"], highlightthickness=0)
         box.pack(fill="both", expand=True)
         inner_w = width - 66          # ширина холста под полосу прокрутки
         grid_cv = tk.Canvas(box, bg=colors["bg_panel"], highlightthickness=0, width=inner_w)
@@ -7720,6 +7755,7 @@ class LauncherApp:
         entries = CONFIG.get("LAUNCHER_CHANGELOG", [])
 
         dialog = tk.Toplevel(self.root)
+        apply_window_icon(dialog)
         dialog.title("Что нового")
         dialog.configure(bg=colors["bg_panel"])
         dialog.resizable(False, False)
