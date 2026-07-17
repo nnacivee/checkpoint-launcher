@@ -352,7 +352,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.37.1",
+    "LAUNCHER_VERSION": "1.38.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -364,6 +364,19 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.38.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "FancyMenu обновлён до 3.9.8 — версия 3.9.7 роняла игру при "
+                "включении ресурс-паков и, похоже, из-за неё же у части "
+                "игроков EMI переставал показывать крафты.",
+                "Сердечки Jade над мобами убраны: они дублировали полоску "
+                "здоровья. Остальная подсказка Jade на месте.",
+                "У полосок здоровья убрана серая плашка — сквозь неё "
+                "просвечивал мир.",
+            ],
+        },
         {
             "version": "1.37.1",
             "date": "17 июля 2026",
@@ -1255,7 +1268,18 @@ CONFIG = {
         {"slug": "customskinloader", "label": "CustomSkinLoader (HD-скины и плащи)"},
         {"slug": "konkrete", "label": "Konkrete (библиотека для меню)"},
         {"slug": "melody", "label": "Melody (библиотека для меню)"},
-        {"slug": "fancymenu", "label": "FancyMenu (меню Industrial Horizon)"},
+        # FancyMenu 3.9.8, а не «последняя с Modrinth». Версия 3.9.7 роняла
+        # игру при включении ресурс-паков: её миксин на тик клиента падал с
+        # NullPointerException внутри перезагрузки ресурсов
+        # (handler$fmi000$fancymenu$head_tick_FancyMenu, краш 17.07).
+        # Ссылка версионная и на официальный CDN Modrinth — лицензия у мода
+        # All Rights Reserved, в архив сборки его класть нельзя.
+        # Старую 3.9.7 лаунчер удалит сам: slug сменился, а выбывшие slug'и
+        # он чистит из mods/ и кэша.
+        {"slug": "fancymenu-3-9-8",
+         "url": "https://cdn.modrinth.com/data/Wq5SjeWM/versions/lvDR4oIj/fancymenu_neoforge_3.9.8_MC_1.21.1.jar",
+         "filename": "fancymenu_neoforge_3.9.8_MC_1.21.1.jar",
+         "label": "FancyMenu (меню Industrial Horizon)"},
         {"slug": "simple-custom-early-loading", "label": "Экран загрузки Industrial Horizon"},
         # Единственный в списке, кому нужна пара на сервере: голос ходит между
         # клиентом и сервером по ОТДЕЛЬНОМУ UDP-порту (по умолчанию 24454), и
@@ -1383,6 +1407,14 @@ CONFIG = {
         "ic3-2.19.0.jar",
         # Заменён на 2.5.3 через EXTRA_CLIENT_MODS выше.
         "Modern-Industrialization-2.5.2.jar",
+        # Заменён на 3.9.8 (роняла игру при включении ресурс-паков).
+        # Страховка: обычно выбывший slug лаунчер вычищает сам, но если у
+        # кого-то jar остался — две версии FancyMenu рядом не запустятся.
+        "fancymenu_neoforge_3.9.7_MC_1.21.1.jar",
+        # Самая первая сборка перевода: осталась в mods/ с 15.07, потому что
+        # в owns configpack'а её тогда не было. Рядом со свежей это второй
+        # мод с тем же modId — лишний повод для конфликта.
+        "ih_russian-1.0.0.jar",
     ],
 
     # ------------------------- СКИНЫ И ПЛАЩИ -------------------------
@@ -1565,33 +1597,34 @@ CONFIG = {
     # паком для тех, кто захочет. Поэтому enable=False у всех записей.
     "AUTO_RESOURCE_PACKS": [
         {"slug": "faithful-32x", "name": "Faithful 32x (ваниль)", "enable": False},
-        # v2 (17.07, ночная просьба владельца «улучшить все текстуры»):
-        # алгоритм xBR вместо Scale2x — чище скругляет диагонали и углы, и
-        # охват шире: не только блоки/предметы, а ещё мобы, частицы и
-        # окружение (33 066 текстур из 185 джарок; gui и шрифты намеренно
-        # не трогаем). Старые части v1 удаляет REMOVED_RESOURCE_PACKS ниже.
-        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_1.zip",
-         "filename": "IH_Upscale32v2_1.zip", "name": "Моды 32x v2, часть 1", "enable": False},
-        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_2.zip",
-         "filename": "IH_Upscale32v2_2.zip", "name": "Моды 32x v2, часть 2", "enable": False},
-        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_3.zip",
-         "filename": "IH_Upscale32v2_3.zip", "name": "Моды 32x v2, часть 3", "enable": False},
-        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_4.zip",
-         "filename": "IH_Upscale32v2_4.zip", "name": "Моды 32x v2, часть 4", "enable": False},
-        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_5.zip",
-         "filename": "IH_Upscale32v2_5.zip", "name": "Моды 32x v2, часть 5", "enable": False},
-        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_6.zip",
-         "filename": "IH_Upscale32v2_6.zip", "name": "Моды 32x v2, часть 6", "enable": False},
+        # Текстуры модов в 32x: алгоритм xBR, 33 772 текстуры из 185 джарок
+        # (блоки, предметы, мобы, частицы, окружение; gui и шрифты намеренно
+        # не трогаем). Один файл с иконкой — раньше пак ехал шестью частями,
+        # потому что мост GitHub не пропускает больше 10 МБ за раз; игре они
+        # всё равно склеивались в одно, а в списке паков выглядели мусором.
+        # Части удаляет REMOVED_RESOURCE_PACKS ниже.
+        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32.zip",
+         "filename": "IH_Upscale32.zip", "name": "Моды 32x (xBR)", "enable": False},
     ],
 
     # Устаревшие авто-паки: удаляются у игроков вместе с записью в
     # options.txt (см. install_auto_resource_packs). Это первая сборка
     # апскейла (Scale2x, только блоки/предметы) — заменена на v2 выше.
     "REMOVED_RESOURCE_PACKS": [
+        # v1 (Scale2x, только блоки/предметы) — заменена на v2.
         "IH_Upscale_32x_1.zip",
         "IH_Upscale_32x_2.zip",
         "IH_Upscale_32x_3.zip",
         "IH_Upscale_32x_4.zip",
+        # v2 по частям — с 17.07 это один файл IH_Upscale32.zip с иконкой.
+        # Шесть строк в списке паков вместо одной сбивали с толку, а игра
+        # всё равно склеивала их в одно.
+        "IH_Upscale32v2_1.zip",
+        "IH_Upscale32v2_2.zip",
+        "IH_Upscale32v2_3.zip",
+        "IH_Upscale32v2_4.zip",
+        "IH_Upscale32v2_5.zip",
+        "IH_Upscale32v2_6.zip",
     ],
 
     # Готовые шейдеры с Modrinth. weight — честная пометка о прожорливости:
