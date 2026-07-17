@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.40.0",
+    "LAUNCHER_VERSION": "1.41.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,19 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.41.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "Первый запуск стал заметно быстрее и легче: лаунчер больше "
+                "не качает всем подряд четыре шейдера и текстур-паки на "
+                "десятки мегабайт. Всё это никто не включал — теперь "
+                "ставится по желанию из «Внешний вид».",
+                "Списки в меню открываются наведением мыши, без клика, и у "
+                "каждого пункта своя иконка.",
+                "Кнопки стали компактнее.",
+            ],
+        },
         {
             "version": "1.40.0",
             "date": "17 июля 2026",
@@ -1265,13 +1278,12 @@ CONFIG = {
     #                       вариантов файла в одном релизе (например, у
     #                       Sildur's — Lite/Medium/High/Extreme), укажите
     #                       часть имени файла, которую нужно выбрать.
-    "EXTRA_SHADERPACKS": [
-        {"slug": "complementary-unbound", "label": "Complementary Shaders (Unbound)"},
-        {"slug": "complementary-reimagined", "label": "Complementary Shaders (Reimagined)"},
-        {"slug": "sildurs-vibrant-shaders", "label": "Sildur's Vibrant Shaders (Lite)",
-         "prefer_keyword": "lite"},
-        {"slug": "nostalgia-shader", "label": "Nostalgia Shader"},
-    ],
+    # Список ПУСТ намеренно (решение владельца от 17.07). Раньше лаунчер качал
+    # четыре шейдера каждому при первом запуске: это лишние мегабайты и лишний
+    # шаг «Ищу шейдер...» на входе, при том что шейдеры у всех выключены и
+    # большинству не нужны. Кому надо — ставит из «Внешний вид → Шейдеры»,
+    # там тот же список с Modrinth (RECOMMENDED_SHADER_PACKS ниже).
+    "EXTRA_SHADERPACKS": [],
 
     # ------------------- ДОП. КЛИЕНТСКИЕ МОДЫ (АВТО-СКАЧИВАНИЕ) -------------
     # Качественные ЧИСТО КЛИЕНТСКИЕ моды, которые лаунчер сам скачивает с
@@ -1561,6 +1573,17 @@ CONFIG = {
             "description": "Ванильный стиль в двойном разрешении — самый популярный пак",
         },
         {
+            # Не с Modrinth, а наш: 33 772 текстуры из 185 модов, поднятые до
+            # 32x алгоритмом xBR. Скачивается по прямой ссылке (см. "url" в
+            # _install_recommended_pack). Тяжёлый — 46 МБ, поэтому тут, а не
+            # в автозакачке.
+            "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32.zip",
+            "filename": "IH_Upscale32.zip",
+            "slug": "ih-upscale-32",
+            "name": "Моды в 32x",
+            "description": "Текстуры модов в двойном разрешении — пара к Faithful 32x (46 МБ)",
+        },
+        {
             "slug": "better-leaves",
             "name": "Better Leaves",
             "description": "Пышная объёмная листва вместо плоских кубов",
@@ -1636,23 +1659,14 @@ CONFIG = {
     # Решение владельца от 17.07: 32x у всех по умолчанию НЕ нужен —
     # стандартные текстуры остаются как есть, а 32x лежит рядом отдельным
     # паком для тех, кто захочет. Поэтому enable=False у всех записей.
-    "AUTO_RESOURCE_PACKS": [
-        {"slug": "faithful-32x", "name": "Faithful 32x (ваниль)", "enable": False},
-        # Текстуры модов в 32x: алгоритм xBR, 33 772 текстуры из 185 джарок
-        # (блоки, предметы, мобы, частицы, окружение; gui и шрифты намеренно
-        # не трогаем). Один файл с иконкой — раньше пак ехал шестью частями,
-        # потому что мост GitHub не пропускает больше 10 МБ за раз; игре они
-        # всё равно склеивались в одно, а в списке паков выглядели мусором.
-        # Части удаляет REMOVED_RESOURCE_PACKS ниже.
-        {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32.zip",
-         "filename": "IH_Upscale32.zip", "name": "Моды 32x (xBR)", "enable": False},
-        # Шрифта здесь нет намеренно. Пробовали отдать его текстур-паком с
-        # ttf-провайдером (Lato) — Minecraft растеризует такой шрифт в ту же
-        # пиксельную сетку, что и ванильный, и буквы получаются кривыми.
-        # Красивый текст даёт Modern UI из EXTRA_CLIENT_MODS: он рисует
-        # глифы сам, со сглаживанием. Старый пак снимаем — см.
-        # REMOVED_RESOURCE_PACKS.
-    ],
+    # Список ПУСТ намеренно (решение владельца от 17.07). Паки отсюда качались
+    # каждому при первом запуске — это десятки мегабайт и лишние шаги на входе,
+    # притом что включённым не был ни один. Faithful 32x и апскейл модов теперь
+    # лежат в «Внешний вид → Текстуры»: кто хочет, ставит в один клик.
+    #
+    # Механизм рабочий и остаётся: если понадобится выдать пак принудительно,
+    # достаточно вернуть сюда запись (enable=True — включить один раз).
+    "AUTO_RESOURCE_PACKS": [],
 
     # Устаревшие авто-паки: удаляются у игроков вместе с записью в
     # options.txt (см. install_auto_resource_packs). Это первая сборка
@@ -2426,7 +2440,7 @@ def pick_ui_font(root) -> str:
 
 
 ICON_NAMES =["folder", "chat", "grid", "wrench", "list", "sun", "moon", "gauge", "gear",
-              "image", "shader", "discord", "skin", "telegram"]
+              "image", "shader", "discord", "skin", "telegram", "map"]
 
 
 def load_icons(theme_name: str) -> dict:
@@ -3358,19 +3372,27 @@ def is_recommended_pack_installed(pack_cfg: dict) -> bool:
 
 def _install_recommended_pack(pack_cfg: dict, dst_dir: Path, loaders: list,
                               status_cb=None) -> str:
-    """Общая закачка готового пака с Modrinth по slug. Отличаются только папка
-    назначения и loaders (у ресурс-паков это minecraft, у шейдеров — iris)."""
+    """Общая закачка готового пака по slug с Modrinth. Отличаются только папка
+    назначения и loaders (у ресурс-паков это minecraft, у шейдеров — iris).
+
+    Пак может быть и не с Modrinth: если в записи есть "url", файл качается
+    прямо по нему. Так лежит наш собственный апскейл модов — его на Modrinth
+    нет и быть не может."""
     if status_cb:
         status_cb("Скачиваю: %s" % pack_cfg["name"])
-    filename, url = _find_modrinth_download(
-        pack_cfg["slug"], CONFIG["MC_VERSION"], loaders)
+    if pack_cfg.get("url"):
+        filename = pack_cfg.get("filename") or pack_cfg["url"].rsplit("/", 1)[-1]
+        url = pack_cfg["url"]
+    else:
+        filename, url = _find_modrinth_download(
+            pack_cfg["slug"], CONFIG["MC_VERSION"], loaders)
     if not url:
         raise RuntimeError("Не удалось найти «%s» для Minecraft %s"
                            % (pack_cfg["name"], CONFIG["MC_VERSION"]))
     dst_dir.mkdir(parents=True, exist_ok=True)
-    target = dst_dir / (filename or (pack_cfg["slug"] + ".zip"))
+    target = dst_dir / (filename or (pack_cfg.get("slug") or "pack") + ".zip")
     download_file(url, target)
-    _remember_recommended_pack(pack_cfg["slug"], target.name)
+    _remember_recommended_pack(pack_cfg.get("slug") or target.name, target.name)
     return target.name
 
 
@@ -5404,33 +5426,33 @@ class LauncherApp:
         списка выпадает сам; категория без пунктов не рисуется вовсе."""
         cats = [
             ("skin", "Внешний вид", [
-                ("Скины", "выбрать скин персонажа", self.on_open_skins, True),
-                ("Текстуры", "наборы текстур", self.on_open_resource_packs, True),
-                ("Шейдеры", "освещение и тени", self.on_open_shader_packs, True),
+                ("Скины", "skin", self.on_open_skins, True),
+                ("Текстуры", "image", self.on_open_resource_packs, True),
+                ("Шейдеры", "shader", self.on_open_shader_packs, True),
             ]),
             ("grid", "Моды", [
-                ("Дополнительные", "включить и выключить",
+                ("Дополнительные", "grid",
                  self.on_open_optional_mods, bool(CONFIG.get("OPTIONAL_MODS"))),
-                ("Что в сборке", "список модов с описанием",
+                ("Что в сборке", "list",
                  self.on_show_mod_list, bool(CONFIG.get("MOD_SHOWCASE"))),
             ]),
             ("telegram", "Сообщество", [
-                ("Telegram", "новости сборки",
+                ("Telegram", "telegram",
                  self.on_open_telegram, bool(CONFIG.get("TELEGRAM_URL"))),
-                ("Discord", "голосовой чат и помощь",
+                ("Discord", "discord",
                  self.on_open_discord, bool(CONFIG.get("DISCORD_URL"))),
-                ("Карта мира", "смотреть мир в браузере",
+                ("Карта мира", "map",
                  self.on_open_map, bool(CONFIG.get("MAP_URL"))),
             ]),
             ("gear", "Сборка", [
-                ("Настройки", "память, папка установки", self.on_open_install_settings, True),
-                ("Папка игры", "открыть в проводнике", self.on_open_folder, True),
-                ("Починить", "перекачать повреждённые файлы", self.on_repair, True),
+                ("Настройки", "gear", self.on_open_install_settings, True),
+                ("Папка игры", "folder", self.on_open_folder, True),
+                ("Починить", "wrench", self.on_repair, True),
             ]),
         ]
         out = []
         for icon, title, items in cats:
-            live = [(n, s, c) for (n, s, c, ok) in items if ok]
+            live = [(n, ic, c) for (n, ic, c, ok) in items if ok]
             if live:
                 out.append((icon, title, live))
         return out
@@ -5443,11 +5465,11 @@ class LauncherApp:
         # Плитка — иконка и одно слово, ничего больше. Подпись с перечислением
         # содержимого («telegram · discord · карта мира») пробовали: мелкий
         # текст лез за край плитки и выглядел мусором. Что внутри — видно по
-        # клику.
-        tw, th, gap = 150, 60, 14
+        # наведению.
+        tw, th, gap = 128, 50, 12
         total = len(cats) * tw + (len(cats) - 1) * gap
         sx = (width - total) // 2
-        sy = height - BAR_H - 86
+        sy = height - BAR_H - 66
         self._cat_geom = (sx, sy, tw, th, gap)
 
         normal = render_rounded(tw, th, 12, (40, 49, 63, 215), (255, 255, 255, 38))
@@ -5466,22 +5488,31 @@ class LauncherApp:
                 bg_id = cv.create_rectangle(x, sy, x + tw, sy + th,
                                             fill="#28313f", outline="#3a4658", tags=(tag,))
             if self.icons.get(icon):
-                cv.create_image(x + 26, sy + th // 2, image=self.icons[icon], tags=(tag,))
-            cv.create_text(x + 48, sy + th // 2, text=title, font=(UI_FONT, 10, "bold"),
+                cv.create_image(x + 22, sy + th // 2, image=self.icons[icon], tags=(tag,))
+            cv.create_text(x + 42, sy + th // 2, text=title, font=(UI_FONT, 9, "bold"),
                            fill=colors["fg"], anchor="w", tags=(tag,))
 
-            def enter(_e, i=bg_id, has=normal is not None):
+            # Список раскрывается по наведению: лишний клик ради того, чтобы
+            # просто посмотреть, что внутри, не нужен.
+            def enter(_e, i=bg_id, idx=i, has=normal is not None):
                 if has:
                     cv.itemconfig(i, image=self._img_refs["tile_hover"])
                 cv.configure(cursor="hand2")
+                self._cancel_close()
+                if self._open_category != idx:
+                    self._close_category()
+                    self._open_category_at(idx)
 
             def leave(_e, i=bg_id, has=normal is not None):
                 if has:
                     cv.itemconfig(i, image=self._img_refs["tile"])
                 cv.configure(cursor="")
+                self._schedule_close()
 
             cv.tag_bind(tag, "<Enter>", enter)
             cv.tag_bind(tag, "<Leave>", leave)
+            # Клик оставляем: он открывает список сразу, не дожидаясь наведения,
+            # и закрывает уже открытый.
             cv.tag_bind(tag, "<Button-1>", lambda _e, idx=i: self._toggle_category(idx))
 
         # Клик мимо плиток и Esc закрывают раскрытый список — иначе он висел бы
@@ -5499,7 +5530,26 @@ class LauncherApp:
             self._close_category()
             self._open_category_at(index)
 
+    def _schedule_close(self) -> None:
+        """Закрыть список, но не сразу: между плиткой и списком мышь проходит
+        по фону, и мгновенное закрытие не давало бы до него доехать."""
+        self._cancel_close()
+        try:
+            self._close_job = self.root.after(260, self._close_category)
+        except tk.TclError:
+            pass
+
+    def _cancel_close(self) -> None:
+        job = getattr(self, "_close_job", None)
+        if job is not None:
+            try:
+                self.root.after_cancel(job)
+            except tk.TclError:
+                pass
+            self._close_job = None
+
     def _close_category(self) -> None:
+        self._cancel_close()
         if self._open_category is None:
             return
         try:
@@ -5535,10 +5585,12 @@ class LauncherApp:
 
         row_h = 30
         pad = 8
-        pw = tw
+        pw = tw + 24          # чуть шире плитки: в строке иконка и название
         ph = pad * 2 + row_h * len(items)
         px = sx + index * (tw + gap)
-        py = sy - ph - 8
+        # Список прижат к плитке вплотную: между ними нет полосы фона, через
+        # которую мышь «выпадала» бы наружу.
+        py = sy - ph
 
         plate = render_rounded(pw, ph, 12, (23, 28, 36, 246), (255, 255, 255, 45))
         if plate is not None:
@@ -5549,11 +5601,15 @@ class LauncherApp:
             cv.create_rectangle(px, py, px + pw, py + ph, fill="#171c24",
                                 outline="#3a4658", tags=("catmenu",))
 
+        # Пока мышь внутри списка — он живёт; ушла — гаснет.
+        cv.tag_bind("catmenu", "<Enter>", lambda _e: self._cancel_close())
+        cv.tag_bind("catmenu", "<Leave>", lambda _e: self._schedule_close())
+
         hl = render_rounded(pw - 12, row_h - 4, 8, _hex_to_rgb(colors["accent"]) + (55,))
         if hl is not None:
             self._img_refs["catrow_hl"] = ImageTk.PhotoImage(hl)
 
-        for j, (name, _sub, command) in enumerate(items):
+        for j, (name, icon_name, command) in enumerate(items):
             ry = py + pad + j * row_h
             rtag = "catrow%d_%d" % (index, j)
             hl_id = None
@@ -5561,12 +5617,16 @@ class LauncherApp:
                 hl_id = cv.create_image(px + 6, ry + 2, image=self._img_refs["catrow_hl"],
                                         anchor="nw", tags=("catmenu", rtag),
                                         state="hidden")
-            # Только название. Пояснение справа мелким шрифтом пробовали —
+            # Иконка + название. Пояснение справа мелким шрифтом пробовали —
             # длинные названия налезали на него, читалась каша.
-            cv.create_text(px + 16, ry + row_h // 2, text=name, font=(UI_FONT, 10),
+            if self.icons.get(icon_name):
+                cv.create_image(px + 20, ry + row_h // 2, image=self.icons[icon_name],
+                                tags=("catmenu", rtag))
+            cv.create_text(px + 38, ry + row_h // 2, text=name, font=(UI_FONT, 9),
                            fill=colors["fg"], anchor="w", tags=("catmenu", rtag))
 
             def enter(_e, i=hl_id):
+                self._cancel_close()
                 if i is not None:
                     cv.itemconfig(i, state="normal")
                 cv.configure(cursor="hand2")
