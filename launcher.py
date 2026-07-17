@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.46.0",
+    "LAUNCHER_VERSION": "1.47.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.47.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "Исправлен EMI: он не показывал ни одного рецепта — при "
+                "нажатии на предмет открывались только вкладки с добычей. "
+                "Причина — в папке модов лежали две копии EMI под разными "
+                "именами. Лишняя удаляется автоматически при запуске.",
+            ],
+        },
         {
             "version": "1.46.0",
             "date": "17 июля 2026",
@@ -1565,6 +1575,12 @@ CONFIG = {
         # в owns configpack'а её тогда не было. Рядом со свежей это второй
         # мод с тем же modId — лишний повод для конфликта.
         "ih_russian-1.0.0.jar",
+        # EMI под старым именем: лаунчер сам его и создавал, пока filename в
+        # OPTIONAL_MODS не совпадал со сборкой (см. запись "emi" ниже). Рядом
+        # с emi-1.1.24 это второй мод с modId "emi" — из-за него EMI не
+        # показывал рецепты вообще: "Error constructing recipe widgets",
+        # NullPointerException в EmiRecipeFiller.getFirstValidHandler.
+        "emi-1.1.22+1.21.1+neoforge.jar",
         # Плагин для Paper/Spigot, попавший в mods/ по ошибке лаунчера: при
         # сбое запроса к Modrinth он брал самую свежую сборку голосового чата
         # под 1.21.1 без оглядки на загрузчик, а это Bukkit-версия (2.6.20 —
@@ -1909,10 +1925,13 @@ CONFIG = {
             "slug": "emi",
             "category": "Интерфейс",
             "description": "Просмотр рецептов и предметов",
-            # Актуальное на момент написания имя файла для NeoForge 1.21.1.
-            # Если вы поставите более новую версию EMI — обновите имя файла
-            # на то, что реально лежит у вас в mods/.
-            "filename": "emi-1.1.22+1.21.1+neoforge.jar",
+            # ВНИМАНИЕ (17.07): это имя обязано совпадать с тем, что реально
+            # лежит в modpack.zip. Здесь стояло "emi-1.1.22...jar", а сборка
+            # уже везла "emi-1.1.24...jar" — лаунчер не находил свой файл,
+            # качал EMI с Modrinth и клал ТУ ЖЕ версию под старым именем.
+            # В mods/ оказывались два байт-в-байт одинаковых jar с modId "emi",
+            # и EMI ломался: рецепты не строились (NPE в EmiRecipeFiller).
+            "filename": "emi-1.1.24+1.21.1+neoforge.jar",
             "default": True,
         },
         {
@@ -3216,9 +3235,19 @@ def restore_no_longer_optional_mods(status_cb=None) -> None:
     if not OPTIONAL_CACHE_DIR.exists():
         return
     known_filenames = {mod["filename"] for mod in CONFIG.get("OPTIONAL_MODS", [])}
+    # Мод, выброшенный из сборки, возвращать нельзя: remove_blocked_mods его
+    # только что удалил, а мы бы принесли обратно из кэша — и так каждый
+    # запуск. Именно так emi-1.1.22 воскресал бы после смены filename.
+    blocked = [p.lower() for p in CONFIG.get("REMOVED_MODS", []) if p]
     mods_dir = INSTANCE_DIR / "mods"
     for cached_file in OPTIONAL_CACHE_DIR.iterdir():
         if not cached_file.is_file() or cached_file.name in known_filenames:
+            continue
+        if any(p in cached_file.name.lower() for p in blocked):
+            try:
+                cached_file.unlink()  # чтобы не всплыл и в следующий раз
+            except OSError:
+                pass
             continue
         target = mods_dir / cached_file.name
         if not target.exists():
