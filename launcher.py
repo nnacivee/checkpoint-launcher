@@ -352,7 +352,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.38.0",
+    "LAUNCHER_VERSION": "1.39.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -364,6 +364,19 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.39.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "Добавлен Modern UI: текст в игре теперь сглаженный и "
+                "читаемый вместо пиксельного. Настроить шрифт можно в "
+                "настройках мода.",
+                "Пункт «Рюкзак» в круговом меню.",
+                "JourneyMap больше не показывает окно «О программе» каждый "
+                "раз при открытии большой карты.",
+                "День на сервере теперь длится 20 минут, ночь — 10.",
+            ],
+        },
         {
             "version": "1.38.0",
             "date": "17 июля 2026",
@@ -1281,6 +1294,18 @@ CONFIG = {
          "filename": "fancymenu_neoforge_3.9.8_MC_1.21.1.jar",
          "label": "FancyMenu (меню Industrial Horizon)"},
         {"slug": "simple-custom-early-loading", "label": "Экран загрузки Industrial Horizon"},
+        # Modern UI — свой движок отрисовки текста: буквы рисуются из TrueType
+        # со сглаживанием, а не из битмапа 8x8. Решение владельца от 17.07:
+        # текстур-пак со шрифтом выглядел криво (Minecraft прибивает ttf-глифы
+        # к пиксельной сетке), поэтому шрифт делает мод, а пак снят с раздачи.
+        # Modrinth: client_side=required, server_side=unsupported — сервер о
+        # моде не знает. Лицензия LGPL-3.0.
+        # Версия прибита гвоздями: 3.13.0.1 чинит краш модерновых подсказок
+        # вместе с hud_batching у ImmediatelyFast, а он у нас стоит.
+        {"slug": "modern-ui-3-13-0-1",
+         "url": "https://cdn.modrinth.com/data/3sjzyvGR/versions/eMf1VSQd/ModernUI-NeoForge-1.21.1-3.13.0.1-universal.jar",
+         "filename": "ModernUI-NeoForge-1.21.1-3.13.0.1-universal.jar",
+         "label": "Modern UI (шрифт и сглаживание текста)"},
         # Единственный в списке, кому нужна пара на сервере: голос ходит между
         # клиентом и сервером по ОТДЕЛЬНОМУ UDP-порту (по умолчанию 24454), и
         # без мода на сервере работать не будет. Игрока без сервера он не
@@ -1605,6 +1630,12 @@ CONFIG = {
         # Части удаляет REMOVED_RESOURCE_PACKS ниже.
         {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32.zip",
          "filename": "IH_Upscale32.zip", "name": "Моды 32x (xBR)", "enable": False},
+        # Шрифта здесь нет намеренно. Пробовали отдать его текстур-паком с
+        # ttf-провайдером (Lato) — Minecraft растеризует такой шрифт в ту же
+        # пиксельную сетку, что и ванильный, и буквы получаются кривыми.
+        # Красивый текст даёт Modern UI из EXTRA_CLIENT_MODS: он рисует
+        # глифы сам, со сглаживанием. Старый пак снимаем — см.
+        # REMOVED_RESOURCE_PACKS.
     ],
 
     # Устаревшие авто-паки: удаляются у игроков вместе с записью в
@@ -1625,6 +1656,8 @@ CONFIG = {
         "IH_Upscale32v2_4.zip",
         "IH_Upscale32v2_5.zip",
         "IH_Upscale32v2_6.zip",
+        # Шрифт Lato паком: заменён модом Modern UI, пак только мешался бы.
+        "IH_шрифт.zip",
     ],
 
     # Готовые шейдеры с Modrinth. weight — честная пометка о прожорливости:
@@ -4059,15 +4092,19 @@ def disable_shaders_once(status_cb=None) -> None:
 def fix_key_conflicts_once(status_cb=None) -> None:
     """Разводит клавиши, которые моды заняли вдвоём — один раз на компьютер.
 
-    Iris («Список наборов шейдеров») и InventoryHUD+ («Открыть конфиг») оба
-    садятся на O. Выигрывает InventoryHUD: жмёшь O — вместо шейдеров
-    открывается его настройка. Всплыло 17.07 через круговое меню (оно жмёт
-    ту же клавишу), но конфликт был и при обычном нажатии.
+    Два конфликта, оба вылезли через круговое меню (оно жмёт клавишу за
+    игрока), но существовали и при обычном нажатии:
 
-    Переносим Iris на F6 — она свободна во всей сборке.
+    O  — Iris («Список наборов шейдеров») и InventoryHUD+ («Открыть
+         конфиг»). Выигрывал InventoryHUD. Iris переносим на F6.
+    B  — Sophisticated Backpacks («Открыть рюкзак») и JourneyMap
+         («Создать метку»). Выигрывал JourneyMap: вместо рюкзака
+         открывалось окно новой метки. Метку переносим на Ctrl+B —
+         внутри полноэкранной карты у неё своя клавиша
+         (fullscreen_create_waypoint), её не трогаем.
 
     Один раз: если игрок сам переназначит клавишу, второй раз не лезем."""
-    marker = APP_DATA_DIR / ".key_conflicts_fixed_once_v2"
+    marker = APP_DATA_DIR / ".key_conflicts_fixed_once_v3"
     if marker.exists():
         return
     try:
@@ -4085,6 +4122,14 @@ def fix_key_conflicts_once(status_cb=None) -> None:
             _write_options_value(key, "key.keyboard.f6")
             if status_cb:
                 status_cb("Шейдеры переехали на F6 — раньше O открывала чужое окно.")
+
+        wp = "key_key.journeymap.create_waypoint"
+        wp_current = _read_options_value(wp, "")
+        if wp_current in ("", "key.keyboard.b", "key.keyboard.unknown"):
+            _write_options_value(wp, "key.keyboard.b:CONTROL")
+            if status_cb:
+                status_cb("Метка JourneyMap переехала на Ctrl+B — B оставили рюкзаку.")
+
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text("1", encoding="utf-8")
     except Exception:
