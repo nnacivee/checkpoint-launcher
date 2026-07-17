@@ -352,7 +352,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.34.0",
+    "LAUNCHER_VERSION": "1.35.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -364,6 +364,21 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.35.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "Текстуры 32x больше не включаются сами: у всех снова "
+                "стандартные. Паки никуда не делись — лежат в Настройки → "
+                "Ресурспаки, включить можно в любой момент.",
+                "Шейдеры выключены — так игра идёт заметно плавнее. Нужны "
+                "обратно? Включи в «Оформлении» лаунчера, больше выключать "
+                "не будем.",
+                "В круговом меню: убрана карта телепортов, добавлены "
+                "«Задания» (книга FTB Quests), у пунктов появились нормальные "
+                "иконки.",
+            ],
+        },
         {
             "version": "1.34.0",
             "date": "17 июля 2026",
@@ -1505,35 +1520,38 @@ CONFIG = {
         # клик» обещала бы обратное.
     ],
 
-    # ------------------- РЕСУРС-ПАКИ (АВТОУСТАНОВКА ВСЕМ) -------------------
-    # В отличие от RECOMMENDED_RESOURCE_PACKS выше (их игрок ставит сам из
-    # «Оформления»), эти лаунчер скачивает и ВКЛЮЧАЕТ сам при запуске игры.
-    # Включение — однократное: выбор записывается в маркер
-    # resourcepacks/.launcher_auto_packs.json, и если игрок потом выключил
-    # пак в настройках игры, лаунчер его мнение уважает и заново не включает.
-    # Решение владельца от 17.07: Faithful 32x для ванили + машинный апскейл
-    # текстур модов (Scale2x, 29 020 текстур из 76 модов). Апскейл разбит на
-    # 4 zip-части: GitHub-мост не пропускал файл больше 10 МБ, а игре всё
-    # равно — все части включаются разом и работают как один пак.
+    # ------------------- РЕСУРС-ПАКИ (АВТОДОСТАВКА) -------------------
+    # Лаунчер скачивает эти паки в resourcepacks/ при запуске игры.
+    # Ключ "enable" решает, включать ли пак самому:
+    #   enable=True  — включить один раз (выбор пишется в маркер
+    #                  resourcepacks/.launcher_auto_packs.json, и если игрок
+    #                  потом выключит пак в игре, лаунчер это уважает);
+    #   enable=False — только положить файл; игрок включит сам в
+    #                  Настройки → Ресурспаки. Если пак включали раньше —
+    #                  лаунчер его выключит (тоже однократно).
+    #
+    # Решение владельца от 17.07: 32x у всех по умолчанию НЕ нужен —
+    # стандартные текстуры остаются как есть, а 32x лежит рядом отдельным
+    # паком для тех, кто захочет. Поэтому enable=False у всех записей.
     "AUTO_RESOURCE_PACKS": [
-        {"slug": "faithful-32x", "name": "Faithful 32x (ваниль)"},
+        {"slug": "faithful-32x", "name": "Faithful 32x (ваниль)", "enable": False},
         # v2 (17.07, ночная просьба владельца «улучшить все текстуры»):
         # алгоритм xBR вместо Scale2x — чище скругляет диагонали и углы, и
         # охват шире: не только блоки/предметы, а ещё мобы, частицы и
         # окружение (33 066 текстур из 185 джарок; gui и шрифты намеренно
         # не трогаем). Старые части v1 удаляет REMOVED_RESOURCE_PACKS ниже.
         {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_1.zip",
-         "filename": "IH_Upscale32v2_1.zip", "name": "Моды 32x v2, часть 1"},
+         "filename": "IH_Upscale32v2_1.zip", "name": "Моды 32x v2, часть 1", "enable": False},
         {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_2.zip",
-         "filename": "IH_Upscale32v2_2.zip", "name": "Моды 32x v2, часть 2"},
+         "filename": "IH_Upscale32v2_2.zip", "name": "Моды 32x v2, часть 2", "enable": False},
         {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_3.zip",
-         "filename": "IH_Upscale32v2_3.zip", "name": "Моды 32x v2, часть 3"},
+         "filename": "IH_Upscale32v2_3.zip", "name": "Моды 32x v2, часть 3", "enable": False},
         {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_4.zip",
-         "filename": "IH_Upscale32v2_4.zip", "name": "Моды 32x v2, часть 4"},
+         "filename": "IH_Upscale32v2_4.zip", "name": "Моды 32x v2, часть 4", "enable": False},
         {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_5.zip",
-         "filename": "IH_Upscale32v2_5.zip", "name": "Моды 32x v2, часть 5"},
+         "filename": "IH_Upscale32v2_5.zip", "name": "Моды 32x v2, часть 5", "enable": False},
         {"url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32v2_6.zip",
-         "filename": "IH_Upscale32v2_6.zip", "name": "Моды 32x v2, часть 6"},
+         "filename": "IH_Upscale32v2_6.zip", "name": "Моды 32x v2, часть 6", "enable": False},
     ],
 
     # Устаревшие авто-паки: удаляются у игроков вместе с записью в
@@ -3917,13 +3935,25 @@ def install_auto_resource_packs(status_cb=None, progress_cb=None) -> None:
                 if entry.get("slug"):
                     _remember_recommended_pack(entry["slug"], filename)
 
-            # 3. Включаем — но только если ещё ни разу не включали.
-            if filename not in activated:
+            # 3. Включаем/выключаем — каждое действие ровно один раз.
+            # Маркер activated помнит паки, которые включили МЫ. Отсюда:
+            #   enable=True  и его нет в маркере -> включаем, запоминаем;
+            #   enable=False и он есть в маркере -> выключаем, забываем.
+            # Пак, который игрок выключил сам, повторно не включаем: его имя
+            # осталось в маркере, а второй раз мы туда не лезем.
+            want_enabled = entry.get("enable", True)
+            if want_enabled and filename not in activated:
                 set_resource_pack_enabled({"entry": "file/%s" % filename}, True)
                 activated.append(filename)
                 changed = True
                 if status_cb:
                     status_cb("Включён ресурс-пак: %s" % label)
+            elif not want_enabled and filename in activated:
+                set_resource_pack_enabled({"entry": "file/%s" % filename}, False)
+                activated.remove(filename)
+                changed = True
+                if status_cb:
+                    status_cb("Выключен ресурс-пак: %s" % label)
         except Exception:
             if status_cb:
                 status_cb("Не удалось поставить «%s» — пропускаю, это не критично." % label)
@@ -3931,6 +3961,36 @@ def install_auto_resource_packs(status_cb=None, progress_cb=None) -> None:
 
     if changed:
         marker_file.write_text(json.dumps(activated, ensure_ascii=False), encoding="utf-8")
+
+
+def disable_shaders_once(status_cb=None) -> None:
+    """Выключает шейдеры Iris — ровно один раз на компьютер.
+
+    Зачем: шейдеры сильно бьют по FPS, а у части игроков они оказались
+    включены (сборка ставит их сама в shaderpacks/). Решение владельца от
+    17.07: у всех должен быть чистый старт без шейдеров.
+
+    Почему один раз, а не при каждом запуске: иначе игрок, который сам
+    включил шейдеры и хочет с ними играть, при следующем запуске снова
+    остался бы без них — и не понял бы, почему. Факт выключения пишем в
+    APP_DATA (а не в папку игры): переустановка сборки не должна повторно
+    выключать шейдеры у того, кто их уже вернул себе сам.
+
+    Сам файл шейдера остаётся на месте — включить обратно можно в
+    «Оформлении» лаунчера или в настройках игры."""
+    marker = APP_DATA_DIR / ".shaders_disabled_once"
+    if marker.exists():
+        return
+    try:
+        values = _read_iris_properties()
+        if values.get("enableShaders", "false").lower() == "true":
+            _write_iris_properties({"enableShaders": "false"})
+            if status_cb:
+                status_cb("Шейдеры выключены — так игра идёт заметно плавнее.")
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("1", encoding="utf-8")
+    except Exception:
+        pass  # не критично: не вышло — игра всё равно запустится
 
 
 def install_extra_client_mods(status_cb=None, progress_cb=None) -> None:
@@ -4859,6 +4919,7 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     # Faithful 32x + апскейл модов. После шейдеров: обе загрузки некритичные,
     # но паки заметнее — их статус пусть будет последним на экране.
     install_auto_resource_packs(extras_status, extras_progress)
+    disable_shaders_once(extras_status)
     install_game_window_icon(extras_status)
     install_extra_client_mods(extras_status, extras_progress)
     install_skin_config(extras_status)
