@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.41.0",
+    "LAUNCHER_VERSION": "1.42.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.42.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "Исправлено: в моды мог попасть плагин голосового чата от "
+                "серверов Paper — игра ругалась на него при запуске. "
+                "Лишний файл удаляется сам, а лаунчер больше не путает "
+                "сборки для разных загрузчиков.",
+            ],
+        },
         {
             "version": "1.41.0",
             "date": "17 июля 2026",
@@ -1468,6 +1478,15 @@ CONFIG = {
         # в owns configpack'а её тогда не было. Рядом со свежей это второй
         # мод с тем же modId — лишний повод для конфликта.
         "ih_russian-1.0.0.jar",
+        # Плагин для Paper/Spigot, попавший в mods/ по ошибке лаунчера: при
+        # сбое запроса к Modrinth он брал самую свежую сборку голосового чата
+        # под 1.21.1 без оглядки на загрузчик, а это Bukkit-версия (2.6.20 —
+        # новее нашей NeoForge 2.6.18). NeoForge на старте ругался
+        # «является плагином Bukkit и не может быть загружен». Причину
+        # починили в 1.42.0, а сам файл убираем здесь.
+        "voicechat-bukkit-2.6.20.jar",
+        "voicechat-bukkit-2.6.19.jar",
+        "voicechat-bukkit-2.6.18.jar",
     ],
 
     # ------------------------- СКИНЫ И ПЛАЩИ -------------------------
@@ -3920,7 +3939,21 @@ def _find_modrinth_download(slug: str, mc_version: str, loaders: list, prefer_ke
         except Exception:
             versions = None
         if versions:
-            break
+            # Запасной запрос идёт БЕЗ фильтра по загрузчику, и в ответе
+            # оказывается всё подряд — включая серверные плагины. Отсеиваем
+            # чужое сами.
+            #
+            # Как это выстрелило 17.07: у Simple Voice Chat под 1.21.1 есть
+            # сборка для Bukkit/Paper (2.6.20), и она СВЕЖЕЕ, чем сборка для
+            # NeoForge (2.6.18). Стоило первому запросу сорваться — и в mods/
+            # игроку приезжал voicechat-bukkit-2.6.20.jar, а NeoForge на старте
+            # ругался «является плагином Bukkit и не может быть загружен».
+            if not use_loader_filter:
+                wanted = {str(x).lower() for x in loaders}
+                versions = [v for v in versions
+                            if wanted & {str(l).lower() for l in (v.get("loaders") or [])}]
+            if versions:
+                break
 
     if not versions:
         return None, None
