@@ -1,0 +1,34 @@
+name: Post to Telegram
+
+# Ручной пост в канал: Actions -> "Post to Telegram" -> Run workflow.
+# Текст и путь к картинке вводятся прямо там. Токены — в секретах репозитория.
+on:
+  workflow_dispatch:
+    inputs:
+      text:
+        description: "Текст поста (HTML: <b>жирный</b>)"
+        required: true
+        type: string
+      photo:
+        description: "Путь к картинке в репозитории"
+        required: false
+        default: "radial_menu.png"
+        type: string
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Send
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: >
+          python tg_announce.py
+          "${{ inputs.text }}"
+          "${{ inputs.photo }}"
