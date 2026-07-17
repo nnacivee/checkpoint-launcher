@@ -340,6 +340,10 @@ CONFIG = {
     "DISCORD_URL": "https://discord.gg/rN22JGV9C",
     "TELEGRAM_URL": "https://t.me/+mq769D_rHc04ZmYy",
 
+    # Веб-карта мира (BlueMap крутится прямо на сервере, отдельный порт).
+    # Оставьте "", чтобы убрать пункт «Карта мира» из категории «Сообщество».
+    "MAP_URL": "http://95.216.30.64:25980",
+
     # ------------------------- ВЕРСИЯ ЛАУНЧЕРА -------------------------
     # Показывается мелким текстом внизу окна лаунчера, а по клику
     # открывается история изменений (список ниже). При каждой доработке
@@ -352,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.39.0",
+    "LAUNCHER_VERSION": "1.40.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -364,6 +368,18 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.40.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "Кнопок в окне было десять — стало четыре: «Внешний вид», "
+                "«Моды», «Сообщество», «Сборка». Нужное открывается списком "
+                "по клику.",
+                "Карта мира BlueMap — теперь прямо из лаунчера, "
+                "в «Сообществе».",
+                "Версия лаунчера и «что нового» переехали к строке версий.",
+            ],
+        },
         {
             "version": "1.39.0",
             "date": "17 июля 2026",
@@ -5196,6 +5212,8 @@ class LauncherApp:
         self.server_status_color_key = "fg_muted"
         self.server_status_label = None
         self.game_process = None
+        # Какая категория плиток сейчас раскрыта (None — ни одна).
+        self._open_category = None
 
         self.update_banner_var = tk.StringVar(value="")
         self.update_info = None
@@ -5373,30 +5391,64 @@ class LauncherApp:
     # ------------------------------------------------------------------
     # Плитки быстрого доступа над нижней полосой
     # ------------------------------------------------------------------
-    def _build_tiles(self, cv, width, height, colors) -> None:
-        tiles = [("skin", "Скины", self.on_open_skins),
-                 ("image", "Текстуры", self.on_open_resource_packs),
-                 ("shader", "Шейдеры", self.on_open_shader_packs),
-                 ("grid", "Моды", self.on_open_optional_mods),
-                 ("list", "Список", self.on_show_mod_list),
-                 ("folder", "Папка", self.on_open_folder),
-                 ("discord", "Discord", self.on_open_discord),
-                 ("telegram", "Telegram", self.on_open_telegram),
-                 ("wrench", "Починить", self.on_repair),
-                 ("gear", "Настройки", self.on_open_install_settings)]
-        if not CONFIG.get("DISCORD_URL"):
-            tiles = [t for t in tiles if t[0] != "discord"]
-        if not CONFIG.get("TELEGRAM_URL"):
-            tiles = [t for t in tiles if t[0] != "telegram"]
-        if not CONFIG.get("MOD_SHOWCASE"):
-            tiles = [t for t in tiles if t[0] != "list"]
-        if not CONFIG.get("OPTIONAL_MODS"):
-            tiles = [t for t in tiles if t[0] != "grid"]
+    def _categories(self) -> list:
+        """Плитки главного окна: четыре категории вместо десяти кнопок.
 
-        tw, th, gap = 76, 66, 12
-        total = len(tiles) * tw + (len(tiles) - 1) * gap
+        Решение владельца от 17.07: «кнопок много, поделить по категориям».
+        Десять одинаковых иконок в ряд не читались — чтобы найти нужную,
+        приходилось вспоминать, что означает картинка. Теперь у плитки есть
+        название и подпись с содержимым, а конкретные пункты открываются
+        списком.
+
+        Пункт, которого нет в конфиге (например, Discord без ссылки), из
+        списка выпадает сам; категория без пунктов не рисуется вовсе."""
+        cats = [
+            ("skin", "Внешний вид", [
+                ("Скины", "выбрать скин персонажа", self.on_open_skins, True),
+                ("Текстуры", "наборы текстур", self.on_open_resource_packs, True),
+                ("Шейдеры", "освещение и тени", self.on_open_shader_packs, True),
+            ]),
+            ("grid", "Моды", [
+                ("Дополнительные", "включить и выключить",
+                 self.on_open_optional_mods, bool(CONFIG.get("OPTIONAL_MODS"))),
+                ("Что в сборке", "список модов с описанием",
+                 self.on_show_mod_list, bool(CONFIG.get("MOD_SHOWCASE"))),
+            ]),
+            ("telegram", "Сообщество", [
+                ("Telegram", "новости сборки",
+                 self.on_open_telegram, bool(CONFIG.get("TELEGRAM_URL"))),
+                ("Discord", "голосовой чат и помощь",
+                 self.on_open_discord, bool(CONFIG.get("DISCORD_URL"))),
+                ("Карта мира", "смотреть мир в браузере",
+                 self.on_open_map, bool(CONFIG.get("MAP_URL"))),
+            ]),
+            ("gear", "Сборка", [
+                ("Настройки", "память, папка установки", self.on_open_install_settings, True),
+                ("Папка игры", "открыть в проводнике", self.on_open_folder, True),
+                ("Починить", "перекачать повреждённые файлы", self.on_repair, True),
+            ]),
+        ]
+        out = []
+        for icon, title, items in cats:
+            live = [(n, s, c) for (n, s, c, ok) in items if ok]
+            if live:
+                out.append((icon, title, live))
+        return out
+
+    def _build_tiles(self, cv, width, height, colors) -> None:
+        cats = self._categories()
+        if not cats:
+            return
+
+        # Плитка — иконка и одно слово, ничего больше. Подпись с перечислением
+        # содержимого («telegram · discord · карта мира») пробовали: мелкий
+        # текст лез за край плитки и выглядел мусором. Что внутри — видно по
+        # клику.
+        tw, th, gap = 150, 60, 14
+        total = len(cats) * tw + (len(cats) - 1) * gap
         sx = (width - total) // 2
-        sy = height - BAR_H - 84
+        sy = height - BAR_H - 86
+        self._cat_geom = (sx, sy, tw, th, gap)
 
         normal = render_rounded(tw, th, 12, (40, 49, 63, 215), (255, 255, 255, 38))
         hover = render_rounded(tw, th, 12, (58, 72, 92, 235), (255, 255, 255, 90))
@@ -5404,7 +5456,7 @@ class LauncherApp:
             self._img_refs["tile"] = ImageTk.PhotoImage(normal)
             self._img_refs["tile_hover"] = ImageTk.PhotoImage(hover)
 
-        for i, (icon, label, command) in enumerate(tiles):
+        for i, (icon, title, _items) in enumerate(cats):
             x = sx + i * (tw + gap)
             tag = "tile%d" % i
             if normal is not None:
@@ -5414,9 +5466,9 @@ class LauncherApp:
                 bg_id = cv.create_rectangle(x, sy, x + tw, sy + th,
                                             fill="#28313f", outline="#3a4658", tags=(tag,))
             if self.icons.get(icon):
-                cv.create_image(x + tw // 2, sy + 23, image=self.icons[icon], tags=(tag,))
-            cv.create_text(x + tw // 2, sy + 50, text=label, font=(UI_FONT, 8),
-                           fill=colors["fg"], tags=(tag,))
+                cv.create_image(x + 26, sy + th // 2, image=self.icons[icon], tags=(tag,))
+            cv.create_text(x + 48, sy + th // 2, text=title, font=(UI_FONT, 10, "bold"),
+                           fill=colors["fg"], anchor="w", tags=(tag,))
 
             def enter(_e, i=bg_id, has=normal is not None):
                 if has:
@@ -5430,7 +5482,109 @@ class LauncherApp:
 
             cv.tag_bind(tag, "<Enter>", enter)
             cv.tag_bind(tag, "<Leave>", leave)
-            cv.tag_bind(tag, "<Button-1>", lambda _e, c=command: c())
+            cv.tag_bind(tag, "<Button-1>", lambda _e, idx=i: self._toggle_category(idx))
+
+        # Клик мимо плиток и Esc закрывают раскрытый список — иначе он висел бы
+        # поверх арта, пока не выберешь пункт.
+        cv.bind("<Button-1>", self._on_canvas_click, add="+")
+        self.root.bind("<Escape>", lambda _e: self._close_category())
+
+    # ------------------------------------------------------------------
+    # Раскрывающийся список пунктов категории
+    # ------------------------------------------------------------------
+    def _toggle_category(self, index: int) -> None:
+        if self._open_category == index:
+            self._close_category()
+        else:
+            self._close_category()
+            self._open_category_at(index)
+
+    def _close_category(self) -> None:
+        if self._open_category is None:
+            return
+        try:
+            self.canvas.delete("catmenu")
+        except tk.TclError:
+            pass
+        self._open_category = None
+
+    def _on_canvas_click(self, event) -> None:
+        """Закрывает список, если щёлкнули не по нему и не по плиткам."""
+        if self._open_category is None:
+            return
+        try:
+            tags = set()
+            for item in self.canvas.find_overlapping(event.x, event.y,
+                                                     event.x, event.y):
+                tags.update(self.canvas.gettags(item))
+        except tk.TclError:
+            return
+        if any(t == "catmenu" or t.startswith("tile") or t.startswith("catrow")
+               for t in tags):
+            return
+        self._close_category()
+
+    def _open_category_at(self, index: int) -> None:
+        cats = self._categories()
+        if index >= len(cats):
+            return
+        cv = self.canvas
+        colors = THEMES[self.theme_name]
+        _icon, _title, items = cats[index]
+        sx, sy, tw, th, gap = self._cat_geom
+
+        row_h = 30
+        pad = 8
+        pw = tw
+        ph = pad * 2 + row_h * len(items)
+        px = sx + index * (tw + gap)
+        py = sy - ph - 8
+
+        plate = render_rounded(pw, ph, 12, (23, 28, 36, 246), (255, 255, 255, 45))
+        if plate is not None:
+            self._img_refs["catmenu"] = ImageTk.PhotoImage(plate)
+            cv.create_image(px, py, image=self._img_refs["catmenu"], anchor="nw",
+                            tags=("catmenu",))
+        else:
+            cv.create_rectangle(px, py, px + pw, py + ph, fill="#171c24",
+                                outline="#3a4658", tags=("catmenu",))
+
+        hl = render_rounded(pw - 12, row_h - 4, 8, _hex_to_rgb(colors["accent"]) + (55,))
+        if hl is not None:
+            self._img_refs["catrow_hl"] = ImageTk.PhotoImage(hl)
+
+        for j, (name, _sub, command) in enumerate(items):
+            ry = py + pad + j * row_h
+            rtag = "catrow%d_%d" % (index, j)
+            hl_id = None
+            if hl is not None:
+                hl_id = cv.create_image(px + 6, ry + 2, image=self._img_refs["catrow_hl"],
+                                        anchor="nw", tags=("catmenu", rtag),
+                                        state="hidden")
+            # Только название. Пояснение справа мелким шрифтом пробовали —
+            # длинные названия налезали на него, читалась каша.
+            cv.create_text(px + 16, ry + row_h // 2, text=name, font=(UI_FONT, 10),
+                           fill=colors["fg"], anchor="w", tags=("catmenu", rtag))
+
+            def enter(_e, i=hl_id):
+                if i is not None:
+                    cv.itemconfig(i, state="normal")
+                cv.configure(cursor="hand2")
+
+            def leave(_e, i=hl_id):
+                if i is not None:
+                    cv.itemconfig(i, state="hidden")
+                cv.configure(cursor="")
+
+            def run(_e, c=command):
+                self._close_category()
+                c()
+
+            cv.tag_bind(rtag, "<Enter>", enter)
+            cv.tag_bind(rtag, "<Leave>", leave)
+            cv.tag_bind(rtag, "<Button-1>", run)
+
+        self._open_category = index
 
     # ------------------------------------------------------------------
     # Нижняя полоса: ник слева, «Играть» справа
@@ -5472,13 +5626,13 @@ class LauncherApp:
         # Версии — служебная справка, а не заголовок. Раньше она была жирной и
         # акцентным цветом: спорила за внимание со статусом сервера, который
         # куда важнее. Приглушаем, чтобы порядок чтения был правильный.
-        cv.create_text(left, top + 72, anchor="nw", font=(UI_FONT, 8),
-                       fill=muted,
-                       text="Minecraft %s  ·  %s  ·  лаунчер %s" % (
-                           CONFIG["MC_VERSION"],
-                           LOADER_DISPLAY_NAMES.get(CONFIG["MOD_LOADER"],
-                                                    CONFIG["MOD_LOADER"].capitalize()),
-                           CONFIG.get("LAUNCHER_VERSION", "?")))
+        version_item = cv.create_text(
+            left, top + 72, anchor="nw", font=(UI_FONT, 8), fill=muted,
+            text="Minecraft %s  ·  %s  ·  лаунчер %s  ·" % (
+                CONFIG["MC_VERSION"],
+                LOADER_DISPLAY_NAMES.get(CONFIG["MOD_LOADER"],
+                                         CONFIG["MOD_LOADER"].capitalize()),
+                CONFIG.get("LAUNCHER_VERSION", "?")))
         self.server_status_label = _CanvasText(
             cv, cv.create_text(left, top + 89, anchor="nw", font=(UI_FONT, 9, "bold"),
                                fill=colors[self.server_status_color_key],
@@ -5493,9 +5647,11 @@ class LauncherApp:
             links.append(("проверить обновления", self.on_check_update_now))
         if CONFIG.get("TEST_SERVER_ADDRESS"):
             links.append(("тест localhost", self.on_play_test))
-        lx = left
+        # Ссылки идут той же строкой, что и версии: раньше они жили отдельной
+        # строкой ниже, а теперь там ники тех, кто в игре.
+        lx = int(cv.bbox(version_item)[2]) + 8
         for text, command in links:
-            item = cv.create_text(lx, top + 108, anchor="nw", font=(UI_FONT, 8, "underline"),
+            item = cv.create_text(lx, top + 72, anchor="nw", font=(UI_FONT, 8, "underline"),
                                   fill=muted, text=text, tags=("lnk%d" % len(cv.find_all()),))
             tag = cv.gettags(item)[0]
             cv.tag_bind(tag, "<Button-1>", lambda _e, c=command: c())
@@ -5754,6 +5910,9 @@ class LauncherApp:
 
     def on_open_telegram(self) -> None:
         self._open_link(CONFIG.get("TELEGRAM_URL"), "Telegram")
+
+    def on_open_map(self) -> None:
+        self._open_link(CONFIG.get("MAP_URL"), "Карта мира")
 
     @staticmethod
     def _open_link(url, what: str) -> None:
@@ -7595,8 +7754,11 @@ class LauncherApp:
         if result.get("online"):
             online = result.get("players_online")
             maxp = result.get("players_max")
+            # Пинг и список ников тут были и уехали по решению владельца от
+            # 17.07: строка получалась длинной, а ники сервер отдаёт вперемешку
+            # с «Anonymous Player» — толку от них не было.
             if online is not None and maxp is not None:
-                text = "●  Сервер онлайн · %d/%d игроков" % (online, maxp)
+                text = "●  Сервер онлайн  ·  %d/%d игроков" % (online, maxp)
             else:
                 text = "●  Сервер онлайн"
             color_key = "status_online"
