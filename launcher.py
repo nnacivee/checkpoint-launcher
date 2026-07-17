@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.47.0",
+    "LAUNCHER_VERSION": "1.48.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.48.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "Исправлен вылет при входе на сервер с ошибкой «Соединение "
+                "потеряно: канал мода Extreme Reactors отсутствует на стороне "
+                "сервера». Мод убран из сборки, но оставался в папке модов — "
+                "теперь удаляется автоматически вместе с Zero CORE 2.",
+            ],
+        },
         {
             "version": "1.47.0",
             "date": "17 июля 2026",
@@ -1581,6 +1591,15 @@ CONFIG = {
         # показывал рецепты вообще: "Error constructing recipe widgets",
         # NullPointerException в EmiRecipeFiller.getFirstValidHandler.
         "emi-1.1.22+1.21.1+neoforge.jar",
+        # Extreme Reactors и его библиотека ZeroCore — убраны по решению
+        # владельца (17.07): ядерка остаётся только в Modern Industrialization.
+        # С сервера сняты, а у игроков jar'ы остались — и оба мода создают
+        # сетевые каналы (bigreactors:update_client_fuelrods,
+        # zerocore:container_sync). Сервер такой клиент не пускает:
+        # «Канал отсутствует на стороне сервера, но необходим на клиенте».
+        # ZeroCore нужен только Extreme Reactors — уходит вместе с ним.
+        "ExtremeReactors2-1.21.1-2.4.28.jar",
+        "ZeroCore2-1.21.1-2.4.21.jar",
         # Плагин для Paper/Spigot, попавший в mods/ по ошибке лаунчера: при
         # сбое запроса к Modrinth он брал самую свежую сборку голосового чата
         # под 1.21.1 без оглядки на загрузчик, а это Bukkit-версия (2.6.20 —
