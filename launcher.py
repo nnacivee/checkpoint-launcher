@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.48.0",
+    "LAUNCHER_VERSION": "1.49.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,20 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.49.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "Вернулись рецепты Create. EMI не показывал крафты "
+                "андезитового корпуса, буровой установки, ранца и всего "
+                "остального из Create — он просто не знал этих типов "
+                "рецептов. Теперь рядом ставится JEI: он их разбирает, а "
+                "показываются они по-прежнему в EMI.",
+                "Одинаковые предметы разных модов сведены к одному: было три "
+                "железных пластины и две медных с одинаковым назначением. "
+                "Дубли рецептов спрятаны.",
+            ],
+        },
         {
             "version": "1.48.0",
             "date": "17 июля 2026",
@@ -1531,6 +1545,32 @@ CONFIG = {
         #     AdvancedAE (нужна любая) и ExtendedAE (нужна любая);
         #   - ExtendedAE 2.2.33 вне несовместимого диапазона (,1.1.4].
         # Лицензия MIT.
+        # JEI. Ставится НЕ ради своего интерфейса, а ради рецептов Create.
+        # Create поставляет совместимость только с JEI (в джарке лежит
+        # com/simibubi/create/compat/jei/), плагина для EMI у него нет. Без JEI
+        # мод EMI не знает ни одной категории Create — ни механического крафта,
+        # ни нанесения, ни смешивания. Отсюда «пропавшие» крафты андезитового
+        # корпуса, буровой установки и ранца: их рецепты имеют типы
+        # create:item_application и create:mechanical_crafting.
+        # У EMI есть встроенный слой JEMI: он забирает рецепты у JEI и рисует
+        # их в своём окне, а интерфейс JEI при этом прячется. Игрок разницы не
+        # заметит, кроме того что рецепты наконец появятся.
+        # Ссылка на наш GitHub-релиз, а не на CDN Modrinth: у части игроков
+        # CDN не открывается (из-за этого выпускали 1.46.0), а мод обязательный.
+        {"slug": "jei-19-27-0-340",
+         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/jei-1.21.1-neoforge-19.27.0.340.jar",
+         "filename": "jei-1.21.1-neoforge-19.27.0.340.jar",
+         "required": True,
+         "label": "JEI (движок рецептов для EMI)"},
+        # AlmostUnified: сводит одинаковые предметы разных модов к одному.
+        # Сейчас в сборке три «железных пластины» (Create зовёт листом, MI —
+        # пластиной) и две медных, хотя назначение одинаковое. Мод оставляет
+        # по одному предмету на тег и прячет дубли рецептов.
+        {"slug": "almostunified-1-4-2",
+         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/almostunified-neoforge-1.21.1-1.4.2.jar",
+         "filename": "almostunified-neoforge-1.21.1-1.4.2.jar",
+         "required": True,
+         "label": "AlmostUnified (единые слитки и пластины)"},
         {"slug": "ae2wtlib-19-5-0",
          "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/ae2wtlib-19.5.0.jar",
          "required": True,
