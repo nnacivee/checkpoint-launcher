@@ -352,7 +352,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.37.0",
+    "LAUNCHER_VERSION": "1.37.1",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -364,6 +364,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.37.1",
+            "date": "17 июля 2026",
+            "changes": [
+                "Клавиша шейдеров: доделал вчерашний фикс — он не срабатывал, "
+                "потому что игра не хранит эту привязку в настройках. Теперь "
+                "шейдеры точно на F6.",
+            ],
+        },
         {
             "version": "1.37.0",
             "date": "17 июля 2026",
@@ -4025,15 +4034,21 @@ def fix_key_conflicts_once(status_cb=None) -> None:
     Переносим Iris на F6 — она свободна во всей сборке.
 
     Один раз: если игрок сам переназначит клавишу, второй раз не лезем."""
-    marker = APP_DATA_DIR / ".key_conflicts_fixed_once"
+    marker = APP_DATA_DIR / ".key_conflicts_fixed_once_v2"
     if marker.exists():
         return
     try:
         key = "key_iris.keybind.shaderPackSelection"
         current = _read_options_value(key, "")
-        # Трогаем, только если Iris и правда на O — иначе конфликта нет и
-        # чужой выбор ломать незачем.
-        if current == "key.keyboard.o":
+        # Пишем безусловно, если игрок не выбрал клавишу сам.
+        #
+        # Первая версия фикса проверяла current == "key.keyboard.o" и не
+        # срабатывала: строки Iris в options.txt просто НЕТ — игра её не
+        # сохраняет, а мод берёт O из своего умолчания (в логах keyVal=79).
+        # Поэтому пустое значение здесь — это тоже "стоит O", и его надо
+        # перебить. Чужой осознанный выбор не трогаем: любое другое
+        # значение оставляем как есть.
+        if current in ("", "key.keyboard.o", "key.keyboard.unknown"):
             _write_options_value(key, "key.keyboard.f6")
             if status_cb:
                 status_cb("Шейдеры переехали на F6 — раньше O открывала чужое окно.")
