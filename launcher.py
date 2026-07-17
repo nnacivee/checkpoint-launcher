@@ -352,7 +352,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.35.0",
+    "LAUNCHER_VERSION": "1.36.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -364,6 +364,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.36.0",
+            "date": "17 июля 2026",
+            "changes": [
+                "Русский язык теперь стоит сразу при первом входе — раньше "
+                "игра открывалась на английском. Нужен другой? Настройки → "
+                "Язык, лаунчер больше не вмешается.",
+                "В круговом меню появились «Шейдеры» — экран выбора Iris "
+                "прямо из кольца, и «Задания» переименованы в «Квесты».",
+            ],
+        },
         {
             "version": "1.35.0",
             "date": "17 июля 2026",
@@ -3993,6 +4004,33 @@ def disable_shaders_once(status_cb=None) -> None:
         pass  # не критично: не вышло — игра всё равно запустится
 
 
+def set_russian_once(status_cb=None) -> None:
+    """Ставит русский язык игры — один раз на компьютер.
+
+    Зачем: игра по умолчанию открывается на английском, и новичок сразу
+    видит английское меню, хотя сборка переведена. Решение владельца от
+    17.07: русский должен стоять сразу при входе.
+
+    Почему один раз, а не в FORCED_OPTIONS (те применяются при каждом
+    запуске): иначе игрок, которому нужен английский, не смог бы его
+    оставить — лаунчер возвращал бы русский на каждом старте. Маркер лежит
+    в APP_DATA, поэтому переустановка сборки язык повторно не навяжет.
+
+    Сменить язык обратно можно как обычно: Настройки → Язык."""
+    marker = APP_DATA_DIR / ".language_set_once"
+    if marker.exists():
+        return
+    try:
+        if _read_options_value("lang", "") != "ru_ru":
+            _write_options_value("lang", "ru_ru")
+            if status_cb:
+                status_cb("Язык игры — русский.")
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("1", encoding="utf-8")
+    except Exception:
+        pass  # не критично: язык переключается и руками
+
+
 def install_extra_client_mods(status_cb=None, progress_cb=None) -> None:
     """Скачивает доп. клиентские моды из CONFIG["EXTRA_CLIENT_MODS"] с
     Modrinth и кладёт в mods/. Скачивается каждый один раз в постоянный кэш
@@ -4920,6 +4958,7 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     # но паки заметнее — их статус пусть будет последним на экране.
     install_auto_resource_packs(extras_status, extras_progress)
     disable_shaders_once(extras_status)
+    set_russian_once(extras_status)
     install_game_window_icon(extras_status)
     install_extra_client_mods(extras_status, extras_progress)
     install_skin_config(extras_status)
