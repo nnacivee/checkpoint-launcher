@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.49.0",
+    "LAUNCHER_VERSION": "1.50.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,24 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.50.0",
+            "date": "18 июля 2026",
+            "changes": [
+                "Круговое меню и голосовой чат теперь ставятся у всех. "
+                "Их загрузка больше не упирается в Modrinth, который у части "
+                "провайдеров закрыт: меню едет с нашего GitHub, голосовой "
+                "чат при сбое докачивается с официального сайта автора. "
+                "После первой удачной загрузки ничего не докачивается "
+                "повторно при каждом запуске.",
+                "Клавиши разложены по-человечески: G — круговое меню, "
+                "K — книга квестов, M — карта и приваты, J — карта мира, "
+                "B — рюкзак, V — голосовой чат. С G сняты пять чужих "
+                "биндов (группы голоса, Curios, джетпак и другие) — раньше "
+                "они открывались вместо меню. Раскладка применяется один "
+                "раз: свои клавиши можно спокойно вернуть в настройках.",
+            ],
+        },
         {
             "version": "1.49.0",
             "date": "17 июля 2026",
@@ -1454,7 +1472,15 @@ CONFIG = {
         # сервер это не мешает.
         # В архив сборки его класть нельзя: лицензия All Rights Reserved.
         # Скачиваем с официального Modrinth, как и моды Keksuccino.
-        {"slug": "simple-voice-chat", "label": "Simple Voice Chat (голосовой чат)"},
+        # fallback_url (18.07): официальный maven автора (maven.maxhenkel.de) —
+        # это его собственная раздача, не наша копия, лицензия не нарушается.
+        # Используется ТОЛЬКО если Modrinth не ответил или оборвал загрузку.
+        # URL собран по стандартной maven-раскладке; если он окажется битым,
+        # игрок останется ровно там же, где был без запасного пути.
+        {"slug": "simple-voice-chat",
+         "fallback_url": "https://maven.maxhenkel.de/repository/public/de/maxhenkel/voicechat/voicechat-neoforge-1.21.1/2.6.20/voicechat-neoforge-1.21.1-2.6.20.jar",
+         "fallback_filename": "voicechat-neoforge-1.21.1-2.6.20.jar",
+         "label": "Simple Voice Chat (голосовой чат)"},
         # Мирит JourneyMap и FTB Chunks. У обоих своя миникарта, и до этого
         # мода они рисовались друг поверх друга в правом верхнем углу.
         # Modrinth: client_side=required, server_side=unsupported — сервер об
@@ -1594,8 +1620,11 @@ CONFIG = {
         # версионная — у всех одна и та же сборка мода. Преднастроенное меню
         # и внешний вид (крупное стеклянное кольцо, анимации) едут в
         # configpack v14: config/ezactions/*. Лицензия MIT.
+        # 18.07: ссылка переведена с cdn.modrinth на наш GitHub-релиз. У части
+        # игроков CDN Modrinth закрыт провайдером, и меню просто не ставилось.
+        # Лицензия MIT — перекладывать jar к себе можно.
         {"slug": "ez-actions-2-0-3-5",
-         "url": "https://cdn.modrinth.com/data/gJiy6dk4/versions/z7npcqAM/ezactions-neoforge-1.21.1-2.0.3.5.jar",
+         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/ezactions-neoforge-1.21.1-2.0.3.5.jar",
          "filename": "ezactions-neoforge-1.21.1-2.0.3.5.jar",
          "label": "Круговое меню быстрого доступа"},
     ],
@@ -4391,7 +4420,7 @@ def fix_key_conflicts_once(status_cb=None) -> None:
          (fullscreen_create_waypoint), её не трогаем.
 
     Один раз: если игрок сам переназначит клавишу, второй раз не лезем."""
-    marker = APP_DATA_DIR / ".key_conflicts_fixed_once_v3"
+    marker = APP_DATA_DIR / ".key_conflicts_fixed_once_v4"
     if marker.exists():
         return
     try:
@@ -4416,6 +4445,39 @@ def fix_key_conflicts_once(status_cb=None) -> None:
             _write_options_value(wp, "key.keyboard.b:CONTROL")
             if status_cb:
                 status_cb("Метка JourneyMap переехала на Ctrl+B — B оставили рюкзаку.")
+
+        # --- Раскладка 18.07 (решение владельца): главные экраны на удобных
+        # клавишах, конфликты сняты. На G сидели пять чужих биндов (группы
+        # голоса, Curios, джетпак, имена JourneyMap, гайд AE2) — круговое
+        # меню среди них проигрывало. Перебиваем только умолчания: если
+        # игрок ставил клавишу сам, его выбор не трогаем.
+        layout = [
+            ("key_key.ezactions.open", "key.keyboard.g",
+             ("", "key.keyboard.grave.accent", "key.keyboard.unknown")),
+            ("key_key.ftbquests.quests", "key.keyboard.k",
+             ("", "key.keyboard.unknown")),
+            ("key_key.voice_chat_group", "key.keyboard.unknown",
+             ("", "key.keyboard.g")),
+            ("key_key.curios.open.desc", "key.keyboard.unknown",
+             ("", "key.keyboard.g")),
+            ("key_key.jetpack.toggle_active.description", "key.keyboard.semicolon",
+             ("", "key.keyboard.g")),
+            ("key_key.journeymap.toggle_entity_names", "key.keyboard.unknown",
+             ("", "key.keyboard.g")),
+            ("key_key.guideme.guide", "key.keyboard.unknown",
+             ("", "key.keyboard.g")),
+            ("key_iris.keybind.toggleShaders", "key.keyboard.unknown",
+             ("", "key.keyboard.k")),
+            ("key_key.kubejs.kubedex", "key.keyboard.unknown",
+             ("", "key.keyboard.k")),
+            ("key_key.mute_microphone", "key.keyboard.comma",
+             ("", "key.keyboard.m")),
+        ]
+        for opt_key, target, defaults in layout:
+            if _read_options_value(opt_key, "") in defaults:
+                _write_options_value(opt_key, target)
+        if status_cb:
+            status_cb("Клавиши разложены: G — меню, K — квесты, M — карта, B — рюкзак.")
 
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text("1", encoding="utf-8")
@@ -4503,6 +4565,12 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
                 filename, url = _find_modrinth_download(
                     slug, CONFIG["MC_VERSION"], [CONFIG["MOD_LOADER"]]
                 )
+            if (not filename or not url) and entry.get("fallback_url"):
+                # Modrinth не ответил или версии нет — запасной источник
+                # (случай 18.07: у части игроков cdn.modrinth.com закрыт
+                # провайдером, и голосовой чат просто не ставился).
+                url = entry["fallback_url"]
+                filename = entry.get("fallback_filename") or url.rsplit("/", 1)[-1]
             if not filename or not url:
                 if entry.get("required"):
                     missing_required.append(label)
@@ -4511,7 +4579,15 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
                 continue
             if status_cb:
                 status_cb("Скачиваю мод «%s»..." % label)
-            download_file(url, cache / filename)
+            try:
+                download_file(url, cache / filename)
+            except Exception:
+                fb = entry.get("fallback_url")
+                if not fb or url == fb:
+                    raise
+                # Основной источник оборвался на середине — пробуем запасной.
+                filename = entry.get("fallback_filename") or fb.rsplit("/", 1)[-1]
+                download_file(fb, cache / filename)
             installed[slug] = filename
             changed = True
         except Exception:
