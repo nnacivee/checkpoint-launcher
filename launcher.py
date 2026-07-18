@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.50.1",
+    "LAUNCHER_VERSION": "1.50.2",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.50.2",
+            "date": "18 июля 2026",
+            "changes": [
+                "Выбранный шейдер больше не сбрасывается на Complementary "
+                "Unbound при каждом запуске: лаунчер бесконечно "
+                "«восстанавливал» старую копию настроек Iris. Теперь "
+                "восстановление происходит один раз, дальше выбор игрока "
+                "не трогается.",
+            ],
+        },
         {
             "version": "1.50.1",
             "date": "18 июля 2026",
@@ -5122,7 +5133,11 @@ def _apply_low_end_shaders(enabled: bool, status_cb=None) -> None:
             status_cb("Шейдеры выключены (режим для слабых ПК).")
     else:
         if IRIS_CONFIG_BACKUP_FILE.exists():
+            # Восстановить и ЗАБЫТЬ бэкап. Раньше бэкап жил вечно, и каждый
+            # запуск возвращал игроку шейдер из него (ComplementaryUnbound),
+            # затирая его собственный выбор (случай 18.07).
             shutil.copy2(IRIS_CONFIG_BACKUP_FILE, iris_config_path)
+            IRIS_CONFIG_BACKUP_FILE.unlink(missing_ok=True)
             if status_cb:
                 status_cb("Настройки шейдеров восстановлены.")
 
