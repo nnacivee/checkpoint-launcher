@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.54.0",
+    "LAUNCHER_VERSION": "1.55.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.55.0",
+            "date": "18 июля 2026",
+            "changes": [
+                "FTB Ultimine: зажми ` (слева от 1) и выкопай всю жилу "
+                "руды или дерево разом. Обязательное обновление.",
+                "Починена кнопка «Графика» (в 1.54.0 молча не открывалась).",
+                "«Лог для админа» теперь открывает Discord-приложение сразу "
+                "в канале помощи, а не сайт.",
+            ],
+        },
         {
             "version": "1.54.0",
             "date": "18 июля 2026",
@@ -1496,6 +1507,14 @@ CONFIG = {
         # сервере (залит 18.07, применён рестартом) — у клиента без него
         # реестры не сойдутся, поэтому required=True.
         {"slug": "gravestone-mod", "required": True, "label": "GraveStone (могилы вместо потери вещей)"},
+        # Вейн-майнер (18.07): зажми ` (клавишу слева от 1) — копаются сразу
+        # вся жила руды/дерево. На Modrinth мода нет, ссылка на ОФИЦИАЛЬНЫЙ
+        # maven FTB. На сервере стоит с 18.07, поэтому required.
+        {"slug": "ftb-ultimine-2101-1-15",
+         "url": "https://maven.ftb.dev/releases/dev/ftb/mods/ftb-ultimine-neoforge/2101.1.15/ftb-ultimine-neoforge-2101.1.15.jar",
+         "filename": "ftb-ultimine-neoforge-2101.1.15.jar",
+         "required": True,
+         "label": "FTB Ultimine (жила руды одним ударом)"},
         # Пакет «Атмосфера» (пункт 49): чисто клиентское.
         {"slug": "creativecore", "label": "CreativeCore (библиотека для AmbientSounds)"},
         {"slug": "ambientsounds", "label": "AmbientSounds (звуки природы: птицы, ветер, пещеры)"},
@@ -6505,11 +6524,13 @@ class LauncherApp:
 
     def on_open_graphics_presets(self) -> None:
         """Окно с тремя пресетами графики (пункт 48 из списка улучшений)."""
-        win = tk.Toplevel(self)
+        # ВАЖНО: LauncherApp — не Tk-виджет, родителем окон всегда идёт
+        # self.root (баг 1.54.0: Toplevel(self) молча падал, кнопка «не работала»).
+        win = tk.Toplevel(self.root)
         win.title("Пресеты графики")
         win.configure(bg="#1e2430")
         win.resizable(False, False)
-        win.transient(self)
+        win.transient(self.root)
         tk.Label(win, text="Выбери пресет — он запишется в настройки игры.\n"
                            "Применяй при ЗАКРЫТОЙ игре, иначе она затрёт его при выходе.",
                  bg="#1e2430", fg="#dfe6f2", justify="left",
@@ -6579,7 +6600,13 @@ class LauncherApp:
                 "Файл «%s» лежит на рабочем столе.\n\n"
                 "Сейчас откроется Discord — перетащи этот файл в канал "
                 "🆘・помощь и коротко опиши, что случилось." % out.name)
-            self._open_link(CONFIG.get("DISCORD_URL"), "Discord")
+            # Открываем ДЕСКТОПНЫЙ Discord сразу в канале помощи (протокол
+            # discord://). Если приложения нет — веб-версия того же канала.
+            _help = "channels/1485760114307760260/1528068363123953734"
+            try:
+                os.startfile("discord://-/" + _help)
+            except Exception:  # noqa: BLE001
+                self._open_link("https://discord.com/" + _help, "Discord")
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Не удалось собрать логи", str(exc))
 
