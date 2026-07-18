@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.50.0",
+    "LAUNCHER_VERSION": "1.50.1",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.50.1",
+            "date": "18 июля 2026",
+            "changes": [
+                "Довозит фиксы, не попавшие в сборку 1.50.0: выключено "
+                "ванильное размытие меню (мылило экран за круговым меню), "
+                "и клавиша H больше не прячет иконки голосового чата — "
+                "она конфликтовала с ховером джетпака.",
+            ],
+        },
         {
             "version": "1.50.0",
             "date": "18 июля 2026",
@@ -4420,7 +4430,7 @@ def fix_key_conflicts_once(status_cb=None) -> None:
          (fullscreen_create_waypoint), её не трогаем.
 
     Один раз: если игрок сам переназначит клавишу, второй раз не лезем."""
-    marker = APP_DATA_DIR / ".key_conflicts_fixed_once_v4"
+    marker = APP_DATA_DIR / ".key_conflicts_fixed_once_v5"
     if marker.exists():
         return
     try:
@@ -4472,6 +4482,10 @@ def fix_key_conflicts_once(status_cb=None) -> None:
              ("", "key.keyboard.k")),
             ("key_key.mute_microphone", "key.keyboard.comma",
              ("", "key.keyboard.m")),
+            # «Скрыть иконки войсчата» сидела на H вместе с ховером джетпака:
+            # игрок жал H ради джетпака и терял иконку микрофона (случай 18.07).
+            ("key_key.hide_icons", "key.keyboard.unknown",
+             ("", "key.keyboard.h")),
         ]
         for opt_key, target, defaults in layout:
             if _read_options_value(opt_key, "") in defaults:
