@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.50.3",
+    "LAUNCHER_VERSION": "1.51.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.51.0",
+            "date": "18 июля 2026",
+            "changes": [
+                "Новые HD-паки: ВСЕ текстуры (ванилла + все 180 модов, "
+                "36 тысяч штук) подняты в 64x и 128x. Ставятся одной "
+                "кнопкой: Ресурс-паки → Готовые паки. 64x — золотая "
+                "середина (79 МБ), 128x — максимум детализации (133 МБ, "
+                "нужна видеопамять).",
+            ],
+        },
         {
             "version": "1.50.3",
             "date": "18 июля 2026",
@@ -1839,6 +1850,25 @@ CONFIG = {
             "slug": "ih-upscale-32",
             "name": "Моды в 32x",
             "description": "Текстуры модов в двойном разрешении — пара к Faithful 32x (46 МБ)",
+        },
+        {
+            # Полный апскейл ВСЕГО: ванилла + все моды (36 271 текстура),
+            # Scale4x. Самодостаточный — Faithful к нему не нужен.
+            "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale64.zip",
+            "filename": "IH_Upscale64.zip",
+            "slug": "ih-upscale-64",
+            "name": "Всё в 64x",
+            "description": "Ванилла и все моды в 64x одним паком (79 МБ). "
+                           "Faithful не нужен — здесь уже всё",
+        },
+        {
+            # То же, но 128x (Scale8x). Очень тяжёлый, жрёт видеопамять.
+            "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale128.zip",
+            "filename": "IH_Upscale128.zip",
+            "slug": "ih-upscale-128",
+            "name": "Всё в 128x",
+            "description": "Максимальная детализация: ванилла и все моды в 128x "
+                           "(133 МБ). Нужно 4+ ГБ видеопамяти",
         },
         {
             "slug": "better-leaves",
