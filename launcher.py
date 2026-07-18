@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.52.0",
+    "LAUNCHER_VERSION": "1.53.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.53.0",
+            "date": "18 июля 2026",
+            "changes": [
+                "Могилы! Теперь при смерти вещи не разлетаются, а ложатся "
+                "в надгробие — вернись и забери. Обновиться обязательно, "
+                "без этого мода сервер не пустит.",
+                "Пакет «Атмосфера»: звуки природы (AmbientSounds) и "
+                "объёмные слои скинов (3D Skin Layers).",
+            ],
+        },
         {
             "version": "1.52.0",
             "date": "18 июля 2026",
@@ -1469,6 +1480,15 @@ CONFIG = {
         {"slug": "entity-model-features", "label": "Entity Model Features (движок моделей мобов)"},
         {"slug": "entitytexturefeatures", "label": "Entity Texture Features (движок текстур мобов)"},
         {"slug": "not-enough-animations", "label": "Not Enough Animations (анимации игроков)"},
+        # Могилы (решение владельца 18.07, пункт 13 из списка 50): при смерти
+        # вещи ложатся в надгробие, а не разлетаются. Мод ОБЯЗАТЕЛЕН и на
+        # сервере (залит 18.07, применён рестартом) — у клиента без него
+        # реестры не сойдутся, поэтому required=True.
+        {"slug": "gravestone-mod", "required": True, "label": "GraveStone (могилы вместо потери вещей)"},
+        # Пакет «Атмосфера» (пункт 49): чисто клиентское.
+        {"slug": "creativecore", "label": "CreativeCore (библиотека для AmbientSounds)"},
+        {"slug": "ambientsounds", "label": "AmbientSounds (звуки природы: птицы, ветер, пещеры)"},
+        {"slug": "3dskinlayers", "label": "3D Skin Layers (объёмные слои скина)"},
         {"slug": "searchables", "label": "Searchables (библиотека для Controlling)"},
         {"slug": "controlling", "label": "Controlling (поиск по клавишам управления)"},
         {"slug": "customskinloader", "label": "CustomSkinLoader (HD-скины и плащи)"},
