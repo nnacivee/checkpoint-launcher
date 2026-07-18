@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.53.0",
+    "LAUNCHER_VERSION": "1.54.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.54.0",
+            "date": "18 июля 2026",
+            "changes": [
+                "Пресеты графики: «Внешний вид → Графика» — Слабый ПК / "
+                "Баланс / Красота одной кнопкой, без ковыряния в настройках.",
+                "Кнопка «Лог для админа» в Сборке: собирает свежие логи и "
+                "краши в zip на рабочий стол и открывает Discord — просто "
+                "перетащи файл в канал помощи.",
+            ],
+        },
         {
             "version": "1.53.0",
             "date": "18 июля 2026",
@@ -5141,6 +5152,54 @@ FORCED_OPTIONS = {
 }
 
 OPTIONS_BACKUP_FILE = APP_DATA_DIR / "options_backup_before_low_end.txt"
+
+# ------------------- ПРЕСЕТЫ ГРАФИКИ (18.07, пункт 48) -------------------
+# Три кнопки вместо ручного перебора настроек. «Слабый ПК» — это тот же
+# режим, что и галочка в настройках (с бэкапом и выключением шейдеров).
+# «Баланс» и «Красота» сначала СНИМАЮТ слабый режим (вернув бэкап, если
+# был), затем накатывают свои значения поверх — шейдеры при этом не трогаем:
+# что игрок выбрал в «Шейдерах», то и остаётся.
+GRAPHICS_PRESETS = {
+    "balance": {
+        "renderDistance": "10",
+        "simulationDistance": "8",
+        "graphicsMode": "1",
+        "fancyGraphics": "true",
+        "ao": "1",
+        "particles": "1",
+        "cloudStatus": "1",
+        "clouds": "fast",
+        "entityShadows": "true",
+        "biomeBlendRadius": "2",
+    },
+    "beauty": {
+        "renderDistance": "14",
+        "simulationDistance": "10",
+        "graphicsMode": "2",
+        "fancyGraphics": "true",
+        "ao": "1",
+        "particles": "0",
+        "cloudStatus": "2",
+        "clouds": "true",
+        "entityShadows": "true",
+        "biomeBlendRadius": "4",
+    },
+}
+
+
+def apply_graphics_preset(kind: str, status_cb=None) -> None:
+    """Применяет пресет графики к options.txt. Вызывать при закрытой игре:
+    работающий Minecraft при выходе перезапишет файл своими значениями."""
+    if kind == "potato":
+        apply_low_end_mode(True, status_cb)
+        return
+    apply_low_end_mode(False, status_cb)  # снять слабый режим, если был
+    options_path = INSTANCE_DIR / "options.txt"
+    current = _read_options_txt(options_path)
+    current.update(GRAPHICS_PRESETS[kind])
+    if status_cb:
+        status_cb("Применяю пресет графики...")
+    _write_options_txt(options_path, current)
 IRIS_CONFIG_BACKUP_FILE = APP_DATA_DIR / "iris_backup_before_low_end.properties"
 
 
@@ -5905,6 +5964,7 @@ class LauncherApp:
                 ("Скины", "skin", self.on_open_skins, True),
                 ("Текстуры", "image", self.on_open_resource_packs, True),
                 ("Шейдеры", "shader", self.on_open_shader_packs, True),
+                ("Графика", "gear", self.on_open_graphics_presets, True),
             ]),
             ("grid", "Моды", [
                 ("Дополнительные", "grid",
@@ -5924,6 +5984,7 @@ class LauncherApp:
                 ("Настройки", "gear", self.on_open_install_settings, True),
                 ("Папка игры", "folder", self.on_open_folder, True),
                 ("Починить", "wrench", self.on_repair, True),
+                ("Лог для админа", "list", self.on_send_crash_log, True),
             ]),
         ]
         out = []
@@ -6441,6 +6502,86 @@ class LauncherApp:
             open_folder(INSTANCE_DIR)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Не удалось открыть папку", str(exc))
+
+    def on_open_graphics_presets(self) -> None:
+        """Окно с тремя пресетами графики (пункт 48 из списка улучшений)."""
+        win = tk.Toplevel(self)
+        win.title("Пресеты графики")
+        win.configure(bg="#1e2430")
+        win.resizable(False, False)
+        win.transient(self)
+        tk.Label(win, text="Выбери пресет — он запишется в настройки игры.\n"
+                           "Применяй при ЗАКРЫТОЙ игре, иначе она затрёт его при выходе.",
+                 bg="#1e2430", fg="#dfe6f2", justify="left",
+                 padx=16, pady=10).pack(anchor="w")
+        presets = [
+            ("Слабый ПК", "potato",
+             "Минимум графики, шейдеры выключаются. Максимум FPS"),
+            ("Баланс", "balance",
+             "10 чанков, обычная графика без излишеств. Золотая середина"),
+            ("Красота", "beauty",
+             "14 чанков, мягкий свет, красивые облака. Для мощных ПК"),
+        ]
+
+        def make_cb(kind, label):
+            def cb():
+                try:
+                    apply_graphics_preset(kind)
+                    messagebox.showinfo(
+                        "Готово", "Пресет «%s» применён!" % label, parent=win)
+                    win.destroy()
+                except Exception as exc:  # noqa: BLE001
+                    messagebox.showerror("Не получилось", str(exc), parent=win)
+            return cb
+
+        for name, kind, desc in presets:
+            row = tk.Frame(win, bg="#1e2430")
+            row.pack(fill="x", padx=16, pady=4)
+            tk.Button(row, text=name, width=14,
+                      command=make_cb(kind, name)).pack(side="left")
+            tk.Label(row, text=desc, bg="#1e2430", fg="#9aa7bd",
+                     padx=10).pack(side="left")
+        tk.Frame(win, bg="#1e2430", height=12).pack()
+
+    def on_send_crash_log(self) -> None:
+        """Собирает свежие логи в zip на рабочем столе и открывает Discord —
+        игроку остаётся перетащить файл в канал помощи. Вебхук в публичном
+        репозитории светить нельзя, поэтому отправка полуручная."""
+        import zipfile
+        try:
+            desktop = Path.home() / "Desktop"
+            if not desktop.exists():
+                desktop = Path.home()
+            out = desktop / ("IH_логи_%s.zip" % time.strftime("%d.%m_%H-%M"))
+            found = 0
+            with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+                latest = INSTANCE_DIR / "logs" / "latest.log"
+                if latest.exists():
+                    zf.write(latest, "latest.log")
+                    found += 1
+                crash_dir = INSTANCE_DIR / "crash-reports"
+                if crash_dir.exists():
+                    crashes = sorted(crash_dir.glob("crash-*.txt"),
+                                     key=lambda p: p.stat().st_mtime)
+                    for p in crashes[-2:]:  # два последних краша, не всю папку
+                        zf.write(p, "crash-reports/" + p.name)
+                        found += 1
+            if not found:
+                out.unlink(missing_ok=True)
+                messagebox.showinfo(
+                    "Логов нет",
+                    "Не нашёл ни логов, ни крашей — похоже, игра ещё не "
+                    "запускалась. Если проблема в самом лаунчере — просто "
+                    "напиши в Discord, что происходит.")
+                return
+            messagebox.showinfo(
+                "Логи собраны",
+                "Файл «%s» лежит на рабочем столе.\n\n"
+                "Сейчас откроется Discord — перетащи этот файл в канал "
+                "🆘・помощь и коротко опиши, что случилось." % out.name)
+            self._open_link(CONFIG.get("DISCORD_URL"), "Discord")
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Не удалось собрать логи", str(exc))
 
     def on_open_discord(self) -> None:
         self._open_link(CONFIG.get("DISCORD_URL"), "Discord")
