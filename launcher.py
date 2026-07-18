@@ -4476,6 +4476,12 @@ def fix_key_conflicts_once(status_cb=None) -> None:
         for opt_key, target, defaults in layout:
             if _read_options_value(opt_key, "") in defaults:
                 _write_options_value(opt_key, target)
+
+        # Ванильное размытие фона меню (появилось в 1.21, по умолчанию 5).
+        # Именно оно мылило экран за круговым меню — Modern UI тут ни при
+        # чём, его blurEffect давно выключен. Перебиваем только умолчание.
+        if _read_options_value("menuBackgroundBlurriness", "") in ("", "5"):
+            _write_options_value("menuBackgroundBlurriness", "0")
         if status_cb:
             status_cb("Клавиши разложены: G — меню, K — квесты, M — карта, B — рюкзак.")
 
