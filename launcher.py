@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.50.2",
+    "LAUNCHER_VERSION": "1.50.3",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,18 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.50.3",
+            "date": "18 июля 2026",
+            "changes": [
+                "Настройки наконец-то СОХРАНЯЮТСЯ. Найден корень всех "
+                "«сбросов»: выключенный режим «слабый ПК» при каждом "
+                "запуске тихо возвращал старую резервную копию настроек — "
+                "клавиши, размытие меню и прочее откатывались. Теперь "
+                "копия восстанавливается один раз и удаляется. Раскладка "
+                "клавиш и отключение блюра применятся заново автоматически.",
+            ],
+        },
         {
             "version": "1.50.2",
             "date": "18 июля 2026",
@@ -4441,7 +4453,7 @@ def fix_key_conflicts_once(status_cb=None) -> None:
          (fullscreen_create_waypoint), её не трогаем.
 
     Один раз: если игрок сам переназначит клавишу, второй раз не лезем."""
-    marker = APP_DATA_DIR / ".key_conflicts_fixed_once_v5"
+    marker = APP_DATA_DIR / ".key_conflicts_fixed_once_v6"
     if marker.exists():
         return
     try:
@@ -5186,6 +5198,12 @@ def apply_low_end_mode(enabled: bool, status_cb=None) -> None:
             if status_cb:
                 status_cb("Возвращаю обычные настройки графики...")
             shutil.copy2(OPTIONS_BACKUP_FILE, options_path)
+            # Восстановить и ЗАБЫТЬ бэкап. Раньше он жил вечно, и КАЖДЫЙ
+            # запуск затирал options.txt старой копией: у игроков
+            # возвращались старые клавиши, блюр и прочие настройки
+            # (случай 18.07 — «оно тупо не сохраняется»). Тот же баг был
+            # у шейдеров, починен в 1.50.2.
+            OPTIONS_BACKUP_FILE.unlink(missing_ok=True)
             if saved_packs is not None:
                 _write_options_value("resourcePacks", saved_packs)
         elif options_path.exists():
