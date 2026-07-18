@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.56.0",
+    "LAUNCHER_VERSION": "1.57.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,18 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.57.0",
+            "date": "18 июля 2026",
+            "changes": [
+                "Вейн-майнер теперь работает сам: сломал один блок руды — "
+                "вся жила выкопалась. Ничего зажимать не нужно. Работает "
+                "со всеми рудами, включая модовые. Удача и Шёлковое "
+                "касание учитываются.",
+                "Клавиша ` (Ultimine) больше не нужна и отключена — жила "
+                "копается автоматически.",
+            ],
+        },
         {
             "version": "1.56.0",
             "date": "18 июля 2026",
@@ -3201,23 +3213,26 @@ def configpack_needs_install() -> bool:
 
 
 def install_ultimine_sticky(status_cb=None) -> None:
-    """Включает всем режим-переключатель FTB Ultimine (решение владельца 18.07).
+    """Возвращает всем ОБЫЧНОЕ поведение FTB Ultimine (владелец, 18.07 вечер).
 
-    sticky: true — клавишу ` не надо держать: нажал — включил, нажал — выключил.
-    Ставится ОДИН РАЗ (маркер .ultimine_sticky_done в папке игры): если игрок
-    потом вернул sticky: false в config/ftbultimine-client.snbt — его выбор
-    не перетирается. Если config/ стёрло обновление модпака, файла нет — тогда
-    кладём заново, маркер маркером. Некритично: любая ошибка молча пропускается."""
+    В 1.56.0 мы включали всем «переключатель» (sticky: true) — и он залипал:
+    нажал ` один раз, а дальше КАЖДАЯ руда копалась жилой, даже когда не надо.
+    Жалоба владельца: «хочу ломать один блок руды, а ломается вся».
+    Откат: sticky: false — жила копается только пока ` ЗАЖАТА, отпустил —
+    ломается один блок, как обычно. Ставится ОДИН РАЗ (маркер
+    .ultimine_unsticky_done): если игрок потом сознательно включит sticky
+    сам — его выбор не перетирается. Старый маркер .ultimine_sticky_done
+    просто игнорируем. Некритично: любая ошибка молча пропускается."""
     try:
         cfg = INSTANCE_DIR / "config" / "ftbultimine-client.snbt"
-        marker = INSTANCE_DIR / ".ultimine_sticky_done"
-        if cfg.exists() and marker.exists():
+        marker = INSTANCE_DIR / ".ultimine_unsticky_done"
+        if marker.exists():
             return
         cfg.parent.mkdir(parents=True, exist_ok=True)
-        cfg.write_text("{\n\tsticky: true\n}\n", encoding="utf-8")
+        cfg.write_text("{\n\tsticky: false\n}\n", encoding="utf-8")
         marker.write_text("1", encoding="utf-8")
         if status_cb:
-            status_cb("Ultimine: включён режим-переключатель")
+            status_cb("Ultimine: жила — только пока зажата `")
     except Exception:
         pass
 
