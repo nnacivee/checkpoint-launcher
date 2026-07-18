@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.55.0",
+    "LAUNCHER_VERSION": "1.56.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.56.0",
+            "date": "18 июля 2026",
+            "changes": [
+                "Ultimine теперь переключатель у всех: нажал ` — включил, "
+                "нажал ещё раз — выключил. Держать не нужно. Работает "
+                "только на рудах.",
+                "Установка стала быстрее: GraveStone качается по прямой "
+                "ссылке, без долгого поиска на Modrinth.",
+            ],
+        },
         {
             "version": "1.55.0",
             "date": "18 июля 2026",
@@ -1506,7 +1517,14 @@ CONFIG = {
         # вещи ложатся в надгробие, а не разлетаются. Мод ОБЯЗАТЕЛЕН и на
         # сервере (залит 18.07, применён рестартом) — у клиента без него
         # реестры не сойдутся, поэтому required=True.
-        {"slug": "gravestone-mod", "required": True, "label": "GraveStone (могилы вместо потери вещей)"},
+        # Прямая ссылка вместо поиска по slug: игрок жаловался (18.07), что шаг
+        # «Ищу мод GraveStone» висит долго — каждый slug-мод это два запроса к
+        # api.modrinth.com. С url+filename лаунчер качает сразу с CDN.
+        {"slug": "gravestone-mod",
+         "url": "https://cdn.modrinth.com/data/RYtXKJPr/versions/Y29z3Y9Y/gravestone-neoforge-1.21.1-1.0.37.jar",
+         "filename": "gravestone-neoforge-1.21.1-1.0.37.jar",
+         "required": True,
+         "label": "GraveStone (могилы вместо потери вещей)"},
         # Вейн-майнер (18.07): зажми ` (клавишу слева от 1) — копаются сразу
         # вся жила руды/дерево. На Modrinth мода нет, ссылка на ОФИЦИАЛЬНЫЙ
         # maven FTB. На сервере стоит с 18.07, поэтому required.
@@ -3180,6 +3198,28 @@ def configpack_needs_install() -> bool:
         if not (INSTANCE_DIR / rel).exists():
             return True
     return False
+
+
+def install_ultimine_sticky(status_cb=None) -> None:
+    """Включает всем режим-переключатель FTB Ultimine (решение владельца 18.07).
+
+    sticky: true — клавишу ` не надо держать: нажал — включил, нажал — выключил.
+    Ставится ОДИН РАЗ (маркер .ultimine_sticky_done в папке игры): если игрок
+    потом вернул sticky: false в config/ftbultimine-client.snbt — его выбор
+    не перетирается. Если config/ стёрло обновление модпака, файла нет — тогда
+    кладём заново, маркер маркером. Некритично: любая ошибка молча пропускается."""
+    try:
+        cfg = INSTANCE_DIR / "config" / "ftbultimine-client.snbt"
+        marker = INSTANCE_DIR / ".ultimine_sticky_done"
+        if cfg.exists() and marker.exists():
+            return
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text("{\n\tsticky: true\n}\n", encoding="utf-8")
+        marker.write_text("1", encoding="utf-8")
+        if status_cb:
+            status_cb("Ultimine: включён режим-переключатель")
+    except Exception:
+        pass
 
 
 def install_configpack(status_cb=None, progress_cb=None) -> None:
@@ -5693,6 +5733,7 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     # конце, когда никто уже не тронет его файлы.
     configpack_status, configpack_progress = progress.scoped("Настройки сборки")
     install_configpack(configpack_status, configpack_progress)
+    install_ultimine_sticky(configpack_status)
 
     progress_cb(100)
     status_cb("Запуск игры...")
