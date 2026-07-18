@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.51.0",
+    "LAUNCHER_VERSION": "1.52.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.52.0",
+            "date": "18 июля 2026",
+            "changes": [
+                "Анимации! Ставятся сами: Not Enough Animations (игроки "
+                "машут руками, едят и лазают как живые) и движки EMF+ETF "
+                "для мобов. В «Текстурах» появилась кнопка Fresh Animations "
+                "— мобы моргают и ходят как в мультике, ставится в один клик.",
+            ],
+        },
         {
             "version": "1.51.0",
             "date": "18 июля 2026",
@@ -1453,6 +1463,12 @@ CONFIG = {
         {"slug": "sound-physics-remastered", "label": "Sound Physics Remastered (реалистичное эхо)"},
         {"slug": "dynamic-fps", "label": "Dynamic FPS (экономия ресурсов в фоне)"},
         {"slug": "chat-heads", "label": "Chat Heads (лицо игрока в чате)"},
+        # Тройка анимаций (решение владельца 18.07). Все — client-only,
+        # сервер о них не знает. EMF+ETF — «движки», без которых ресурспак
+        # Fresh Animations (кнопка в «Текстурах») просто не применяется.
+        {"slug": "entity-model-features", "label": "Entity Model Features (движок моделей мобов)"},
+        {"slug": "entitytexturefeatures", "label": "Entity Texture Features (движок текстур мобов)"},
+        {"slug": "not-enough-animations", "label": "Not Enough Animations (анимации игроков)"},
         {"slug": "searchables", "label": "Searchables (библиотека для Controlling)"},
         {"slug": "controlling", "label": "Controlling (поиск по клавишам управления)"},
         {"slug": "customskinloader", "label": "CustomSkinLoader (HD-скины и плащи)"},
@@ -1905,10 +1921,13 @@ CONFIG = {
             "name": "Simple Grass Flowers",
             "description": "Трава с мелкими цветами. Мелочь, а мир живее",
         },
-        # Fresh Animations сюда намеренно НЕ добавлен, хотя он самый
-        # популярный: ему нужны моды Entity Texture Features и Entity Model
-        # Features. Без них он просто не работает, а кнопка «поставить в один
-        # клик» обещала бы обратное.
+        # С 18.07 EMF и ETF ставятся всем автоматически (EXTRA_CLIENT_MODS),
+        # поэтому кнопка Fresh Animations теперь честная: поставил — работает.
+        {
+            "slug": "fresh-animations",
+            "name": "Fresh Animations",
+            "description": "Живые мобы: моргают, поворачивают головы, ходят как в мультике",
+        },
     ],
 
     # ------------------- РЕСУРС-ПАКИ (АВТОДОСТАВКА) -------------------
