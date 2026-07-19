@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.59.6",
+    "LAUNCHER_VERSION": "1.59.7",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,14 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.59.7",
+            "date": "19 июля 2026",
+            "changes": [
+                "В списке игроков (Tab) пинг теперь показывается числом в "
+                "миллисекундах, а не палочками.",
+            ],
+        },
         {
             "version": "1.59.6",
             "date": "19 июля 2026",
@@ -1699,6 +1707,14 @@ CONFIG = {
          "url": "https://cdn.modrinth.com/data/CnOG2wlS/versions/jXHDAUrd/ToastControl-1.21.1-9.0.1.jar",
          "filename": "ToastControl-1.21.1-9.0.1.jar",
          "label": "Toast Control (без спама всплывашек рецептов)"},
+        # Пинг числом в списке игроков (Tab) вместо палочек-иконки —
+        # просьба владельца 19.07. Чисто клиентский (server_side=unsupported),
+        # лицензия Unlicense (public domain) — можно и зеркалить. Прямая ссылка.
+        {"slug": "ping-in-tablist",
+         "mirror": True,
+         "url": "https://cdn.modrinth.com/data/l92I91s6/versions/Jgsz0FC1/Ping%20in%20Tablist-neoforge-1.21.1-1.1.0.jar",
+         "filename": "PingInTablist-neoforge-1.21.1-1.1.0.jar",
+         "label": "Ping in Tablist (пинг числом в списке игроков)"},
         # Пакет «Атмосфера» (пункт 49): чисто клиентское.
         {"slug": "creativecore",
          "mirror": True,
