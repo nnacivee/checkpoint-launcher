@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.59.4",
+    "LAUNCHER_VERSION": "1.59.5",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.59.5",
+            "date": "19 июля 2026",
+            "changes": [
+                "Установка модов стала ощутимо быстрее: файлы качаются "
+                "параллельно, а не по одному. Особенно заметно на первом "
+                "запуске и после обновлений.",
+            ],
+        },
         {
             "version": "1.59.4",
             "date": "19 июля 2026",
@@ -5043,21 +5052,31 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
 
     changed = False
     missing_required = []
+
+    # Скачиваем недостающие моды ПАРАЛЛЕЛЬНО (ускорение 19.07). Раньше цикл
+    # шёл по одному: 20+ модов вставали в очередь, и «Скачиваю мод…» тянулось
+    # долго, даже когда каждый файл мелкий. Теперь несколько загрузок идут
+    # разом; узкое место — канал, а не ожидание ответа CDN по очереди.
+    pending = []
     for entry in entries:
         slug = entry.get("slug")
         if not slug:
             continue
-        label = entry.get("label", slug)
         have = installed.get(slug)
         if have and (cache / have).exists():
             continue  # уже скачан в кэш
-        if status_cb:
-            status_cb("Ищу мод «%s»..." % label)
+        pending.append(entry)
+
+    def _fetch_one(entry):
+        """Качает один мод. Возвращает (slug, filename|None, required, label).
+        Общий словарь installed не трогает — результат мёржит главный поток,
+        чтобы не ловить гонки."""
+        slug = entry.get("slug")
+        label = entry.get("label", slug)
+        required = bool(entry.get("required"))
         try:
-            # Мод с прямой ссылкой (наш GitHub-релиз). Так доставляются моды,
-            # которых нет на Modrinth, — например порт Ad Astra на 1.21.1.
-            # Качать по ссылке дешевле, чем перезаливать весь modpack.zip:
-            # игрок докачивает мегабайты, а не 400 МБ сборки заново.
+            # Прямая ссылка (наш GitHub-релиз или CDN) — так доставляются моды,
+            # которых нет на Modrinth. Дешевле, чем перезаливать modpack.zip.
             if entry.get("url"):
                 filename = entry.get("filename") or entry["url"].rsplit("/", 1)[-1]
                 url = entry["url"]
@@ -5066,23 +5085,18 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
                     slug, CONFIG["MC_VERSION"], [CONFIG["MOD_LOADER"]]
                 )
             if (not filename or not url) and entry.get("fallback_url"):
-                # Modrinth не ответил или версии нет — запасной источник
-                # (случай 18.07: у части игроков cdn.modrinth.com закрыт
-                # провайдером, и голосовой чат просто не ставился).
                 url = entry["fallback_url"]
                 filename = entry.get("fallback_filename") or url.rsplit("/", 1)[-1]
             if not filename or not url:
-                if entry.get("required"):
-                    missing_required.append(label)
                 if status_cb:
-                    status_cb("Мод «%s» недоступен для %s — пропускаю." % (label, CONFIG["MC_VERSION"]))
-                continue
+                    status_cb("Мод «%s» недоступен для %s — пропускаю."
+                              % (label, CONFIG["MC_VERSION"]))
+                return (slug, None, required, label)
             if status_cb:
                 status_cb("Скачиваю мод «%s»..." % label)
             # Источники по порядку: зеркало на нашем игровом сервере (открыт
-            # у любого, кто может играть), затем основной CDN, затем
-            # запасной. У зеркала retries=1: если файла там нет (404),
-            # незачем долбиться пять раз — быстро идём к официальному.
+            # у любого, кто может играть), затем основной CDN, затем запасной.
+            # У зеркала retries=1: нет файла (404) — сразу к официальному.
             sources = []
             if entry.get("mirror") and CONFIG.get("MOD_MIRROR_BASE"):
                 sources.append((CONFIG["MOD_MIRROR_BASE"]
@@ -5095,25 +5109,31 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
             last_exc = None
             for src_url, src_name, src_retries in sources:
                 try:
-                    download_file(src_url, cache / src_name,
-                                  retries=src_retries)
-                    filename = src_name
-                    last_exc = None
-                    break
+                    download_file(src_url, cache / src_name, retries=src_retries)
+                    return (slug, src_name, required, label)
                 except Exception as exc:  # noqa: BLE001
                     last_exc = exc
-            if last_exc is not None:
-                raise last_exc
-            installed[slug] = filename
-            changed = True
+            raise last_exc if last_exc else RuntimeError("нет источников")
         except Exception:
-            if entry.get("required"):
-                missing_required.append(label)
-                if status_cb:
+            if status_cb:
+                if required:
                     status_cb("Не удалось скачать мод «%s» — он обязателен." % label)
-            elif status_cb:
-                status_cb("Не удалось скачать мод «%s» — пропускаю, это не критично." % label)
-            continue
+                else:
+                    status_cb("Не удалось скачать мод «%s» — пропускаю, это не критично." % label)
+            return (slug, None, required, label)
+
+    if pending:
+        # 6 параллельных загрузок: больше почти не ускоряет (упираемся в
+        # канал), а CDN за агрессию может резать скорость.
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            results = list(pool.map(_fetch_one, pending))
+        for slug, filename, required, label in results:
+            if filename:
+                installed[slug] = filename
+                changed = True
+            elif required:
+                missing_required.append(label)
 
     # Мод убрали из списка — убираем и у игрока. Без этого выбывший мод
     # оставался бы в mods/ навсегда: список копируется из маркера целиком.
