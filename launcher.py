@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.59.3",
+    "LAUNCHER_VERSION": "1.59.4",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,18 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.59.4",
+            "date": "19 июля 2026",
+            "changes": [
+                "Моды теперь качаются в первую очередь с нашего игрового "
+                "сервера: он открыт у всех, кто может играть, — Украина, "
+                "Европа, РФ. Официальные источники остались запасными.",
+                "Починено окно «Missing NeoForge configuration» про экран "
+                "загрузки при первом запуске — лаунчер сам прописывает "
+                "нужную настройку.",
+            ],
+        },
         {
             "version": "1.59.3",
             "date": "19 июля 2026",
@@ -1557,6 +1569,18 @@ CONFIG = {
     # там тот же список с Modrinth (RECOMMENDED_SHADER_PACKS ниже).
     "EXTRA_SHADERPACKS": [],
 
+    # ------------------- ЗЕРКАЛО МОДОВ НА ИГРОВОМ СЕРВЕРЕ -------------------
+    # Веб-сервер BlueMap (тот же IP, что и игра) отдаёт статику из
+    # bluemap/web/ — папка mods/ там заведена 19.07. Смысл: у игрока,
+    # который вообще может зайти на сервер, этот адрес открыт ВСЕГДА —
+    # никакие блокировки провайдеров (РФ/Украина/Европа) не мешают.
+    # Лаунчер качает моды с пометкой "mirror": True сначала отсюда, потом
+    # с официальных CDN. Зеркалим ТОЛЬКО свободные лицензии (MIT/LGPL/GPL/
+    # Apache/MPL/BSD/CC); ARR и tr7zw-Protective — нельзя, они качаются с
+    # официальных источников. Файлы заливает владелец через панель
+    # (files → bluemap/web/mods, имена должны совпадать с "filename").
+    "MOD_MIRROR_BASE": "http://95.216.30.64:25980/mods/",
+
     # ------------------- ДОП. КЛИЕНТСКИЕ МОДЫ (АВТО-СКАЧИВАНИЕ) -------------
     # Качественные ЧИСТО КЛИЕНТСКИЕ моды, которые лаунчер сам скачивает с
     # Modrinth в mods/ каждому игроку (как шейдеры). Скачиваются один раз и
@@ -1579,21 +1603,26 @@ CONFIG = {
         # мода менять url и filename руками. slug остаётся ключом кэша —
         # без нужды не менять, иначе мод перекачается у всех.
         {"slug": "sound-physics-remastered",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/qyVF9oeo/versions/Dd2tmpsk/sound-physics-remastered-neoforge-1.21.1-1.5.1.jar",
          "filename": "sound-physics-remastered-neoforge-1.21.1-1.5.1.jar", "label": "Sound Physics Remastered (реалистичное эхо)"},
         {"slug": "dynamic-fps",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/LQ3K71Q1/versions/T238FZpQ/dynamic-fps-3.11.4%2Bminecraft-1.21.0-neoforge.jar",
          "filename": "dynamic-fps-3.11.4+minecraft-1.21.0-neoforge.jar", "label": "Dynamic FPS (экономия ресурсов в фоне)"},
         {"slug": "chat-heads",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/Wb5oqrBJ/versions/tTKkTWZ7/chat_heads-0.15.2-neoforge-1.21.jar",
          "filename": "chat_heads-0.15.2-neoforge-1.21.jar", "label": "Chat Heads (лицо игрока в чате)"},
         # Тройка анимаций (решение владельца 18.07). Все — client-only,
         # сервер о них не знает. EMF+ETF — «движки», без которых ресурспак
         # Fresh Animations (кнопка в «Текстурах») просто не применяется.
         {"slug": "entity-model-features",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/4I1XuqiY/versions/PAYgk63v/entity_model_features-3.2.4-1.21-neoforge.jar",
          "filename": "entity_model_features-3.2.4-1.21-neoforge.jar", "label": "Entity Model Features (движок моделей мобов)"},
         {"slug": "entitytexturefeatures",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/BVzZfTc1/versions/YEMROAHv/entity_texture_features_1.21-neoforge-7.1.jar",
          "filename": "entity_texture_features_1.21-neoforge-7.1.jar", "label": "Entity Texture Features (движок текстур мобов)"},
         {"slug": "not-enough-animations",
@@ -1642,36 +1671,45 @@ CONFIG = {
         # install_toast_config(): рецепты и обучение глушим, достижения
         # оставляем (по умолчанию мод глушил бы и их).
         {"slug": "placebo",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/tCkE8p2N/versions/nU7CXkMr/Placebo-1.21.1-9.9.1.jar",
          "filename": "Placebo-1.21.1-9.9.1.jar",
          "label": "Placebo (библиотека для Toast Control)"},
         {"slug": "toast-control",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/CnOG2wlS/versions/jXHDAUrd/ToastControl-1.21.1-9.0.1.jar",
          "filename": "ToastControl-1.21.1-9.0.1.jar",
          "label": "Toast Control (без спама всплывашек рецептов)"},
         # Пакет «Атмосфера» (пункт 49): чисто клиентское.
         {"slug": "creativecore",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/OsZiaDHq/versions/nLLornod/CreativeCore_NEOFORGE_v2.13.41_mc1.21.1.jar",
          "filename": "CreativeCore_NEOFORGE_v2.13.41_mc1.21.1.jar", "label": "CreativeCore (библиотека для AmbientSounds)"},
         {"slug": "ambientsounds",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/fM515JnW/versions/RZyxhsqY/AmbientSounds_NEOFORGE_v6.3.8_mc1.21.1.jar",
          "filename": "AmbientSounds_NEOFORGE_v6.3.8_mc1.21.1.jar", "label": "AmbientSounds (звуки природы: птицы, ветер, пещеры)"},
         {"slug": "3dskinlayers",
          "url": "https://cdn.modrinth.com/data/zV5r3pPn/versions/xPYbAPfz/skinlayers3d-neoforge-1.11.2-mc1.21.1.jar",
          "filename": "skinlayers3d-neoforge-1.11.2-mc1.21.1.jar", "label": "3D Skin Layers (объёмные слои скина)"},
         {"slug": "searchables",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/fuuu3xnx/versions/iEE85X0w/Searchables-neoforge-1.21.1-1.0.2.jar",
          "filename": "Searchables-neoforge-1.21.1-1.0.2.jar", "label": "Searchables (библиотека для Controlling)"},
         {"slug": "controlling",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/xv94TkTM/versions/FaNppCJJ/Controlling-neoforge-1.21.1-19.0.5.jar",
          "filename": "Controlling-neoforge-1.21.1-19.0.5.jar", "label": "Controlling (поиск по клавишам управления)"},
         {"slug": "customskinloader",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/idMHQ4n2/versions/OLaesh5y/CustomSkinLoader_Universal-15.0.1.jar",
          "filename": "CustomSkinLoader_Universal-15.0.1.jar", "label": "CustomSkinLoader (HD-скины и плащи)"},
         {"slug": "konkrete",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/J81TRJWm/versions/stJDU839/konkrete_neoforge_1.9.9_MC_1.21.jar",
          "filename": "konkrete_neoforge_1.9.9_MC_1.21.jar", "label": "Konkrete (библиотека для меню)"},
         {"slug": "melody",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/CVT4pFB2/versions/efcdRVZP/melody_neoforge_1.0.10_MC_1.21.jar",
          "filename": "melody_neoforge_1.0.10_MC_1.21.jar", "label": "Melody (библиотека для меню)"},
         # FancyMenu 3.9.8, а не «последняя с Modrinth». Версия 3.9.7 роняла
@@ -1687,6 +1725,7 @@ CONFIG = {
          "filename": "fancymenu_neoforge_3.9.8_MC_1.21.1.jar",
          "label": "FancyMenu (меню Industrial Horizon)"},
         {"slug": "simple-custom-early-loading",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/Bi8o4aLw/versions/G5bmC36h/SimpleCustomEarlyLoading-2.2-neoforge.jar",
          "filename": "SimpleCustomEarlyLoading-2.2-neoforge.jar", "label": "Экран загрузки Industrial Horizon"},
         # Modern UI — свой движок отрисовки текста: буквы рисуются из TrueType
@@ -1698,6 +1737,7 @@ CONFIG = {
         # Версия прибита гвоздями: 3.13.0.1 чинит краш модерновых подсказок
         # вместе с hud_batching у ImmediatelyFast, а он у нас стоит.
         {"slug": "modern-ui-3-13-0-1",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/3sjzyvGR/versions/eMf1VSQd/ModernUI-NeoForge-1.21.1-3.13.0.1-universal.jar",
          "filename": "ModernUI-NeoForge-1.21.1-3.13.0.1-universal.jar",
          "label": "Modern UI (шрифт и сглаживание текста)"},
@@ -1756,6 +1796,7 @@ CONFIG = {
         # тот выключил бы миникарту у всех принудительно, а этот — только там,
         # где она дублирует JourneyMap.
         {"slug": "journeymap-integration",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/M1ZKbfkJ/versions/x1p0RNwd/jmi-neoforge-1.21.1-1.9.jar",
          "filename": "jmi-neoforge-1.21.1-1.9.jar", "label": "Клеймы на карте JourneyMap"},
         # Тёмный интерфейс ВЕЗДЕ, включая интерфейсы модов.
@@ -1777,6 +1818,7 @@ CONFIG = {
         # Титульный экран мод по умолчанию НЕ трогает (TitleScreen стоит в его
         # METHOD_SHADER_BLACKLIST) — меню Industrial Horizon останется как был.
         {"slug": "dark-mode-everywhere",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/k3lrwGqk/versions/PEHRE9ut/darkmodeeverywhere-neoforge-1.21.1-1.4.0.jar",
          "filename": "darkmodeeverywhere-neoforge-1.21.1-1.4.0.jar", "label": "Тёмный интерфейс во всех модах"},
         # Прочность инструмента в руке и всей брони — прямо на экране, с
@@ -1795,6 +1837,7 @@ CONFIG = {
         # optional, активируется с его рестартом), клиенты без неё тоже
         # работают. Лицензия MIT.
         {"slug": "chatimage",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/zhVN1dvW/versions/hqAoNNVF/ChatImage-1.4.7%2B1.21.0%2Bneoforge.jar",
          "filename": "ChatImage-1.4.7+1.21.0+neoforge.jar", "label": "ChatImage (картинки в чате)"},
         # Ad Astra: Луна, Марс, Венера, ракеты. Порт на 1.21.1, которого НЕТ
@@ -1881,18 +1924,22 @@ CONFIG = {
          "url": "https://cdn.modrinth.com/data/NNAgCjsB/versions/5zRIon6w/entityculling-neoforge-1.10.5-mc1.21.1.jar",
          "filename": "entityculling-neoforge-1.10.5-mc1.21.1.jar", "label": "Entity Culling (FPS: не рисовать невидимое)"},
         {"slug": "mouse-tweaks",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/aC3cM3Vq/versions/9I21YYxf/MouseTweaks-neoforge-mc1.21-2.26.1.jar",
          "filename": "MouseTweaks-neoforge-mc1.21-2.26.1.jar", "label": "Mouse Tweaks (перетаскивание предметов мышью)"},
         {"slug": "neat",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/Ins7SzzR/versions/kALoScYM/Neat-1.21-47-NEOFORGE.jar",
          "filename": "Neat-1.21-47-NEOFORGE.jar", "label": "Neat (полоски здоровья над мобами)"},
         {"slug": "better-third-person",
          "url": "https://cdn.modrinth.com/data/G1s2WpNo/versions/aG5y4JUQ/BetterThirdPerson-neoforge-1.9.0.jar",
          "filename": "BetterThirdPerson-neoforge-1.9.0.jar", "label": "Better Third Person (свободная камера)"},
         {"slug": "sodium-options-api",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/Es5v4eyq/versions/lrsX3TMS/sodiumoptionsapi-neoforge-1.0.10-1.21.1.jar",
          "filename": "sodiumoptionsapi-neoforge-1.0.10-1.21.1.jar", "label": "Sodium Options API (библиотека)"},
         {"slug": "sodium-dynamic-lights",
+         "mirror": True,
          "url": "https://cdn.modrinth.com/data/PxQSWIcD/versions/XI0WLXdn/sodiumdynamiclights-neoforge-1.0.10-1.21.1.jar",
          "filename": "sodiumdynamiclights-neoforge-1.0.10-1.21.1.jar", "label": "Динамический свет (факел светит в руке)"},
         # Круговое меню быстрого доступа (карта, /home, /spawn и т.д. — на
@@ -4933,6 +4980,38 @@ def install_toast_config(status_cb=None) -> None:
         pass  # не критично: без конфига мод заглушит заодно и достижения
 
 
+def fix_early_loading_provider(status_cb=None) -> None:
+    """Прописывает в config/fml.toml провайдер экрана загрузки.
+
+    SimpleCustomEarlyLoading 2.2 требует earlyWindowProvider=
+    "SimpleCustomEarlyLoading", а fml.toml из configpack писался под
+    старую версию мода — у новых игроков при первом запуске вылезало
+    окно «Missing NeoForge configuration» (жалоба 19.07). Правим сами
+    при каждом запуске: файл может пересоздаться после обновления
+    сборки (install_modpack стирает config/ целиком)."""
+    path = INSTANCE_DIR / "config" / "fml.toml"
+    try:
+        if not path.exists():
+            return  # конфига ещё нет — его положит configpack или сама игра
+        text = path.read_text(encoding="utf-8")
+        wanted = 'earlyWindowProvider="SimpleCustomEarlyLoading"'
+        if wanted in text:
+            return
+        if "earlyWindowProvider" in text:
+            text = re.sub(r'earlyWindowProvider\s*=\s*"[^"]*"', wanted, text)
+        else:
+            text = text.rstrip("\n") + "\n" + wanted + "\n"
+        # Заодно убеждаемся, что ранний экран вообще включён.
+        if "earlyWindowControl" in text:
+            text = re.sub(r'earlyWindowControl\s*=\s*\w+',
+                          "earlyWindowControl=true", text)
+        path.write_text(text, encoding="utf-8")
+        if status_cb:
+            status_cb("Экран загрузки настроен.")
+    except OSError:
+        pass  # не критично: мод сам предложит поправить конфиг кнопкой Yes
+
+
 def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
     """Скачивает доп. клиентские моды из CONFIG["EXTRA_CLIENT_MODS"] с
     Modrinth и кладёт в mods/. Скачивается каждый один раз в постоянный кэш
@@ -5000,15 +5079,31 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
                 continue
             if status_cb:
                 status_cb("Скачиваю мод «%s»..." % label)
-            try:
-                download_file(url, cache / filename)
-            except Exception:
-                fb = entry.get("fallback_url")
-                if not fb or url == fb:
-                    raise
-                # Основной источник оборвался на середине — пробуем запасной.
-                filename = entry.get("fallback_filename") or fb.rsplit("/", 1)[-1]
-                download_file(fb, cache / filename)
+            # Источники по порядку: зеркало на нашем игровом сервере (открыт
+            # у любого, кто может играть), затем основной CDN, затем
+            # запасной. У зеркала retries=1: если файла там нет (404),
+            # незачем долбиться пять раз — быстро идём к официальному.
+            sources = []
+            if entry.get("mirror") and CONFIG.get("MOD_MIRROR_BASE"):
+                sources.append((CONFIG["MOD_MIRROR_BASE"]
+                                + urllib.parse.quote(filename), filename, 1))
+            sources.append((url, filename, 5))
+            fb = entry.get("fallback_url")
+            if fb and fb != url:
+                sources.append((fb, entry.get("fallback_filename")
+                                or fb.rsplit("/", 1)[-1], 5))
+            last_exc = None
+            for src_url, src_name, src_retries in sources:
+                try:
+                    download_file(src_url, cache / src_name,
+                                  retries=src_retries)
+                    filename = src_name
+                    last_exc = None
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    last_exc = exc
+            if last_exc is not None:
+                raise last_exc
             installed[slug] = filename
             changed = True
         except Exception:
@@ -5998,6 +6093,7 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     # После configpack: install_modpack() при обновлении сборки стирает
     # config/ целиком, а здесь конфиг уже никто не перезапишет.
     install_toast_config(configpack_status)
+    fix_early_loading_provider(configpack_status)
 
     progress_cb(100)
     status_cb("Запуск игры...")
