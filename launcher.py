@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.58.0",
+    "LAUNCHER_VERSION": "1.59.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,26 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.59.0",
+            "date": "19 июля 2026",
+            "changes": [
+                "Большой редизайн: арт на всё окно, ничего лишнего поверх. "
+                "Все разделы — Внешний вид, Моды, Сообщество, Сборка — "
+                "собраны в одну нижнюю панель рядом с кнопкой «Играть».",
+                "Живой статус сервера в углу окна: онлайн/офлайн, сколько "
+                "игроков и пинг. Обновляется сам каждые полминуты.",
+                "Новый ползунок памяти: деления в гигабайтах, кнопки "
+                "4/6/8 ГБ и «Авто», лаунчер сам видит, сколько ОЗУ в "
+                "компьютере, и не даёт выставить опасные значения.",
+                "Починена ошибка «Не хватает модов: GraveStone»: если "
+                "основной источник закрыт вашим провайдером, мод теперь "
+                "докачивается с запасного. Обновиться обязательно тем, "
+                "у кого игра не запускалась.",
+                "Убран спам «Открыты новые рецепты!» при каждом входе на "
+                "сервер. Попапы достижений остались.",
+            ],
+        },
         {
             "version": "1.58.0",
             "date": "18 июля 2026",
@@ -1543,6 +1563,15 @@ CONFIG = {
         {"slug": "gravestone-mod",
          "url": "https://cdn.modrinth.com/data/RYtXKJPr/versions/Y29z3Y9Y/gravestone-neoforge-1.21.1-1.0.37.jar",
          "filename": "gravestone-neoforge-1.21.1-1.0.37.jar",
+         # Запасной источник (19.07): у части игроков cdn.modrinth.com
+         # закрыт провайдером (та же история, что с войс-чатом 18.07) —
+         # GraveStone у них не скачивался, а он required, и лаунчер честно
+         # не пускал в игру («у кого-то заходит, у кого-то нет»).
+         # CurseForge — официальный канал автора (см. readme мода), другой
+         # CDN (forgecdn.net). Файл проверен: размер 321955 байт совпадает
+         # с модринтовским байт-в-байт (file id 8056307).
+         "fallback_url": "https://mediafilez.forgecdn.net/files/8056/307/gravestone-neoforge-1.21.1-1.0.37.jar",
+         "fallback_filename": "gravestone-neoforge-1.21.1-1.0.37.jar",
          "required": True,
          "label": "GraveStone (могилы вместо потери вещей)"},
         # Вейн-майнер (18.07): зажми ` (клавишу слева от 1) — копаются сразу
@@ -1553,6 +1582,20 @@ CONFIG = {
          "filename": "ftb-ultimine-neoforge-2101.1.15.jar",
          "required": True,
          "label": "FTB Ultimine (жила руды одним ударом)"},
+        # Тишина в углу (просьба владельца 19.07): убрать спам «Открыты новые
+        # рецепты!» при каждом входе на сервер — KubeJS-скрипты сборки
+        # перерегистрируют рецепты, и ванилла честно вопит тостами. Оба мода
+        # MIT, client-only, прямые ссылки на CDN Modrinth. Конфиг пишет
+        # install_toast_config(): рецепты и обучение глушим, достижения
+        # оставляем (по умолчанию мод глушил бы и их).
+        {"slug": "placebo",
+         "url": "https://cdn.modrinth.com/data/tCkE8p2N/versions/nU7CXkMr/Placebo-1.21.1-9.9.1.jar",
+         "filename": "Placebo-1.21.1-9.9.1.jar",
+         "label": "Placebo (библиотека для Toast Control)"},
+        {"slug": "toast-control",
+         "url": "https://cdn.modrinth.com/data/CnOG2wlS/versions/jXHDAUrd/ToastControl-1.21.1-9.0.1.jar",
+         "filename": "ToastControl-1.21.1-9.0.1.jar",
+         "label": "Toast Control (без спама всплывашек рецептов)"},
         # Пакет «Атмосфера» (пункт 49): чисто клиентское.
         {"slug": "creativecore", "label": "CreativeCore (библиотека для AmbientSounds)"},
         {"slug": "ambientsounds", "label": "AmbientSounds (звуки природы: птицы, ветер, пещеры)"},
@@ -2384,7 +2427,9 @@ def render_main_background(width: int, height: int, colors: dict):
     # двигать и менять размер, не перерисовывая фон.
     try:
         logo = Image.open(resource_path("logo.png")).convert("RGBA")
-        free_bottom = height - BAR_H - 84          # выше плиток
+        # Плиток на арте больше нет (редизайн 1.59.0) — логотип центрируется
+        # по всей свободной зоне над нижней панелью.
+        free_bottom = height - BAR_H - 24
         k = LOGO_SIZE / max(logo.width, logo.height)
         logo = logo.resize((max(1, round(logo.width * k)), max(1, round(logo.height * k))),
                            Image.LANCZOS)
@@ -2712,6 +2757,29 @@ def get_system_ram_mb():
         return None
 
 
+def recommended_memory_mb(system_ram_mb, cap_mb: int) -> int:
+    """Сколько памяти отдать игре по умолчанию, исходя из ОЗУ компьютера.
+
+    Больше — не значит быстрее: у Java-игр слишком большая куча наоборот
+    удлиняет паузы сборщика мусора, поэтому даже на 32 ГБ рекомендуем не
+    выше 10. Пороги с запасом (8448, а не ровно 8192): производители
+    любят «8 ГБ», в которых системе видно чуть меньше.
+    """
+    if not system_ram_mb:
+        base = 4096
+    elif system_ram_mb <= 8448:
+        base = 4096
+    elif system_ram_mb <= 12544:
+        base = 5120
+    elif system_ram_mb <= 16640:
+        base = 6144
+    elif system_ram_mb <= 24832:
+        base = 8192
+    else:
+        base = 10240
+    return max(2048, min(base, cap_mb))
+
+
 class RequiredModsMissing(Exception):
     """Не скачались моды, которые есть на сервере.
 
@@ -2902,9 +2970,16 @@ def ping_server(host: str, port: int, timeout: float = 3.0) -> dict:
     """Опрашивает сервер Minecraft по протоколу Server List Ping (тем же,
     которым сама игра показывает статус в списке серверов). Не требует
     сторонних библиотек — общается напрямую по TCP-сокету. Возвращает
-    {"online": bool, "players_online": int|None, "players_max": int|None}."""
+    {"online": bool, "players_online": int|None, "players_max": int|None,
+     "ping_ms": int|None}.
+
+    Пинг считается по времени TCP-рукопожатия, а не по времени ответа на
+    статус-запрос: ответ сервер собирает заметное время (иконка, список
+    игроков), и это время — не задержка сети."""
     try:
+        t0 = time.perf_counter()
         with socket.create_connection((host, port), timeout=timeout) as sock:
+            ping_ms = int((time.perf_counter() - t0) * 1000)
             sock.settimeout(timeout)
 
             host_bytes = host.encode("utf-8")
@@ -2936,9 +3011,11 @@ def ping_server(host: str, port: int, timeout: float = 3.0) -> dict:
                 "online": True,
                 "players_online": players.get("online"),
                 "players_max": players.get("max"),
+                "ping_ms": ping_ms,
             }
     except Exception:
-        return {"online": False, "players_online": None, "players_max": None}
+        return {"online": False, "players_online": None, "players_max": None,
+                "ping_ms": None}
 
 
 def offline_uuid(username: str) -> str:
@@ -4695,6 +4772,43 @@ def set_russian_once(status_cb=None) -> None:
         pass  # не критично: язык переключается и руками
 
 
+def install_toast_config(status_cb=None) -> None:
+    """Конфиг Toast Control: глушим всплывашки рецептов и обучения, но
+    оставляем достижения.
+
+    По умолчанию мод блокирует и достижения (advancements=true) — перебор:
+    попапы достижений игрокам нравятся. Пишем свой конфиг ДО первого
+    запуска мода, чтобы дефолтный даже не успел сгенерироваться. Если файл
+    уже есть — не трогаем: вдруг игрок настроил под себя.
+
+    Формат — NeoForge TOML; недостающие ключи мод сам дополнит значениями
+    по умолчанию при загрузке, но пишем блок целиком, чтобы файл читался
+    глазами."""
+    path = INSTANCE_DIR / "config" / "toastcontrol-client.toml"
+    if path.exists():
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join([
+            "[client]",
+            "",
+            "\t[client.blocked_toasts]",
+            "\t\tadvancements = false",
+            "\t\trecipes = true",
+            "\t\tsystem = false",
+            "\t\ttutorial = true",
+            "\t\tglobal_vanilla = false",
+            "\t\tglobal_modded = false",
+            "\t\tglobal = false",
+            "\t\tblocked_classes = []",
+            "",
+        ]), encoding="utf-8")
+        if status_cb:
+            status_cb("Всплывашки рецептов отключены.")
+    except OSError:
+        pass  # не критично: без конфига мод заглушит заодно и достижения
+
+
 def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
     """Скачивает доп. клиентские моды из CONFIG["EXTRA_CLIENT_MODS"] с
     Modrinth и кладёт в mods/. Скачивается каждый один раз в постоянный кэш
@@ -5757,6 +5871,9 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     configpack_status, configpack_progress = progress.scoped("Настройки сборки")
     install_configpack(configpack_status, configpack_progress)
     install_ultimine_sticky(configpack_status)
+    # После configpack: install_modpack() при обновлении сборки стирает
+    # config/ целиком, а здесь конфиг уже никто не перезапишет.
+    install_toast_config(configpack_status)
 
     progress_cb(100)
     status_cb("Запуск игры...")
@@ -5827,17 +5944,29 @@ class LauncherApp:
 
         # Определяем реальный объём ОЗУ игрока, чтобы не дать выставить
         # больше, чем физически есть в компьютере.
-        system_ram = get_system_ram_mb()
+        self.system_ram_mb = system_ram = get_system_ram_mb()
         configured_max = CONFIG.get("MEMORY_MAX_MB", 16384)
         if system_ram:
-            # Оставляем системе минимум 2 ГБ "про запас"
-            self.memory_max = max(CONFIG.get("MEMORY_MIN_MB", 1024), min(configured_max, system_ram - 2048))
+            # Системе и другим программам оставляем запас: минимум 2 ГБ,
+            # а на больших объёмах — пятую часть (Windows + браузер +
+            # Discord легко съедают больше двух гигабайт).
+            reserve = max(2048, system_ram // 5)
+            self.memory_max = max(2048, min(configured_max, system_ram - reserve))
         else:
             self.memory_max = configured_max
-        self.memory_min = min(CONFIG.get("MEMORY_MIN_MB", 1024), self.memory_max)
+        # Границы выравниваем по шагу ползунка (512 МБ), низ — не меньше
+        # 2 ГБ: модовой 1.21 на гигабайте просто не подняться, такой выбор
+        # был ловушкой «поставил мало — игра не запускается».
+        self.memory_max = (self.memory_max // 512) * 512
+        self.memory_min = min(max(CONFIG.get("MEMORY_MIN_MB", 1024), 2048),
+                              self.memory_max)
 
-        saved_memory = settings.get("memory_mb", CONFIG["MEMORY_MB"])
-        saved_memory = max(self.memory_min, min(self.memory_max, saved_memory))
+        saved_memory = settings.get("memory_mb")
+        if not saved_memory:
+            # Первый запуск: не абстрактный дефолт из конфига, а рекомендация
+            # под конкретный компьютер.
+            saved_memory = recommended_memory_mb(system_ram, self.memory_max)
+        saved_memory = max(self.memory_min, min(self.memory_max, int(saved_memory)))
 
         # Переменные создаются один раз и переживают перерисовку интерфейса
         # (например, при переключении темы) — введённый ник и выбранная
@@ -5848,9 +5977,10 @@ class LauncherApp:
         self.status_var = tk.StringVar(value="Готово к запуску")
         self.progress_var = tk.IntVar(value=0)
 
-        self.server_status_var = tk.StringVar(value="○  Проверка сервера...")
+        self.server_status_var = tk.StringVar(value="Проверка сервера…")
         self.server_status_color_key = "fg_muted"
         self.server_status_label = None
+        self.ram_value_label = None
         self.game_process = None
         # Какая категория плиток сейчас раскрыта (None — ни одна).
         self._open_category = None
@@ -6025,14 +6155,14 @@ class LauncherApp:
             # Без Pillow или без файла арта — просто тёмный фон, окно рабочее.
             cv.create_rectangle(0, 0, width, height, fill=BG_FALLBACK, outline="")
 
-        self._build_tiles(cv, width, height, colors)
         self._build_bottom_bar(cv, width, height, colors)
+        self._draw_status_chip()
 
     # ------------------------------------------------------------------
-    # Плитки быстрого доступа над нижней полосой
+    # Разделы навигации (кнопки живут в нижней панели, редизайн 1.59.0)
     # ------------------------------------------------------------------
     def _categories(self) -> list:
-        """Плитки главного окна: четыре категории вместо десяти кнопок.
+        """Разделы лаунчера: четыре категории вместо десяти кнопок.
 
         Решение владельца от 17.07: «кнопок много, поделить по категориям».
         Десять одинаковых иконок в ряд не читались — чтобы найти нужную,
@@ -6077,55 +6207,70 @@ class LauncherApp:
                 out.append((icon, title, live))
         return out
 
-    def _build_tiles(self, cv, width, height, colors) -> None:
+    def _build_nav(self, cv, zone_left, zone_right, btn_y, colors) -> None:
+        """Кнопки разделов внутри нижней панели — между ником и «Играть».
+
+        Раньше это были плитки, висевшие прямо на арте: они закрывали
+        картинку и выглядели инородно (решение владельца — «одна компактная
+        нижняя панель»). Кнопка — иконка и слово; ширина у каждой своя, по
+        тексту: «Моды» короткие, «Сообщество» длинное, одинаковая ширина
+        давала либо огромные поля, либо обрезанный текст.
+        """
         cats = self._categories()
         if not cats:
             return
 
-        # Плитка — иконка и одно слово, ничего больше. Подпись с перечислением
-        # содержимого («telegram · discord · карта мира») пробовали: мелкий
-        # текст лез за край плитки и выглядел мусором. Что внутри — видно по
-        # наведению.
-        tw, th, gap = 128, 50, 12
-        total = len(cats) * tw + (len(cats) - 1) * gap
-        sx = (width - total) // 2
-        sy = height - BAR_H - 66
-        self._cat_geom = (sx, sy, tw, th, gap)
+        th, gap = 38, 8
+        f = tkfont.Font(family=UI_FONT, size=9, weight="bold")
+        widths = [36 + f.measure(title) + 12 for (_i, title, _it) in cats]
+        total = sum(widths) + gap * (len(cats) - 1)
+        zone_w = zone_right - zone_left
+        if total > zone_w:
+            # Не влезаем (крупный системный шрифт) — ужимаем поля, но кнопки
+            # не режем: пусть лучше будут плотными, чем без подписей.
+            shrink = (total - zone_w) // len(cats) + 1
+            widths = [max(40, w - shrink) for w in widths]
+            total = sum(widths) + gap * (len(cats) - 1)
+        sx = zone_left + max(0, (zone_w - total) // 2)
+        self._nav_geom = []          # [(x, w)] каждой кнопки — для меню
+        self._nav_y, self._nav_h = btn_y, th
 
-        normal = render_rounded(tw, th, 12, (40, 49, 63, 215), (255, 255, 255, 38))
-        hover = render_rounded(tw, th, 12, (58, 72, 92, 235), (255, 255, 255, 90))
-        if normal is not None:
-            self._img_refs["tile"] = ImageTk.PhotoImage(normal)
-            self._img_refs["tile_hover"] = ImageTk.PhotoImage(hover)
-
+        x = sx
         for i, (icon, title, _items) in enumerate(cats):
-            x = sx + i * (tw + gap)
-            tag = "tile%d" % i
+            w = widths[i]
+            tag = "tile%d" % i       # тег оставлен «tile»: на него завязан
+                                     # _on_canvas_click, менять смысла нет
+            normal = render_rounded(w, th, 10, (32, 41, 54, 225), (255, 255, 255, 42))
+            hover = render_rounded(w, th, 10, (52, 66, 86, 240), (255, 255, 255, 95))
             if normal is not None:
-                bg_id = cv.create_image(x, sy, image=self._img_refs["tile"],
+                self._img_refs["nav%d" % i] = ImageTk.PhotoImage(normal)
+                self._img_refs["nav%d_h" % i] = ImageTk.PhotoImage(hover)
+                bg_id = cv.create_image(x, btn_y, image=self._img_refs["nav%d" % i],
                                         anchor="nw", tags=(tag,))
             else:
-                bg_id = cv.create_rectangle(x, sy, x + tw, sy + th,
+                bg_id = cv.create_rectangle(x, btn_y, x + w, btn_y + th,
                                             fill="#28313f", outline="#3a4658", tags=(tag,))
             if self.icons.get(icon):
-                cv.create_image(x + 22, sy + th // 2, image=self.icons[icon], tags=(tag,))
-            cv.create_text(x + 42, sy + th // 2, text=title, font=(UI_FONT, 9, "bold"),
+                cv.create_image(x + 20, btn_y + th // 2, image=self.icons[icon], tags=(tag,))
+            cv.create_text(x + 34, btn_y + th // 2, text=title, font=(UI_FONT, 9, "bold"),
                            fill=colors["fg"], anchor="w", tags=(tag,))
+            self._nav_geom.append((x, w))
+            x += w + gap
 
             # Список раскрывается по наведению: лишний клик ради того, чтобы
             # просто посмотреть, что внутри, не нужен.
-            def enter(_e, i=bg_id, idx=i, has=normal is not None):
+            def enter(_e, item=bg_id, idx=i, has=normal is not None):
                 if has:
-                    cv.itemconfig(i, image=self._img_refs["tile_hover"])
+                    cv.itemconfig(item, image=self._img_refs["nav%d_h" % idx])
                 cv.configure(cursor="hand2")
                 self._cancel_close()
                 if self._open_category != idx:
                     self._close_category()
                     self._open_category_at(idx)
 
-            def leave(_e, i=bg_id, has=normal is not None):
+            def leave(_e, item=bg_id, idx=i, has=normal is not None):
                 if has:
-                    cv.itemconfig(i, image=self._img_refs["tile"])
+                    cv.itemconfig(item, image=self._img_refs["nav%d" % idx])
                 cv.configure(cursor="")
                 self._schedule_close()
 
@@ -6135,7 +6280,7 @@ class LauncherApp:
             # и закрывает уже открытый.
             cv.tag_bind(tag, "<Button-1>", lambda _e, idx=i: self._toggle_category(idx))
 
-        # Клик мимо плиток и Esc закрывают раскрытый список — иначе он висел бы
+        # Клик мимо кнопок и Esc закрывают раскрытый список — иначе он висел бы
         # поверх арта, пока не выберешь пункт.
         cv.bind("<Button-1>", self._on_canvas_click, add="+")
         self.root.bind("<Escape>", lambda _e: self._close_category())
@@ -6201,16 +6346,17 @@ class LauncherApp:
         cv = self.canvas
         colors = THEMES[self.theme_name]
         _icon, _title, items = cats[index]
-        sx, sy, tw, th, gap = self._cat_geom
+        bx, bw = self._nav_geom[index]
 
         row_h = 30
         pad = 8
-        pw = tw + 24          # чуть шире плитки: в строке иконка и название
+        pw = 172              # шире кнопки: в строке иконка и название
         ph = pad * 2 + row_h * len(items)
-        px = sx + index * (tw + gap)
-        # Список прижат к плитке вплотную: между ними нет полосы фона, через
+        # Меню центрируется над своей кнопкой, но не вылезает за окно.
+        px = min(max(12, bx + bw // 2 - pw // 2), MAIN_W - pw - 12)
+        # Список прижат к кнопке вплотную: между ними нет полосы фона, через
         # которую мышь «выпадала» бы наружу.
-        py = sy - ph
+        py = self._nav_y - ph
 
         plate = render_rounded(pw, ph, 12, (23, 28, 36, 246), (255, 255, 255, 45))
         if plate is not None:
@@ -6267,11 +6413,12 @@ class LauncherApp:
         self._open_category = index
 
     # ------------------------------------------------------------------
-    # Нижняя полоса: ник слева, «Играть» справа
+    # Нижняя панель: ник слева, разделы в центре, «Играть» справа.
+    # Вся навигация здесь — на арте ничего не висит (редизайн 1.59.0).
     # ------------------------------------------------------------------
     def _build_bottom_bar(self, cv, width, height, colors) -> None:
         top = height - BAR_H
-        left = 36
+        left = 24
         muted = colors["fg_muted"]
 
         # --- слева: голова, ник и сведения о сборке ---
@@ -6286,11 +6433,13 @@ class LauncherApp:
         self.head_item = cv.create_image(left + 3, top + 28, anchor="nw")
         self._refresh_head()
 
-        nx = left + HEAD + 18
+        nx = left + HEAD + 14
         cv.create_text(nx, top + 10, text="ВАШ НИК", font=(UI_FONT, 8, "bold"),
                        fill=muted, anchor="nw")
 
-        field = render_rounded(256, 38, 9, (26, 33, 44, 240), (255, 255, 255, 50))
+        # Поле ужато с 256 до 200: ники длиннее не бывают, а освободившееся
+        # место в панели заняли кнопки разделов.
+        field = render_rounded(200, 38, 9, (26, 33, 44, 240), (255, 255, 255, 50))
         if field is not None:
             self._img_refs["field"] = ImageTk.PhotoImage(field)
             cv.create_image(nx, top + 25, image=self._img_refs["field"], anchor="nw")
@@ -6299,13 +6448,20 @@ class LauncherApp:
             bg="#1a2230", fg=colors["fg"], insertbackground=colors["fg"],
             relief="flat", highlightthickness=0, bd=0,
         )
-        cv.create_window(nx + 12, top + 44, window=nick_entry, anchor="w", width=232, height=24)
+        cv.create_window(nx + 12, top + 44, window=nick_entry, anchor="w", width=176, height=24)
         # Ник поменяли — голова должна догнать: скины лежат по имени файла.
         self.nick_var.trace_add("write", lambda *_a: self._refresh_head())
 
+        # Кнопки разделов — в панели между ником и «Играть», меню открываются
+        # вверх. Ширина «Играть» (300) посчитана тут же: правая граница зоны
+        # навигации упирается в кнопку.
+        play_w = 300
+        play_x = width - 24 - play_w
+        self._build_nav(cv, nx + 200 + 16, play_x - 16, top + 25, colors)
+
         # Версии — служебная справка, а не заголовок. Раньше она была жирной и
-        # акцентным цветом: спорила за внимание со статусом сервера, который
-        # куда важнее. Приглушаем, чтобы порядок чтения был правильный.
+        # акцентным цветом: спорила за внимание с остальной панелью.
+        # Приглушаем, чтобы порядок чтения был правильный.
         version_item = cv.create_text(
             left, top + 72, anchor="nw", font=(UI_FONT, 8), fill=muted,
             text="Minecraft %s  ·  %s  ·  лаунчер %s  ·" % (
@@ -6313,12 +6469,24 @@ class LauncherApp:
                 LOADER_DISPLAY_NAMES.get(CONFIG["MOD_LOADER"],
                                          CONFIG["MOD_LOADER"].capitalize()),
                 CONFIG.get("LAUNCHER_VERSION", "?")))
-        self.server_status_label = _CanvasText(
-            cv, cv.create_text(left, top + 89, anchor="nw", font=(UI_FONT, 9, "bold"),
-                               fill=colors[self.server_status_color_key],
-                               text=self.server_status_var.get()))
-        self.server_status_var.trace_add(
-            "write", lambda *a: self.server_status_label.set_text(self.server_status_var.get()))
+        # Статус сервера уехал в плашку в правом верхнем углу окна
+        # (_draw_status_chip) — тут его место заняла сводка настроек:
+        # сколько памяти отдано игре и включён ли режим слабого ПК.
+        self.server_status_label = None
+        summary_item = cv.create_text(
+            left, top + 89, anchor="nw", font=(UI_FONT, 8), fill=muted,
+            text=self._settings_summary_text())
+
+        def _sync_summary(*_a, item=summary_item, canvas=cv):
+            # Смена темы пересоздаёт холст, а старые trace-подписки остаются
+            # жить — пишем в исчезнувший элемент молча, без стека ошибок.
+            try:
+                canvas.itemconfig(item, text=self.settings_summary_var.get())
+            except tk.TclError:
+                pass
+
+        self.settings_summary_var.trace_add("write", _sync_summary)
+        self._refresh_settings_summary()
 
         links = []
         if CONFIG.get("LAUNCHER_CHANGELOG"):
@@ -6328,7 +6496,7 @@ class LauncherApp:
         if CONFIG.get("TEST_SERVER_ADDRESS"):
             links.append(("тест localhost", self.on_play_test))
         # Ссылки идут той же строкой, что и версии: раньше они жили отдельной
-        # строкой ниже, а теперь там ники тех, кто в игре.
+        # строкой ниже, а теперь там сводка настроек (память, слабый ПК).
         lx = int(cv.bbox(version_item)[2]) + 8
         for text, command in links:
             item = cv.create_text(lx, top + 72, anchor="nw", font=(UI_FONT, 8, "underline"),
@@ -6342,8 +6510,10 @@ class LauncherApp:
             lx += int(cv.bbox(item)[2] - cv.bbox(item)[0]) + 18
 
         # --- справа: «Играть», статус, прогресс ---
-        pw, ph = 330, 58
-        px = width - 36 - pw
+        # 300 вместо 330: тридцать пикселей отданы кнопкам разделов, на
+        # заметность «Играть» это не влияет — она всё равно самая большая.
+        pw, ph = play_w, 58
+        px = play_x
         py = top + 10
         self.play_button = _CanvasPill(cv, px, py, pw, ph, "ИГРАТЬ", colors,
                                        self.on_play, self._img_refs)
@@ -6421,6 +6591,49 @@ class LauncherApp:
             self.canvas.itemconfig(self.head_item, image=self._img_refs["head"])
         except (tk.TclError, AttributeError, KeyError):
             pass
+
+    def _draw_status_chip(self) -> None:
+        """Живой статус сервера — плашка в правом верхнем углу окна.
+
+        Перерисовывается целиком при каждом обновлении: ширина зависит от
+        текста («онлайн · 3/20 · 45 мс» длиннее, чем «недоступен»), а
+        растягивать готовую картинку скруглённой подложки нельзя — углы
+        поплывут. Цветная точка отдельно от текста: красить всю строку в
+        зелёный/красный на тёмном арте оказалось хуже читаемо, чем белый
+        текст с цветовой меткой.
+        """
+        cv = self.canvas
+        if cv is None:
+            return
+        try:
+            cv.delete("srvchip")
+        except tk.TclError:
+            return
+        colors = THEMES[self.theme_name]
+        text = self.server_status_var.get()
+        try:
+            f = tkfont.Font(family=UI_FONT, size=9, weight="bold")
+            text_w = f.measure(text)
+        except tk.TclError:
+            text_w = 8 * len(text)
+        pad, dot, h = 14, 8, 30
+        w = pad + dot + 8 + text_w + pad
+        x, y = MAIN_W - 16 - w, 14
+        plate = render_rounded(w, h, 15, (10, 15, 22, 215), (255, 255, 255, 45))
+        if plate is not None:
+            self._img_refs["srvchip"] = ImageTk.PhotoImage(plate)
+            cv.create_image(x, y, image=self._img_refs["srvchip"], anchor="nw",
+                            tags=("srvchip",))
+        else:
+            cv.create_rectangle(x, y, x + w, y + h, fill="#0a0f16",
+                                outline="#3a4658", tags=("srvchip",))
+        cy = y + h // 2
+        cv.create_oval(x + pad, cy - dot // 2, x + pad + dot, cy + dot // 2,
+                       fill=colors[self.server_status_color_key], outline="",
+                       tags=("srvchip",))
+        cv.create_text(x + pad + dot + 8, cy, text=text, anchor="w",
+                       font=(UI_FONT, 9, "bold"), fill=colors["fg"],
+                       tags=("srvchip",))
 
     def _redraw_progress(self) -> None:
         """Прогресс рисуем сами прямоугольником: обычный ttk-виджет на арте
@@ -6565,6 +6778,76 @@ class LauncherApp:
             except tk.TclError:
                 pass
         self._refresh_settings_summary()
+
+    def _build_ram_slider(self, parent, colors):
+        """Ползунок памяти на своём Canvas (редизайн 1.59.0).
+
+        Штатный tk.Scale не устраивал: безликая полоска без делений, по
+        которой не понять, много выбрано или мало. Здесь деления и подписи
+        в гигабайтах, зелёная стрелка на рекомендованном объёме и шаг
+        0,5 ГБ. Возвращает Canvas с методом .redraw() — кнопки-пресеты
+        дёргают его после установки значения.
+        """
+        w, h = 524, 60
+        cv = tk.Canvas(parent, width=w, height=h, bg=colors["bg_panel"],
+                       highlightthickness=0, bd=0, cursor="hand2")
+        pad = 12
+        x0, x1 = pad, w - pad
+        ty = 22                       # вертикаль трека
+        mn, mx = self.memory_min, self.memory_max
+        span = max(1, mx - mn)
+        rec = recommended_memory_mb(self.system_ram_mb, mx)
+        gb = 1024
+
+        def val_to_x(v):
+            return x0 + (x1 - x0) * (v - mn) / float(span)
+
+        def x_to_val(x):
+            t = min(1.0, max(0.0, (x - x0) / float(x1 - x0)))
+            return int(round((mn + t * span) / 512.0) * 512)
+
+        def redraw():
+            try:
+                cv.delete("all")
+            except tk.TclError:
+                return               # окно настроек уже закрыто
+            v = int(self.memory_var.get())
+            cv.create_line(x0, ty, x1, ty, width=6, capstyle="round",
+                           fill=colors["bg_field"])
+            cv.create_line(x0, ty, val_to_x(v), ty, width=6, capstyle="round",
+                           fill=colors["accent"])
+            # Деления каждый гигабайт; если диапазон большой, подписываем
+            # через один — цифры иначе слипаются.
+            label_step = gb if span <= 12 * gb else 2 * gb
+            g = ((mn + gb - 1) // gb) * gb
+            while g <= mx:
+                x = val_to_x(g)
+                cv.create_line(x, ty + 8, x, ty + 13, fill=colors["border"])
+                if g % label_step == 0:
+                    cv.create_text(x, ty + 24, text="%d" % (g // gb),
+                                   font=(UI_FONT, 8), fill=colors["fg_muted"])
+                g += gb
+            # Стрелка на рекомендованном объёме.
+            rx = val_to_x(rec)
+            cv.create_polygon(rx - 5, ty - 16, rx + 5, ty - 16, rx, ty - 8,
+                              fill=colors["status_online"], outline="")
+            hx = val_to_x(v)
+            cv.create_oval(hx - 9, ty - 9, hx + 9, ty + 9,
+                           fill=colors["accent"], outline=colors["accent_hover"],
+                           width=2)
+
+        def on_drag(event):
+            v = max(mn, min(mx, x_to_val(event.x)))
+            if v != int(self.memory_var.get()):
+                self.memory_var.set(v)
+                self._on_ram_change(v)
+            redraw()
+
+        cv.bind("<Button-1>", on_drag)
+        cv.bind("<B1-Motion>", on_drag)
+        cv.redraw = redraw
+        redraw()
+        return cv
 
     def _setup_style(self, colors) -> None:
         style = ttk.Style()
@@ -7465,37 +7748,60 @@ class LauncherApp:
         dialog.configure(bg=colors["bg_panel"])
         dialog.resizable(False, False)
         dialog.transient(self.root)
-        dialog.geometry("560x560")
+        dialog.geometry("560x640")
         set_titlebar_dark(dialog, self.theme_name == "dark")
 
         outer = tk.Frame(dialog, bg=colors["bg_panel"])
         outer.pack(fill="both", expand=True, padx=18, pady=18)
 
-        # ---- Оперативная память (переехала сюда с главного окна) ----
+        # ---- Оперативная память (редизайн 1.59.0) ----
+        # Вместо безликого tk.Scale — свой ползунок с делениями в гигабайтах,
+        # меткой рекомендованного объёма и кнопками-пресетами. Границы
+        # безопасные: низ 2 ГБ (меньше — сборка не стартует), верх оставляет
+        # системе запас (см. __init__).
         ram_row = tk.Frame(outer, bg=colors["bg_panel"])
         ram_row.pack(fill="x")
-        tk.Label(ram_row, text="ОПЕРАТИВНАЯ ПАМЯТЬ", font=(UI_FONT, 8, "bold"),
+        tk.Label(ram_row, text="ПАМЯТЬ ДЛЯ ИГРЫ", font=(UI_FONT, 8, "bold"),
                  bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(side="left")
         self.ram_value_label = tk.Label(
-            ram_row, text=self._format_gb(self.memory_var.get()), font=(UI_FONT, 9, "bold"),
+            ram_row, text=self._format_gb(self.memory_var.get()), font=(UI_FONT, 11, "bold"),
             bg=colors["bg_panel"], fg=colors["accent"])
         self.ram_value_label.pack(side="right")
 
-        tk.Scale(
-            outer, from_=self.memory_min, to=self.memory_max,
-            orient="horizontal", variable=self.memory_var,
-            showvalue=False, resolution=256, sliderlength=18,
-            bg=colors["bg_panel"], fg=colors["fg"], troughcolor=colors["bg_field"],
-            highlightthickness=0, bd=0, activebackground=colors["accent_hover"],
-            command=self._on_ram_change,
-        ).pack(fill="x", pady=(6, 2))
+        if self.system_ram_mb:
+            ram_info = "В компьютере: %s  ·  игре можно отдать до %s" % (
+                self._format_gb(self.system_ram_mb), self._format_gb(self.memory_max))
+        else:
+            ram_info = "Объём ОЗУ определить не удалось — границы стандартные"
+        tk.Label(outer, text=ram_info, font=(UI_FONT, 8),
+                 bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(anchor="w", pady=(2, 0))
 
-        range_row = tk.Frame(outer, bg=colors["bg_panel"])
-        range_row.pack(fill="x", pady=(0, 12))
-        tk.Label(range_row, text=self._format_gb(self.memory_min), font=(UI_FONT, 8),
-                 bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(side="left")
-        tk.Label(range_row, text=self._format_gb(self.memory_max), font=(UI_FONT, 8),
-                 bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(side="right")
+        ram_slider = self._build_ram_slider(outer, colors)
+        ram_slider.pack(fill="x", pady=(4, 0))
+
+        tk.Label(outer, text="▼ — рекомендовано для вашего ПК  ·  шаг ползунка 0,5 ГБ",
+                 font=(UI_FONT, 8), bg=colors["bg_panel"],
+                 fg=colors["fg_muted"]).pack(anchor="w")
+
+        def set_memory(v: int) -> None:
+            v = max(self.memory_min, min(self.memory_max, int(v)))
+            self.memory_var.set(v)
+            self._on_ram_change(v)
+            ram_slider.redraw()
+
+        preset_row = tk.Frame(outer, bg=colors["bg_panel"])
+        preset_row.pack(fill="x", pady=(6, 12))
+        rec_mb = recommended_memory_mb(self.system_ram_mb, self.memory_max)
+        presets = [("%d ГБ" % (v // 1024), v) for v in (4096, 6144, 8192)
+                   if self.memory_min <= v <= self.memory_max]
+        presets.append(("Авто (%s)" % self._format_gb(rec_mb), rec_mb))
+        for label, value in presets:
+            tk.Button(
+                preset_row, text=label, command=lambda v=value: set_memory(v),
+                font=(UI_FONT, 9), bg=colors["bg_field"], fg=colors["fg"],
+                activebackground=colors["accent"], activeforeground=colors["accent_text"],
+                relief="flat", cursor="hand2", bd=0, padx=10, pady=4,
+            ).pack(side="left", padx=(0, 6))
 
         # ---- Режим для слабых ПК ----
         def on_low_end_toggle():
@@ -8543,26 +8849,28 @@ class LauncherApp:
         self.root.after(30000, self.refresh_server_status)
 
     def _apply_server_status(self, result: dict) -> None:
+        # Показывается в плашке правого верхнего угла (_draw_status_chip).
+        # Пинг вернули по редизайну 1.59.0 — теперь он короткий («45 мс») и
+        # в строку помещается. Списка ников по-прежнему нет: сервер отдаёт
+        # их вперемешку с «Anonymous Player», толку не было.
         if result.get("online"):
             online = result.get("players_online")
             maxp = result.get("players_max")
-            # Пинг и список ников тут были и уехали по решению владельца от
-            # 17.07: строка получалась длинной, а ники сервер отдаёт вперемешку
-            # с «Anonymous Player» — толку от них не было.
+            ping = result.get("ping_ms")
+            text = "Сервер онлайн"
             if online is not None and maxp is not None:
-                text = "●  Сервер онлайн  ·  %d/%d игроков" % (online, maxp)
-            else:
-                text = "●  Сервер онлайн"
+                text += "  ·  %d/%d игроков" % (online, maxp)
+            if ping is not None:
+                text += "  ·  %d мс" % ping
             color_key = "status_online"
         else:
-            text = "●  Сервер сейчас недоступен"
+            text = "Сервер сейчас недоступен"
             color_key = "status_offline"
 
         self.server_status_var.set(text)
         self.server_status_color_key = color_key
         try:
-            if self.server_status_label is not None:
-                self.server_status_label.configure(fg=THEMES[self.theme_name][color_key])
+            self._draw_status_chip()
         except tk.TclError:
             pass  # окно как раз перерисовывается (смена темы) — не страшно
 
