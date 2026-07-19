@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.59.2",
+    "LAUNCHER_VERSION": "1.59.3",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.59.3",
+            "date": "19 июля 2026",
+            "changes": [
+                "Починена ошибка «Не хватает модов: FTB Ultimine» — как и у "
+                "GraveStone, добавлен запасной источник на случай, если "
+                "основной закрыт вашим провайдером. Скачанные моды "
+                "сохраняются: качаются один раз, дальше берутся из кэша.",
+            ],
+        },
         {
             "version": "1.59.2",
             "date": "19 июля 2026",
@@ -1616,6 +1626,13 @@ CONFIG = {
         {"slug": "ftb-ultimine-2101-1-15",
          "url": "https://maven.ftb.dev/releases/dev/ftb/mods/ftb-ultimine-neoforge/2101.1.15/ftb-ultimine-neoforge-2101.1.15.jar",
          "filename": "ftb-ultimine-neoforge-2101.1.15.jar",
+         # Запасной источник (19.07, жалоба игрока kafka): у части
+         # провайдеров закрыт и maven.ftb.dev — мод required, игра не
+         # запускалась. CurseForge — официальный канал FTB, file id 8231400,
+         # та же версия 2101.1.15. В свой релиз класть нельзя (лицензия FTB),
+         # оба источника — официальные.
+         "fallback_url": "https://mediafilez.forgecdn.net/files/8231/400/ftb-ultimine-neoforge-2101.1.15.jar",
+         "fallback_filename": "ftb-ultimine-neoforge-2101.1.15.jar",
          "required": True,
          "label": "FTB Ultimine (жила руды одним ударом)"},
         # Тишина в углу (просьба владельца 19.07): убрать спам «Открыты новые
