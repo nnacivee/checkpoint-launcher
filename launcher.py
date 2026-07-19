@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.59.0",
+    "LAUNCHER_VERSION": "1.59.1",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.59.1",
+            "date": "19 июля 2026",
+            "changes": [
+                "Проверка обновлений теперь работает и там, где провайдер "
+                "закрывает GitHub: добавлен запасной канал. Раньше у части "
+                "игроков плашка «доступна версия» просто не появлялась, и "
+                "они не знали об обновлениях.",
+            ],
+        },
         {
             "version": "1.59.0",
             "date": "19 июля 2026",
@@ -4410,8 +4420,39 @@ def check_for_launcher_update():
             if best is None or vt > best[0]:
                 best = (vt, ver, exe_url,
                         rel.get("html_url") or ("https://github.com/%s/releases" % repo))
+        if best:
+            if best[0] > _version_tuple(CONFIG["LAUNCHER_VERSION"]):
+                return {"version": best[1], "exe_url": best[2], "url": best[3]}
+            return None    # GitHub ответил: новее ничего нет, запаску не дёргаем
+    except Exception:
+        pass
+
+    # GitHub API не ответил — частый случай у провайдеров РФ (19.07):
+    # api.github.com блокируется, плашка «доступна версия…» не появлялась
+    # никогда, и игроки застревали на старых версиях, где не качался
+    # GraveStone. Запасная проверка — jsDelivr: обычный CDN, в РФ работает,
+    # отдаёт список git-тегов репозитория без обращения к GitHub.
+    try:
+        data = _modrinth_api_get(
+            "https://data.jsdelivr.com/v1/packages/gh/%s" % repo, timeout=8)
+        best = None
+        for item in (data or {}).get("versions", []):
+            ver = str(item.get("version") or "").lstrip("vV")
+            if not ver or not ver[0].isdigit():
+                continue   # служебные теги modpack/configpack
+            vt = _version_tuple(ver)
+            if best is None or vt > best[0]:
+                best = (vt, ver)
         if best and best[0] > _version_tuple(CONFIG["LAUNCHER_VERSION"]):
-            return {"version": best[1], "exe_url": best[2], "url": best[3]}
+            # Ссылка на установщик собирается из номера версии: у релизов
+            # GitHub адрес releases/download/<тег>/<файл> постоянный,
+            # никакого API для него не нужно.
+            return {
+                "version": best[1],
+                "exe_url": "https://github.com/%s/releases/download/v%s/CheckpointSetup.exe"
+                           % (repo, best[1]),
+                "url": "https://github.com/%s/releases" % repo,
+            }
     except Exception:
         pass
     return None
