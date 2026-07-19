@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.59.1",
+    "LAUNCHER_VERSION": "1.59.2",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.59.2",
+            "date": "19 июля 2026",
+            "changes": [
+                "Установка стала заметно быстрее: все дополнительные моды "
+                "качаются по прямым ссылкам, без долгого «Ищу мод…» перед "
+                "каждым.",
+            ],
+        },
         {
             "version": "1.59.1",
             "date": "19 июля 2026",
@@ -1554,15 +1563,32 @@ CONFIG = {
     # этом прямо разрешает то, что делает лаунчер — скачивать мод за игрока с
     # официального Modrinth. Поэтому их не должно быть в modpack.zip.
     "EXTRA_CLIENT_MODS": [
-        {"slug": "sound-physics-remastered", "label": "Sound Physics Remastered (реалистичное эхо)"},
-        {"slug": "dynamic-fps", "label": "Dynamic FPS (экономия ресурсов в фоне)"},
-        {"slug": "chat-heads", "label": "Chat Heads (лицо игрока в чате)"},
+        # ВСЕ моды идут прямыми ссылками (19.07): slug-поиск делал два
+        # запроса к api.modrinth.com на каждый мод, и установка заметно
+        # тормозила (жалоба владельца). Версии прибиты; при обновлении
+        # мода менять url и filename руками. slug остаётся ключом кэша —
+        # без нужды не менять, иначе мод перекачается у всех.
+        {"slug": "sound-physics-remastered",
+         "url": "https://cdn.modrinth.com/data/qyVF9oeo/versions/Dd2tmpsk/sound-physics-remastered-neoforge-1.21.1-1.5.1.jar",
+         "filename": "sound-physics-remastered-neoforge-1.21.1-1.5.1.jar", "label": "Sound Physics Remastered (реалистичное эхо)"},
+        {"slug": "dynamic-fps",
+         "url": "https://cdn.modrinth.com/data/LQ3K71Q1/versions/T238FZpQ/dynamic-fps-3.11.4%2Bminecraft-1.21.0-neoforge.jar",
+         "filename": "dynamic-fps-3.11.4+minecraft-1.21.0-neoforge.jar", "label": "Dynamic FPS (экономия ресурсов в фоне)"},
+        {"slug": "chat-heads",
+         "url": "https://cdn.modrinth.com/data/Wb5oqrBJ/versions/tTKkTWZ7/chat_heads-0.15.2-neoforge-1.21.jar",
+         "filename": "chat_heads-0.15.2-neoforge-1.21.jar", "label": "Chat Heads (лицо игрока в чате)"},
         # Тройка анимаций (решение владельца 18.07). Все — client-only,
         # сервер о них не знает. EMF+ETF — «движки», без которых ресурспак
         # Fresh Animations (кнопка в «Текстурах») просто не применяется.
-        {"slug": "entity-model-features", "label": "Entity Model Features (движок моделей мобов)"},
-        {"slug": "entitytexturefeatures", "label": "Entity Texture Features (движок текстур мобов)"},
-        {"slug": "not-enough-animations", "label": "Not Enough Animations (анимации игроков)"},
+        {"slug": "entity-model-features",
+         "url": "https://cdn.modrinth.com/data/4I1XuqiY/versions/PAYgk63v/entity_model_features-3.2.4-1.21-neoforge.jar",
+         "filename": "entity_model_features-3.2.4-1.21-neoforge.jar", "label": "Entity Model Features (движок моделей мобов)"},
+        {"slug": "entitytexturefeatures",
+         "url": "https://cdn.modrinth.com/data/BVzZfTc1/versions/YEMROAHv/entity_texture_features_1.21-neoforge-7.1.jar",
+         "filename": "entity_texture_features_1.21-neoforge-7.1.jar", "label": "Entity Texture Features (движок текстур мобов)"},
+        {"slug": "not-enough-animations",
+         "url": "https://cdn.modrinth.com/data/MPCX6s5C/versions/eYNogep3/notenoughanimations-neoforge-1.12.4-mc1.21.1.jar",
+         "filename": "notenoughanimations-neoforge-1.12.4-mc1.21.1.jar", "label": "Not Enough Animations (анимации игроков)"},
         # Могилы (решение владельца 18.07, пункт 13 из списка 50): при смерти
         # вещи ложатся в надгробие, а не разлетаются. Мод ОБЯЗАТЕЛЕН и на
         # сервере (залит 18.07, применён рестартом) — у клиента без него
@@ -1607,14 +1633,30 @@ CONFIG = {
          "filename": "ToastControl-1.21.1-9.0.1.jar",
          "label": "Toast Control (без спама всплывашек рецептов)"},
         # Пакет «Атмосфера» (пункт 49): чисто клиентское.
-        {"slug": "creativecore", "label": "CreativeCore (библиотека для AmbientSounds)"},
-        {"slug": "ambientsounds", "label": "AmbientSounds (звуки природы: птицы, ветер, пещеры)"},
-        {"slug": "3dskinlayers", "label": "3D Skin Layers (объёмные слои скина)"},
-        {"slug": "searchables", "label": "Searchables (библиотека для Controlling)"},
-        {"slug": "controlling", "label": "Controlling (поиск по клавишам управления)"},
-        {"slug": "customskinloader", "label": "CustomSkinLoader (HD-скины и плащи)"},
-        {"slug": "konkrete", "label": "Konkrete (библиотека для меню)"},
-        {"slug": "melody", "label": "Melody (библиотека для меню)"},
+        {"slug": "creativecore",
+         "url": "https://cdn.modrinth.com/data/OsZiaDHq/versions/nLLornod/CreativeCore_NEOFORGE_v2.13.41_mc1.21.1.jar",
+         "filename": "CreativeCore_NEOFORGE_v2.13.41_mc1.21.1.jar", "label": "CreativeCore (библиотека для AmbientSounds)"},
+        {"slug": "ambientsounds",
+         "url": "https://cdn.modrinth.com/data/fM515JnW/versions/RZyxhsqY/AmbientSounds_NEOFORGE_v6.3.8_mc1.21.1.jar",
+         "filename": "AmbientSounds_NEOFORGE_v6.3.8_mc1.21.1.jar", "label": "AmbientSounds (звуки природы: птицы, ветер, пещеры)"},
+        {"slug": "3dskinlayers",
+         "url": "https://cdn.modrinth.com/data/zV5r3pPn/versions/xPYbAPfz/skinlayers3d-neoforge-1.11.2-mc1.21.1.jar",
+         "filename": "skinlayers3d-neoforge-1.11.2-mc1.21.1.jar", "label": "3D Skin Layers (объёмные слои скина)"},
+        {"slug": "searchables",
+         "url": "https://cdn.modrinth.com/data/fuuu3xnx/versions/iEE85X0w/Searchables-neoforge-1.21.1-1.0.2.jar",
+         "filename": "Searchables-neoforge-1.21.1-1.0.2.jar", "label": "Searchables (библиотека для Controlling)"},
+        {"slug": "controlling",
+         "url": "https://cdn.modrinth.com/data/xv94TkTM/versions/FaNppCJJ/Controlling-neoforge-1.21.1-19.0.5.jar",
+         "filename": "Controlling-neoforge-1.21.1-19.0.5.jar", "label": "Controlling (поиск по клавишам управления)"},
+        {"slug": "customskinloader",
+         "url": "https://cdn.modrinth.com/data/idMHQ4n2/versions/OLaesh5y/CustomSkinLoader_Universal-15.0.1.jar",
+         "filename": "CustomSkinLoader_Universal-15.0.1.jar", "label": "CustomSkinLoader (HD-скины и плащи)"},
+        {"slug": "konkrete",
+         "url": "https://cdn.modrinth.com/data/J81TRJWm/versions/stJDU839/konkrete_neoforge_1.9.9_MC_1.21.jar",
+         "filename": "konkrete_neoforge_1.9.9_MC_1.21.jar", "label": "Konkrete (библиотека для меню)"},
+        {"slug": "melody",
+         "url": "https://cdn.modrinth.com/data/CVT4pFB2/versions/efcdRVZP/melody_neoforge_1.0.10_MC_1.21.jar",
+         "filename": "melody_neoforge_1.0.10_MC_1.21.jar", "label": "Melody (библиотека для меню)"},
         # FancyMenu 3.9.8, а не «последняя с Modrinth». Версия 3.9.7 роняла
         # игру при включении ресурс-паков: её миксин на тик клиента падал с
         # NullPointerException внутри перезагрузки ресурсов
@@ -1627,7 +1669,9 @@ CONFIG = {
          "url": "https://cdn.modrinth.com/data/Wq5SjeWM/versions/lvDR4oIj/fancymenu_neoforge_3.9.8_MC_1.21.1.jar",
          "filename": "fancymenu_neoforge_3.9.8_MC_1.21.1.jar",
          "label": "FancyMenu (меню Industrial Horizon)"},
-        {"slug": "simple-custom-early-loading", "label": "Экран загрузки Industrial Horizon"},
+        {"slug": "simple-custom-early-loading",
+         "url": "https://cdn.modrinth.com/data/Bi8o4aLw/versions/G5bmC36h/SimpleCustomEarlyLoading-2.2-neoforge.jar",
+         "filename": "SimpleCustomEarlyLoading-2.2-neoforge.jar", "label": "Экран загрузки Industrial Horizon"},
         # Modern UI — свой движок отрисовки текста: буквы рисуются из TrueType
         # со сглаживанием, а не из битмапа 8x8. Решение владельца от 17.07:
         # текстур-пак со шрифтом выглядел криво (Minecraft прибивает ttf-глифы
@@ -1676,6 +1720,8 @@ CONFIG = {
         # URL собран по стандартной maven-раскладке; если он окажется битым,
         # игрок останется ровно там же, где был без запасного пути.
         {"slug": "simple-voice-chat",
+         "url": "https://cdn.modrinth.com/data/9eGKb6K1/versions/8xOu3Um5/voicechat-neoforge-1.21.1-2.6.20.jar",
+         "filename": "voicechat-neoforge-1.21.1-2.6.20.jar",
          "fallback_url": "https://maven.maxhenkel.de/repository/public/de/maxhenkel/voicechat/voicechat-neoforge-1.21.1/2.6.20/voicechat-neoforge-1.21.1-2.6.20.jar",
          "fallback_filename": "voicechat-neoforge-1.21.1-2.6.20.jar",
          "label": "Simple Voice Chat (голосовой чат)"},
@@ -1692,7 +1738,9 @@ CONFIG = {
         # Поэтому force_disable_minimap в ftbchunks-world.snbt трогать НЕ надо:
         # тот выключил бы миникарту у всех принудительно, а этот — только там,
         # где она дублирует JourneyMap.
-        {"slug": "journeymap-integration", "label": "Клеймы на карте JourneyMap"},
+        {"slug": "journeymap-integration",
+         "url": "https://cdn.modrinth.com/data/M1ZKbfkJ/versions/x1p0RNwd/jmi-neoforge-1.21.1-1.9.jar",
+         "filename": "jmi-neoforge-1.21.1-1.9.jar", "label": "Клеймы на карте JourneyMap"},
         # Тёмный интерфейс ВЕЗДЕ, включая интерфейсы модов.
         #
         # Зачем мод, если есть ресурспак. Ресурспак перекрашивает текстуры, а
@@ -1711,7 +1759,9 @@ CONFIG = {
         #
         # Титульный экран мод по умолчанию НЕ трогает (TitleScreen стоит в его
         # METHOD_SHADER_BLACKLIST) — меню Industrial Horizon останется как был.
-        {"slug": "dark-mode-everywhere", "label": "Тёмный интерфейс во всех модах"},
+        {"slug": "dark-mode-everywhere",
+         "url": "https://cdn.modrinth.com/data/k3lrwGqk/versions/PEHRE9ut/darkmodeeverywhere-neoforge-1.21.1-1.4.0.jar",
+         "filename": "darkmodeeverywhere-neoforge-1.21.1-1.4.0.jar", "label": "Тёмный интерфейс во всех модах"},
         # Прочность инструмента в руке и всей брони — прямо на экране, с
         # ЧИСЛАМИ, а не только полосками. Первый кандидат (armor-durability-hud)
         # не показывал, сколько прочности осталось, — заменён в 1.26.1.
@@ -1720,12 +1770,16 @@ CONFIG = {
         # Modrinth: client_side=required, server_side=unsupported — сервер о
         # нём не знает, каналов нет. Лицензия ARR, поэтому в архив сборки не
         # кладём — качаем с официального Modrinth, как FancyMenu и голос.
-        {"slug": "inventoryhudplus", "label": "Прочность брони и инструмента на экране"},
+        {"slug": "inventoryhudplus",
+         "url": "https://cdn.modrinth.com/data/Kp2uclYl/versions/gOEEnxa6/inventoryhud.neoforged.1.21.1-3.4.28.jar",
+         "filename": "inventoryhud.neoforged.1.21.1-3.4.28.jar", "label": "Прочность брони и инструмента на экране"},
         # Картинки прямо в игровом чате: вставил ссылку — все с модом видят
         # картинку. Серверная часть уже лежит в mods/ сервера (server_side=
         # optional, активируется с его рестартом), клиенты без неё тоже
         # работают. Лицензия MIT.
-        {"slug": "chatimage", "label": "ChatImage (картинки в чате)"},
+        {"slug": "chatimage",
+         "url": "https://cdn.modrinth.com/data/zhVN1dvW/versions/hqAoNNVF/ChatImage-1.4.7%2B1.21.0%2Bneoforge.jar",
+         "filename": "ChatImage-1.4.7+1.21.0+neoforge.jar", "label": "ChatImage (картинки в чате)"},
         # Ad Astra: Луна, Марс, Венера, ракеты. Порт на 1.21.1, которого НЕТ
         # на Modrinth — качается по прямой ссылке из нашего релиза modpack.
         # ОБЕ стороны: на сервере уже стоит (порядок «сначала сервер»
@@ -1806,12 +1860,24 @@ CONFIG = {
         # (форджевые двойники Sodium/Iris/Lithium), The One Probe (есть
         # Jade), FpsReducer2 (есть Dynamic FPS), InventoryEssentials (есть
         # Inventory Sorter), Farsight (на 1.21.1 NeoForge не существует).
-        {"slug": "entityculling", "label": "Entity Culling (FPS: не рисовать невидимое)"},
-        {"slug": "mouse-tweaks", "label": "Mouse Tweaks (перетаскивание предметов мышью)"},
-        {"slug": "neat", "label": "Neat (полоски здоровья над мобами)"},
-        {"slug": "better-third-person", "label": "Better Third Person (свободная камера)"},
-        {"slug": "sodium-options-api", "label": "Sodium Options API (библиотека)"},
-        {"slug": "sodium-dynamic-lights", "label": "Динамический свет (факел светит в руке)"},
+        {"slug": "entityculling",
+         "url": "https://cdn.modrinth.com/data/NNAgCjsB/versions/5zRIon6w/entityculling-neoforge-1.10.5-mc1.21.1.jar",
+         "filename": "entityculling-neoforge-1.10.5-mc1.21.1.jar", "label": "Entity Culling (FPS: не рисовать невидимое)"},
+        {"slug": "mouse-tweaks",
+         "url": "https://cdn.modrinth.com/data/aC3cM3Vq/versions/9I21YYxf/MouseTweaks-neoforge-mc1.21-2.26.1.jar",
+         "filename": "MouseTweaks-neoforge-mc1.21-2.26.1.jar", "label": "Mouse Tweaks (перетаскивание предметов мышью)"},
+        {"slug": "neat",
+         "url": "https://cdn.modrinth.com/data/Ins7SzzR/versions/kALoScYM/Neat-1.21-47-NEOFORGE.jar",
+         "filename": "Neat-1.21-47-NEOFORGE.jar", "label": "Neat (полоски здоровья над мобами)"},
+        {"slug": "better-third-person",
+         "url": "https://cdn.modrinth.com/data/G1s2WpNo/versions/aG5y4JUQ/BetterThirdPerson-neoforge-1.9.0.jar",
+         "filename": "BetterThirdPerson-neoforge-1.9.0.jar", "label": "Better Third Person (свободная камера)"},
+        {"slug": "sodium-options-api",
+         "url": "https://cdn.modrinth.com/data/Es5v4eyq/versions/lrsX3TMS/sodiumoptionsapi-neoforge-1.0.10-1.21.1.jar",
+         "filename": "sodiumoptionsapi-neoforge-1.0.10-1.21.1.jar", "label": "Sodium Options API (библиотека)"},
+        {"slug": "sodium-dynamic-lights",
+         "url": "https://cdn.modrinth.com/data/PxQSWIcD/versions/XI0WLXdn/sodiumdynamiclights-neoforge-1.0.10-1.21.1.jar",
+         "filename": "sodiumdynamiclights-neoforge-1.0.10-1.21.1.jar", "label": "Динамический свет (факел светит в руке)"},
         # Круговое меню быстрого доступа (карта, /home, /spawn и т.д. — на
         # клавишу). Одобрено владельцем 17.07 после теста. Чисто клиентский
         # (server_side=unsupported на Modrinth), сервер не трогаем. Ссылка
