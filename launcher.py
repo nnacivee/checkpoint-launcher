@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.59.5",
+    "LAUNCHER_VERSION": "1.59.6",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.59.6",
+            "date": "19 июля 2026",
+            "changes": [
+                "Настройки сборки (меню, квесты, экран загрузки) больше не "
+                "скачиваются при каждом запуске — теперь ставятся один раз "
+                "и берутся с диска. Запуск стал быстрее, шаг «Скачиваю "
+                "настройки сборки» пропадёт после одного обновления.",
+            ],
+        },
         {
             "version": "1.59.5",
             "date": "19 июля 2026",
@@ -3440,7 +3450,17 @@ def configpack_needs_install() -> bool:
     marker = _read_configpack_marker()
     if marker.get("version") != get_remote_configpack_version():
         return True
-    for rel in marker.get("owns", []):
+    # Целостность проверяем по "verify" — это подмножество owns, которое
+    # архив РЕАЛЬНО приносит. Раньше проверяли по всему owns, а там намеренно
+    # лежат пути «только на удаление» (главы квестов, что теперь раздаёт
+    # сервер; старые ih_russian). Их в архиве нет — и лаунчер каждый запуск
+    # решал, что пак сломан, и качал его заново (жалоба 19.07). Если "verify"
+    # в маркере ещё нет (старый маркер) — падаем на owns: пак переустановится
+    # один раз, запишет новый маркер и дальше молчит.
+    verify = marker.get("verify")
+    if verify is None:
+        verify = marker.get("owns", [])
+    for rel in verify:
         if not (INSTANCE_DIR / rel).exists():
             return True
     return False
@@ -3526,9 +3546,16 @@ def install_configpack(status_cb=None, progress_cb=None) -> None:
                 if progress_cb:
                     progress_cb(int(index * 100 / total))
 
+        # owns — всё, что пак «считает своим» (по нему чистим старое перед
+        # распаковкой). verify — только то, что реально легло на диск сейчас;
+        # по нему проверяем целостность на будущих запусках. Пути «только на
+        # удаление» (отсутствующие в архиве) в verify не попадают, поэтому
+        # пак больше не переустанавливается вхолостую.
+        verify = [rel for rel in owns if (INSTANCE_DIR / rel).exists()]
         CONFIGPACK_MARKER_FILE.write_text(json.dumps({
             "version": get_remote_configpack_version(),
             "owns": owns,
+            "verify": verify,
         }, ensure_ascii=False, indent=2), encoding="utf-8")
 
         if status_cb:
