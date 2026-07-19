@@ -36,7 +36,7 @@ import uuid
 import webbrowser
 import zipfile
 from pathlib import Path
-from tkinter import filedialog, font as tkfont, messagebox, ttk
+from tkinter import filedialog, font as tkfont, messagebox, simpledialog, ttk
 
 try:
     import minecraft_launcher_lib as mll
@@ -356,7 +356,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.59.7",
+    "LAUNCHER_VERSION": "1.60.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +368,18 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.60.0",
+            "date": "20 июля 2026",
+            "changes": [
+                "Авторизация на сервере: ник теперь защищён паролем. При первом "
+                "запуске лаунчер один раз спросит «Пароль сервера» — придумай и "
+                "запиши его. В игре вводить ничего не надо: лаунчер подставляет "
+                "пароль сам, а под твоим ником с чужого компьютера без пароля не "
+                "зайти. Чтобы играть под своим ником на другом ПК — введи там "
+                "тот же пароль в лаунчере.",
+            ],
+        },
         {
             "version": "1.59.7",
             "date": "19 июля 2026",
@@ -1629,6 +1641,19 @@ CONFIG = {
         # тормозила (жалоба владельца). Версии прибиты; при обновлении
         # мода менять url и filename руками. slug остаётся ключом кэша —
         # без нужды не менять, иначе мод перекачается у всех.
+        # Авторизация (Nedologin, 20.07): защита ников на пиратке. Мод читает
+        # пароль из файла .sl_password, который лаунчер пишет из поля «Пароль
+        # сервера» — в игре пароль вводить не надо, вход автоматический. Мод
+        # ОБЯЗАТЕЛЕН и на сервере (иначе handshake не сойдётся), поэтому
+        # required=True. mirror=True — качаем с зеркала (для РФ, где
+        # cdn.modrinth закрыт). Файл один на fabric+neoforge, версии сервера
+        # и клиента совпадают байт-в-байт.
+        {"slug": "nedologin",
+         "mirror": True,
+         "url": "https://cdn.modrinth.com/data/fnP1u8PK/versions/VPxEDVP2/nedologin-3.0.0-rc3-1.21.1-fabric-neoforge.jar",
+         "filename": "nedologin-3.0.0-rc3-1.21.1-fabric-neoforge.jar",
+         "required": True,
+         "label": "Nedologin (авторизация по паролю из лаунчера)"},
         {"slug": "sound-physics-remastered",
          "mirror": True,
          "url": "https://cdn.modrinth.com/data/qyVF9oeo/versions/Dd2tmpsk/sound-physics-remastered-neoforge-1.21.1-1.5.1.jar",
@@ -6161,6 +6186,16 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     progress_cb(100)
     status_cb("Запуск игры...")
 
+    # Пароль авторизации (Nedologin): кладём его в файл, который клиентский
+    # мод читает и сам отправляет серверу — в игре вводить ничего не надо.
+    # Пусто — файл не трогаем (мод сгенерирует случайный пароль сам).
+    try:
+        _pw = (load_settings().get("server_password") or "").strip()
+        if _pw:
+            (INSTANCE_DIR / ".sl_password").write_text(_pw, encoding="utf-8")
+    except Exception:
+        pass
+
     options = {
         "username": username,
         "uuid": offline_uuid(username),
@@ -8665,6 +8700,20 @@ class LauncherApp:
         memory_mb = int(self.memory_var.get())
         low_end_enabled = self.low_end_var.get()
         update_settings(username=username, memory_mb=memory_mb, low_end_mode=low_end_enabled)
+
+        # Пароль сервера (Nedologin): спрашиваем один раз, дальше лаунчер
+        # подставляет его сам — в игре вводить не надо. Можно пропустить
+        # (тогда мод сгенерирует случайный, но ник не перенести на другой ПК).
+        if not (load_settings().get("server_password") or "").strip():
+            pw = simpledialog.askstring(
+                "Пароль сервера",
+                "Придумай пароль для входа под ником «%s».\n\n"
+                "В игре вводить его НЕ нужно — лаунчер подставит сам.\n"
+                "Запиши пароль: он нужен, чтобы зайти под этим ником\n"
+                "с другого компьютера." % username,
+                show="•", parent=self.root)
+            if pw and pw.strip():
+                update_settings(server_password=pw.strip())
 
         self._run_in_background(
             lambda: launch_game(username, memory_mb, low_end_enabled, self.set_status, self.set_progress)
