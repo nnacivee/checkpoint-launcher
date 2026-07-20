@@ -7,7 +7,6 @@ on:
       - "launcher.py"
       - "tg_notify.py"
       - "requirements.txt"
-      - "installer.iss"
       - "icon.ico"
       - "window_icon.png"
       - "background.png"
@@ -61,15 +60,14 @@ jobs:
           echo "Detected version: $version"
           echo "version=$version" >> $env:GITHUB_OUTPUT
 
-      # --onedir, а НЕ --onefile. Один .exe распаковывал себя в Temp при каждом
-      # запуске, и сразу после обновления это падало с "Failed to load Python
-      # DLL python312.dll" (антивирус ещё проверял свежий файл). Папка ничего не
-      # распаковывает — ошибка невозможна в принципе. Пользователь всё равно
-      # качает один файл: установщик ниже.
-      - name: Build app folder
+      # --onefile: ровно один Launcher.exe, тот же формат, что раздаёт сайт и
+      # зеркало и что уже стоит у всех игроков. Обновление подменяет этот один
+      # файл собой (см. _apply_downloaded_update в launcher.py) — никакого
+      # установщика и второй копии рядом со старой.
+      - name: Build Launcher.exe
         shell: pwsh
         run: |
-          $args = @("--onedir", "--noconsole", "--name", "Launcher")
+          $args = @("--onefile", "--noconsole", "--name", "Launcher")
           if (Test-Path "icon.ico") {
             $args += "--icon=icon.ico"
             $args += "--add-data=icon.ico;."
@@ -98,43 +96,58 @@ jobs:
           $args += "launcher.py"
           pyinstaller @args
 
-      - name: Check the app folder really built
+      - name: Check Launcher.exe really built
         shell: pwsh
         run: |
-          if (-not (Test-Path "dist\Launcher\Launcher.exe")) {
-            throw "dist\Launcher\Launcher.exe not found"
+          if (-not (Test-Path "dist\Launcher.exe")) {
+            throw "dist\Launcher.exe not found"
           }
-          # Главный смысл перехода: DLL должна лежать рядом, а не распаковываться.
-          $dll = Get-ChildItem -Path "dist\Launcher" -Recurse -Filter "python3*.dll"
-          if (-not $dll) { throw "python3xx.dll is missing from the app folder" }
-          echo "OK: $($dll[0].FullName)"
-          # Ресурсы должны реально лежать в сборке. Один раз фон не попал в exe,
-          # и это заметил только пользователь — окно было чёрным.
-          foreach ($res in @("background.png", "logo.png", "mods_ru.json", "icon.ico", "window_icon.png")) {
-            if (Test-Path $res) {
-              $found = Get-ChildItem -Path "dist\Launcher" -Recurse -Filter $res
-              if (-not $found) { throw "$res is missing from the built app" }
-              echo "OK: $res -> $($found[0].FullName)"
-            }
+          $size = (Get-Item "dist\Launcher.exe").Length / 1MB
+          echo ("Launcher.exe size: {0:N1} MB" -f $size)
+          # Заголовок PE "MZ" — минимальная гарантия, что это работающий .exe,
+          # а не обрывок. Заодно отсекаем совсем маленькие битые файлы.
+          $bytes = [System.IO.File]::ReadAllBytes("dist\Launcher.exe")
+          if ($bytes.Length -lt 3000000 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
+            throw "dist\Launcher.exe looks corrupted (no MZ header or too small)"
           }
-          $icons = Get-ChildItem -Path "dist\Launcher" -Recurse -Filter "discord_dark.png"
-          if (-not $icons) { throw "icons/ are missing from the built app" }
+          echo "OK: MZ header present"
 
-      - name: Install Inno Setup
-        run: choco install innosetup -y --no-progress
-
-      - name: Build installer
+      # Файл версии для зеркала. Лаунчер игроков читает его при старте
+      # (LAUNCHER_VERSION_MIRROR_URL) и показывает баннер «доступна версия…».
+      # Генерируем из launcher.py, чтобы номер всегда совпадал со сборкой.
+      - name: Prepare mirror upload folder
         shell: pwsh
         run: |
-          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found at $iscc" }
-          & $iscc "/DMyAppVersion=${{ steps.version.outputs.version }}" installer.iss
-          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with $LASTEXITCODE" }
-          if (-not (Test-Path "installer_out\CheckpointSetup.exe")) {
-            throw "installer was not produced"
-          }
-          $size = (Get-Item "installer_out\CheckpointSetup.exe").Length / 1MB
-          echo ("Installer size: {0:N1} MB" -f $size)
+          New-Item -ItemType Directory -Force -Path deploy | Out-Null
+          Copy-Item "dist\Launcher.exe" "deploy\Launcher.exe" -Force
+          "${{ steps.version.outputs.version }}" | Out-File -FilePath "deploy\launcher_version.txt" -Encoding ascii -NoNewline
+          Get-ChildItem deploy
+
+      # Автозагрузка на зеркало по SFTP (панель хостинга). GitHub в РФ
+      # заблокирован, поэтому игроки качают Launcher.exe именно с зеркала —
+      # этот шаг кладёт туда свежий файл сам, без ручной заливки по FTP.
+      #
+      # Секреты (Settings -> Secrets and variables -> Actions):
+      #   MIRROR_SFTP_SERVER   — хост SFTP панели (напр. mgr.hosting-minecraft.pro)
+      #   MIRROR_SFTP_PORT     — порт SFTP (у Pterodactyl обычно 2022)
+      #   MIRROR_SFTP_USER     — логин SFTP (напр. name.381b54ac)
+      #   MIRROR_SFTP_PASSWORD — пароль от панели
+      #   MIRROR_REMOTE_DIR    — папка веб-корня зеркала, куда лежат Launcher.exe
+      #                          и launcher_version.txt (напр. /bluemap/web)
+      #
+      # continue-on-error: даже если зеркало недоступно или секрет с опечаткой —
+      # релиз на GitHub всё равно выходит, а файл можно долить руками.
+      - name: Upload to mirror (SFTP)
+        continue-on-error: true
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
+        with:
+          server: ${{ secrets.MIRROR_SFTP_SERVER }}
+          port: ${{ secrets.MIRROR_SFTP_PORT }}
+          username: ${{ secrets.MIRROR_SFTP_USER }}
+          password: ${{ secrets.MIRROR_SFTP_PASSWORD }}
+          local_path: "./deploy/*"
+          remote_path: ${{ secrets.MIRROR_REMOTE_DIR }}
+          delete_remote_files: false
 
       # Проверяем ДО создания релиза: выходила ли уже эта версия. От этого
       # зависит, писать ли в Telegram. Пересборка той же версии (правка
@@ -162,12 +175,12 @@ jobs:
           echo "Release $tag exists: $exists"
           echo "exists=$exists" >> $env:GITHUB_OUTPUT
 
-      - name: Create GitHub Release with the installer attached
+      - name: Create GitHub Release with Launcher.exe attached
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
-          files: installer_out/CheckpointSetup.exe
+          files: dist/Launcher.exe
           generate_release_notes: false
 
       # Пост в Telegram-канал. Текст берётся из LAUNCHER_CHANGELOG в
