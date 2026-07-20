@@ -369,7 +369,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.60.2",
+    "LAUNCHER_VERSION": "1.60.3",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -381,6 +381,18 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.60.3",
+            "date": "20 июля 2026",
+            "changes": [
+                "Ad Astra и его библиотека теперь считаются обязательными: "
+                "если они не скачались, лаунчер честно скажет об этом, а не "
+                "запустит игру, которую сервер потом не пустит с «Соединение "
+                "потеряно».",
+                "Английский экран «Welcome to Minecraft» при первом запуске "
+                "больше не появляется — сразу попадаешь в меню сборки.",
+            ],
+        },
         {
             "version": "1.60.2",
             "date": "20 июля 2026",
@@ -1929,13 +1941,20 @@ CONFIG = {
         # соблюдён). Лицензия Terrarium License — распространение в сборках
         # разрешено. Зависимости resourcefullib/resourcefulconfig уже в паке,
         # не хватает только common-storage-lib — он строкой ниже.
+        # ОБА обязательные (20.07). Ad Astra стоит на сервере, и без него он
+        # рвёт соединение с «Канал мода отсутствует на стороне клиента» —
+        # ровно тот случай, что уже был с Modern Industrialization. Пока они
+        # числились необязательными, лаунчер молча запускал игру без них, и
+        # человек упирался в непонятное «Соединение потеряно» уже на входе.
         {"slug": "adastra-github",
          "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/adastra-1.21.1-1.16.14-neoforge.jar",
          "mirror": True,
+         "required": True,
          "label": "Ad Astra (космос: Луна, Марс, ракеты)"},
         {"slug": "common-storage-lib-github",
          "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/common-storage-lib-neoforge-1.21.1-0.0.9.jar",
          "mirror": True,
+         "required": True,
          "label": "Common Storage Lib (библиотека Ad Astra)"},
         # Modern Industrialization 2.5.3: старая 2.5.2 сидит в modpack.zip,
         # обновляем поверх без перекачки всего пака — старый jar удаляет
@@ -5082,6 +5101,13 @@ def set_russian_once(status_cb=None) -> None:
             _write_options_value("lang", "ru_ru")
             if status_cb:
                 status_cb("Язык игры — русский.")
+        # Экран «Welcome to Minecraft! Would you like to enable the Narrator?»
+        # вылезает при первом запуске поверх нашего меню и всех только путает
+        # (он на английском и появляется до того, как игрок увидит сборку).
+        # Гасим его тем же разовым проходом — игрок при желании включит
+        # диктора в Настройках → Специальные возможности.
+        if _read_options_value("onboardAccessibility", "") != "false":
+            _write_options_value("onboardAccessibility", "false")
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text("1", encoding="utf-8")
     except Exception:
