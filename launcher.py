@@ -385,7 +385,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.61.2",
+    "LAUNCHER_VERSION": "1.61.3",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -397,6 +397,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.61.3",
+            "date": "20 июля 2026",
+            "changes": [
+                "Если игра вылетает (запустилась и сразу закрылась), лаунчер "
+                "теперь сам это замечает и предлагает собрать логи в один клик, "
+                "а заодно напоминает про режим «Очень старая видеокарта». Больше "
+                "не нужно гадать, почему закрылось.",
+            ],
+        },
         {
             "version": "1.61.2",
             "date": "20 июля 2026",
@@ -8979,6 +8989,7 @@ class LauncherApp:
 
         def worker():
             game_started = False
+            self._last_game_crashed = False
             try:
                 try:
                     process = work_fn()
@@ -9001,6 +9012,11 @@ class LauncherApp:
                     self.game_process = process
                     self.root.after(0, self._on_game_started)
                     process.wait()  # ждём здесь, в фоновом потоке — интерфейс не подвисает
+                    # Обычный выход из Minecraft даёт код 0. Ненулевой код —
+                    # это вылет («запустился и закрылся»). Ловим его, чтобы
+                    # лаунчер сам предложил собрать логи и подсказал про режим
+                    # старой видеокарты, а не оставлял игрока гадать.
+                    self._last_game_crashed = bool(process.returncode)
             except RequiredModsMissing as exc:
                 friendly = (
                     "Эти моды есть на сервере, но не скачались вам:\n\n%s\n\n"
@@ -9079,7 +9095,30 @@ class LauncherApp:
         self.play_button.set_enabled(True)
         self.show_window()
         if game_started:
-            self.set_status("Игра закрыта. Готово к новому запуску.")
+            if getattr(self, "_last_game_crashed", False):
+                self.set_status("Игра закрылась с ошибкой — могу собрать логи.")
+                self._offer_crash_help()
+            else:
+                self.set_status("Игра закрыта. Готово к новому запуску.")
+
+    def _offer_crash_help(self) -> None:
+        """Игра вылетела (ненулевой код выхода). Предлагаем сразу собрать логи
+        и напоминаем про режим старой видеокарты — это два самых частых
+        сценария («не разобрать ошибку» и «рассыпается графика»)."""
+        msg = (
+            "Похоже, игра закрылась из-за ошибки, а не по вашему выходу.\n\n"
+            "• Если перед вылетом мир «рассыпался» или не грузились текстуры — "
+            "включите в Настройках режим «Очень старая видеокарта» и запустите "
+            "снова.\n\n"
+            "• Иначе — соберём логи в один файл на рабочий стол, с ним причина "
+            "находится за минуту.\n\n"
+            "Собрать логи сейчас?"
+        )
+        try:
+            if messagebox.askyesno("Игра вылетела", msg):
+                self.on_send_crash_log()
+        except Exception:  # noqa: BLE001
+            pass
 
     def on_play(self) -> None:
         username = self.nick_var.get().strip()
