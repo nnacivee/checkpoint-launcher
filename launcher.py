@@ -392,7 +392,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.61.5",
+    "LAUNCHER_VERSION": "1.62.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -404,6 +404,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.62.0",
+            "date": "21 июля 2026",
+            "changes": [
+                "Новый облик лаунчера: индустриальная тёмная гамма с тёплым "
+                "янтарным акцентом, чистый минималистичный фон и новый набор "
+                "аккуратных линейных иконок. Всё на месте — голова скина, онлайн, "
+                "версия — просто в новом стиле.",
+            ],
+        },
         {
             "version": "1.61.5",
             "date": "20 июля 2026",
@@ -2660,35 +2670,35 @@ CONFIG = {
 # Цвета интерфейса — тёмная и светлая тема (индустриальный стиль:
 # тёмный фон + золотисто-оранжевый акцент)
 THEMES = {
+    # Индустриальная гамма: тёплый графит + янтарный акцент под «Industrial
+    # Horizon». Акцент светлый (янтарь), поэтому текст на нём — тёмный.
     "dark": {
-        "bg_grad_top": "#0d1014",
-        "bg_grad_bottom": "#151a22",
-        "bg_panel": "#171c24",
-        "bg_field": "#212833",
-        "fg": "#e8edf4",
-        "fg_muted": "#8c99a8",
-        # Акцент взят прямо из иконки сборки (синий), только чуть спокойнее.
-        # Жёлтый/янтарный убран — он выбивался из общей гаммы.
-        "accent": "#2f9fe0",
-        "accent_hover": "#4fb4ef",
-        "accent_dim": "#1d3a4d",
-        "accent_text": "#ffffff",
-        "border": "#2a323d",
-        "status_online": "#5fd48b",
+        "bg_grad_top": "#100e0b",
+        "bg_grad_bottom": "#1a1510",
+        "bg_panel": "#17130f",
+        "bg_field": "#221c15",
+        "fg": "#f3ede3",
+        "fg_muted": "#9d9182",
+        "accent": "#f5a524",
+        "accent_hover": "#ffbb4d",
+        "accent_dim": "#3a2a12",
+        "accent_text": "#1e1403",
+        "border": "#2c261d",
+        "status_online": "#6fcf97",
         "status_offline": "#ff7a6b",
     },
     "light": {
-        "bg_grad_top": "#eff2f6",
-        "bg_grad_bottom": "#dfe4ec",
-        "bg_panel": "#ffffff",
-        "bg_field": "#eef1f6",
-        "fg": "#1b1f26",
-        "fg_muted": "#66748a",
-        "accent": "#0e7fc4",
-        "accent_hover": "#0a6aa6",
-        "accent_dim": "#cfe4f3",
+        "bg_grad_top": "#f3f0ea",
+        "bg_grad_bottom": "#e7e1d6",
+        "bg_panel": "#fbf9f5",
+        "bg_field": "#efe9df",
+        "fg": "#221d16",
+        "fg_muted": "#6e6558",
+        "accent": "#c47f12",
+        "accent_hover": "#a86a0b",
+        "accent_dim": "#f5e6cc",
         "accent_text": "#ffffff",
-        "border": "#d5dce5",
+        "border": "#ddd5c8",
         "status_online": "#2f9e52",
         "status_offline": "#c94a3d",
     },
