@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Industrial Horizon</title>
+<style>
+  :root{--bg:#0a0e14;--side:#070a10;--card:#131a24;--card2:#161d28;--bd:#1f2836;
+        --acc:#22d3ee;--play:#f5ad4c;--play2:#e08e28;--grn:#34d399;--red:#ff7a6b;
+        --tx:#e6edf3;--mut:#8b97a7}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--tx);font-family:'Inter','Segoe UI',system-ui,sans-serif;
+       overflow:hidden;-webkit-user-select:none;user-select:none}
+  .ico{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;
+       stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+  .app{display:flex;flex-direction:column;height:100vh}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;
+          border-bottom:1px solid var(--bd);-webkit-app-region:drag}
+  .logo{display:flex;align-items:center;gap:12px}
+  .logo .mark{width:30px;height:30px;border:2px solid var(--acc);border-radius:8px;display:flex;
+              align-items:center;justify-content:center;font-weight:700;font-size:13px;color:var(--acc)}
+  .logo .name{font-weight:600;letter-spacing:3px;font-size:14px}
+  .srv{display:flex;align-items:center;gap:14px;background:#0f1620;border:1px solid var(--bd);
+       border-radius:10px;padding:7px 14px;font-size:13px;color:#c2cdda}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--grn);box-shadow:0 0 8px #34d39988}
+  .sep{color:#3a4655}
+  .wbtns{display:flex;gap:4px;-webkit-app-region:no-drag}
+  .wbtn{width:34px;height:28px;display:flex;align-items:center;justify-content:center;
+        border-radius:7px;color:var(--mut);cursor:pointer;transition:.15s}
+  .wbtn:hover{background:#141c27;color:var(--tx)}
+  .wbtn.close:hover{background:#7a2626;color:#fff}
+  .body{display:flex;flex:1;min-height:0}
+  .side{width:230px;flex:0 0 230px;background:var(--side);border-right:1px solid var(--bd);
+        padding:18px 14px;display:flex;flex-direction:column;gap:6px}
+  .nav{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:10px;color:var(--mut);
+       cursor:pointer;font-size:14px;position:relative;transition:background .15s,color .15s}
+  .nav:hover{background:#0f1620;color:#cdd7e3}
+  .nav.on{background:#0f1a22;color:var(--acc)}
+  .nav.on::before{content:"";position:absolute;left:-14px;top:8px;bottom:8px;width:3px;
+                  border-radius:2px;background:var(--acc)}
+  .socials{display:flex;gap:16px;padding:16px 8px 6px;color:var(--mut)}
+  .socials .ico{cursor:pointer}.socials .ico:hover{color:var(--acc)}
+  .ver{font-size:11px;color:#5a6675;padding:2px 8px}
+  .main{flex:1;min-width:0;padding:22px;overflow:auto;
+        background:radial-gradient(1200px 500px at 70% -10%, #0e1826 0%, #0a0e14 60%)}
+  .pg{display:none;animation:fade .18s ease}.pg.on{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .hero{position:relative;border-radius:16px;overflow:hidden;border:1px solid var(--bd);
+        min-height:270px;background:linear-gradient(115deg,#0c1a24,#0a1520 45%,#0a1119)}
+  .hero .glow{position:absolute;inset:0;background:radial-gradient(500px 260px at 78% 40%,
+              rgba(34,211,238,.16),transparent 70%)}
+  .hero .rig{position:absolute;right:0;bottom:0;top:0;width:46%;opacity:.5;
+        background:linear-gradient(180deg,transparent,#0a0e14),
+        repeating-linear-gradient(90deg,#12324a 0 3px,transparent 3px 22px)}
+  .hero .in{position:relative;padding:34px 32px}
+  .htitle{font-weight:800;font-size:44px;line-height:.98;letter-spacing:2px}
+  .htitle .c{color:var(--acc)}
+  .slogan{margin-top:14px;color:#9fb0c0;letter-spacing:5px;font-size:14px;font-weight:600}
+  .stats{display:flex;gap:10px;margin-top:34px;flex-wrap:wrap}
+  .stat{background:rgba(10,16,24,.6);border:1px solid var(--bd);border-radius:10px;padding:10px 16px}
+  .stat .l{font-size:11px;color:var(--mut)}.stat .v{font-weight:700;margin-top:3px}
+  .news{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:18px}
+  .news .h{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .news .h .t{font-weight:600;letter-spacing:1px;color:#cdd7e3;font-size:13px}
+  .news .h .a{color:var(--acc);font-size:12px;cursor:pointer}
+  .qatitle{margin:26px 2px 12px;color:var(--mut);letter-spacing:1px;font-size:13px;font-weight:600}
+  .qa{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:18px;cursor:pointer;
+      transition:transform .12s,border-color .15s,background .15s}
+  .qa:hover{background:var(--card2);border-color:#2b3a4d;transform:translateY(-2px)}
+  .qa .ico{width:26px;height:26px;color:var(--acc)}
+  .qa .n{font-weight:600;margin-top:12px}.qa .d{font-size:12px;color:var(--mut);margin-top:4px}
+  .launch{border-top:1px solid var(--bd);padding:16px 22px;display:flex;align-items:center;gap:22px;background:#0b1119}
+  .ava{width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,#c98a5e,#7a5230);
+       border:1px solid var(--bd);background-size:cover}
+  .nickbox{display:flex;align-items:center;gap:6px;background:#0f1620;border:1px solid var(--bd);
+           border-radius:9px;padding:7px 12px;margin-top:3px}
+  .nickbox input{background:none;border:none;color:var(--tx);font-size:15px;width:130px;outline:none}
+  .meta{display:flex;gap:24px;font-size:13px}
+  .meta .l{color:var(--mut);font-size:11px;margin-bottom:2px}
+  .play{display:flex}
+  .play .go{background:linear-gradient(180deg,var(--play),var(--play2));color:#221403;font-weight:700;
+            font-size:16px;padding:16px 34px;border-radius:12px 0 0 12px;cursor:pointer;display:flex;
+            align-items:center;gap:10px;letter-spacing:1px;transition:filter .15s}
+  .play .go:hover{filter:brightness(1.06)}
+  .play .more{background:#c97e1f;width:44px;border-radius:0 12px 12px 0;display:flex;align-items:center;
+              justify-content:center;cursor:pointer;border-left:1px solid #0003}
+  .prog{height:5px;border-radius:3px;background:#26303d;margin-top:8px;overflow:hidden;display:none}
+  .prog .bar{height:100%;width:0;background:var(--acc);transition:width .25s}
+  .prog .bar.ind{width:35%;animation:ind 1.1s ease-in-out infinite}
+  @keyframes ind{0%{margin-left:-35%}100%{margin-left:100%}}
+  .pagehead{font-size:22px;font-weight:700;margin-bottom:4px}
+  .pagesub{color:var(--mut);font-size:14px;margin-bottom:18px}
+  .sect{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:18px;margin-bottom:16px}
+  .sect h3{font-size:15px;font-weight:600;margin-bottom:3px}
+  .sect .s{font-size:12px;color:var(--mut);margin-bottom:14px}
+  .btn{background:var(--card2);border:1px solid var(--bd);color:var(--tx);border-radius:10px;
+       padding:10px 16px;cursor:pointer;font-size:13px;transition:.15s;display:inline-flex;align-items:center;gap:8px}
+  .btn:hover{border-color:#2b3a4d;background:#18212e}
+  .btn.acc{border-color:var(--acc);color:var(--acc)}
+  .btn.warn{border-color:#7a5a2a;color:var(--play)}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid #141c27}
+  .row:last-child{border-bottom:none}
+  .row .n{font-size:13px;font-weight:500}.row .d{font-size:12px;color:var(--mut);margin-top:2px}
+  .toggle{position:relative;width:42px;height:24px;border-radius:12px;background:#26303d;cursor:pointer;transition:.15s;flex:0 0 auto}
+  .toggle.on{background:var(--acc)}
+  .toggle::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s}
+  .toggle.on::after{left:21px}
+  input[type=range]{width:100%;accent-color:var(--acc);height:6px}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .chip{padding:6px 12px;border-radius:20px;border:1px solid var(--bd);background:var(--card2);color:var(--mut);cursor:pointer;font-size:12px}
+  .chip.on{background:var(--acc);color:#052027;border-color:var(--acc);font-weight:600}
+  .search{width:100%;background:#0f1620;border:1px solid var(--bd);border-radius:10px;color:var(--tx);
+          font-size:14px;padding:10px 14px;outline:none;margin-bottom:14px}
+  .search:focus{border-color:var(--acc)}
+  .mods{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+  .mod{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;display:flex;gap:12px}
+  .mod img,.mod .ph{width:44px;height:44px;border-radius:9px;flex:0 0 auto;object-fit:cover;background:#0f1620;
+        display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;color:var(--acc)}
+  .mod .t{font-weight:600;font-size:13px}
+  .mod .tag{display:inline-block;font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid #2b3a4d;color:var(--mut);margin-top:4px}
+  .mod .dd{font-size:12px;color:var(--mut);margin-top:6px;line-height:1.4}
+  .mod a{color:var(--acc);font-size:11px;text-decoration:none}
+  .loader{color:var(--mut);font-size:13px;padding:20px 0;text-align:center}
+  .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:#131a24;border:1px solid var(--bd);
+         color:var(--tx);padding:12px 18px;border-radius:12px;max-width:560px;font-size:13px;line-height:1.4;
+         box-shadow:0 12px 34px #000a;opacity:0;transition:.25s;pointer-events:none;z-index:60;text-align:center}
+  .toast.show{opacity:1;bottom:112px}
+  .toast.err{border-color:#7a3030}.toast.ok{border-color:#2e5a44}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo"><div class="mark">IH</div><div class="name">INDUSTRIAL HORIZON</div></div>
+    <div style="display:flex;align-items:center;gap:14px;-webkit-app-region:no-drag">
+      <div class="srv"><span style="display:flex;align-items:center;gap:7px"><span class="dot" id="dot"></span><span id="srvText">Проверка…</span></span>
+        <span class="sep">|</span><span id="players">— / —</span><span class="sep">|</span><span id="ping">— мс</span></div>
+      <div class="wbtns">
+        <div class="wbtn" onclick="api('minimize')"><svg class="ico" viewBox="0 0 24 24"><path d="M5 12h14"/></svg></div>
+        <div class="wbtn" onclick="api('maximize')"><svg class="ico" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></div>
+        <div class="wbtn close" onclick="api('close')"><svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6l-12 12"/></svg></div>
+      </div>
+    </div>
+  </div>
+  <div id="updBar" style="display:none;align-items:center;justify-content:center;gap:14px;padding:8px 14px;background:#12324a;border-bottom:1px solid var(--bd);font-size:13px;color:#dbe9f5">
+    <span id="updText">Доступно обновление</span>
+    <button class="btn acc" id="updBtn" onclick="applyUpd()">Обновить и перезапустить</button>
+  </div>
+  <div class="body">
+    <div class="side">
+      <div class="nav on" data-p="home"><svg class="ico" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg>Главная</div>
+      <div class="nav" data-p="mods"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>Моды</div>
+      <div class="nav" data-p="look"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3a9 9 0 100 18c1 0 1.5-.8 1.5-1.6 0-1.2-1-1.4-1-2.4 0-.7.6-1.2 1.4-1.2H16a4 4 0 004-4c0-4.4-3.6-6.8-8-6.8z"/><circle cx="8.5" cy="10.5" r="1"/><circle cx="12" cy="8" r="1"/><circle cx="15.5" cy="10.5" r="1"/></svg>Внешний вид</div>
+      <div class="nav" data-p="community"><svg class="ico" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3"/><path d="M3 20c0-3 2.7-5 6-5s6 2 6 5"/><path d="M16 6a3 3 0 010 6"/></svg>Сообщество</div>
+      <div class="nav" data-p="settings"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 00-2.3-1.3L14 2h-4l-.2 2.4a7 7 0 00-2.3 1.3l-2.4-1-2 3.4 2 1.6A7 7 0 005 12c0 .4 0 .9.1 1.3l-2 1.6 2 3.4 2.4-1a7 7 0 002.3 1.3L10 22h4l.2-2.4a7 7 0 002.3-1.3l2.4 1 2-3.4-2-1.6z"/></svg>Настройки</div>
+      <div style="flex:1"></div>
+      <div class="nav" onclick="api('open_folder')"><svg class="ico" viewBox="0 0 24 24"><path d="M4 7h5l2 2h9v10H4z"/></svg>Папка игры</div>
+      <div class="nav" onclick="doRepair()"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V6z"/><path d="M9 12l2 2 4-4"/></svg>Проверить файлы</div>
+      <div class="nav" onclick="api('collect_logs')"><svg class="ico" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M9 12h6M9 16h6M9 8h3"/></svg>Лог для администратора</div>
+      <div class="socials">
+        <svg class="ico" onclick="api('open_telegram')" viewBox="0 0 24 24"><path d="M21 5L2 12l6 2 2 6 3-4 4 3z"/></svg>
+        <svg class="ico" onclick="api('open_discord')" viewBox="0 0 24 24"><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 7c3-1 5-1 8 0M7 17c3 1 7 1 10 0M16 17c0 1 1.5 3 2 3 1.5 0 3-2 3.5-3.5.6-2 .4-6-1.5-11-1.4-1-3-1.3-4.5-1.5M8 17c0 1-1.4 3-1.8 3-1.4 0-2.7-1.7-3.3-3-.6-2-.5-6 1.4-11C5.7 5 7 4.7 8.5 4.5"/></svg>
+        <svg class="ico" onclick="api('open_map')" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>
+      </div>
+      <div class="ver" id="ver">IH Launcher</div>
+    </div>
+    <div class="main">
+      <!-- ГЛАВНАЯ -->
+      <div class="pg on" id="home">
+        <div style="display:grid;grid-template-columns:1.55fr 1fr;gap:18px">
+          <div class="hero"><div class="glow"></div><div class="rig"></div><div class="in">
+            <div class="htitle">INDUSTRIAL<br><span class="c">HORIZON</span></div>
+            <div class="slogan">BUILD. AUTOMATE. EXPLORE.</div>
+            <div class="stats">
+              <div class="stat"><div class="l">Версия сборки</div><div class="v" id="sBuild">—</div></div>
+              <div class="stat"><div class="l">Minecraft</div><div class="v" id="sMc">—</div></div>
+              <div class="stat"><div class="l">NeoForge</div><div class="v" id="sLoader">—</div></div>
+              <div class="stat"><div class="l">Модов</div><div class="v" id="sMods">—</div></div>
+            </div>
+          </div></div>
+          <div class="news"><div class="h"><div class="t">НОВОСТИ</div><div class="a" onclick="api('open_news')">Все новости →</div></div><div id="newsList"></div></div>
+        </div>
+        <div class="qatitle">БЫСТРЫЙ ДОСТУП</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">
+          <div class="qa" data-p="mods"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg><div class="n">Моды</div><div class="d">Настройка и управление модами</div></div>
+          <div class="qa" data-p="look"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3a9 9 0 100 18c1 0 1.5-.8 1.5-1.6 0-1.2-1-1.4-1-2.4 0-.7.6-1.2 1.4-1.2H16a4 4 0 004-4c0-4.4-3.6-6.8-8-6.8z"/><circle cx="8.5" cy="10.5" r="1"/><circle cx="12" cy="8" r="1"/><circle cx="15.5" cy="10.5" r="1"/></svg><div class="n">Внешний вид</div><div class="d">Скины, текстуры, шейдеры</div></div>
+          <div class="qa" data-p="community"><svg class="ico" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3"/><path d="M3 20c0-3 2.7-5 6-5s6 2 6 5"/><path d="M16 6a3 3 0 010 6"/></svg><div class="n">Сообщество</div><div class="d">Discord, Telegram и другое</div></div>
+          <div class="qa" data-p="settings"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 00-2.3-1.3L14 2h-4l-.2 2.4a7 7 0 00-2.3 1.3l-2.4-1-2 3.4 2 1.6A7 7 0 005 12c0 .4 0 .9.1 1.3l-2 1.6 2 3.4 2.4-1a7 7 0 002.3 1.3L10 22h4l.2-2.4a7 7 0 002.3-1.3l2.4 1 2-3.4-2-1.6z"/></svg><div class="n">Настройки</div><div class="d">Параметры лаунчера и игры</div></div>
+        </div>
+      </div>
+
+      <!-- МОДЫ -->
+      <div class="pg" id="mods">
+        <div class="pagehead">Моды сборки</div>
+        <div class="pagesub" id="modsSub">Всё, что реально стоит в папке mods.</div>
+        <input class="search" id="modSearch" placeholder="Поиск по названию или описанию…" oninput="renderMods()">
+        <div class="chips" id="modChips"></div>
+        <div id="modsBox"><div class="loader">Нажмите на раздел «Моды», чтобы загрузить список…</div></div>
+      </div>
+
+      <!-- ВНЕШНИЙ ВИД -->
+      <div class="pg" id="look">
+        <div class="pagehead">Внешний вид</div>
+        <div class="pagesub">Графика, шейдеры, ресурс-паки и скины. Применяйте при закрытой игре.</div>
+        <div class="sect">
+          <h3>Пресеты графики</h3><div class="s">Одна кнопка настраивает дальность, свет и облака в самой игре.</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn" onclick="api('graphics_preset','potato')">🥔 Слабый ПК</button>
+            <button class="btn acc" onclick="api('graphics_preset','balance')">⚖ Баланс</button>
+            <button class="btn" onclick="api('graphics_preset','beauty')">✨ Красота</button>
+          </div>
+        </div>
+        <div class="sect">
+          <h3>Режимы для слабых машин</h3><div class="s">Помогает, если игра тормозит или вылетает на старой видеокарте.</div>
+          <div class="row"><div><div class="n">Слабый ПК — низкая графика</div><div class="d">Минимум эффектов, максимум FPS.</div></div><div class="toggle" id="tgLow" onclick="toggleLow()"></div></div>
+          <div class="row"><div><div class="n">Очень старая видеокарта — убрать Sodium/шейдерные моды</div><div class="d">Лечит артефакты и вылеты на GPU уровня AMD HD 7000.</div></div><div class="toggle" id="tgNoSodium" onclick="toggleNoSodium()"></div></div>
+        </div>
+        <div class="sect">
+          <h3>Шейдеры</h3><div class="s">Включён может быть только один. Пометка — насколько шейдер требователен.</div>
+          <div id="shBox"><div class="loader">Загрузка…</div></div>
+        </div>
+        <div class="sect">
+          <h3>Ресурс-паки (текстуры)</h3><div class="s">Готовые паки ставятся в один клик.</div>
+          <div id="rpBox"><div class="loader">Загрузка…</div></div>
+        </div>
+        <div class="sect">
+          <h3>Скины</h3><div class="s">Файлы скинов и плащей лежат в папке игры.</div>
+          <button class="btn" onclick="api('open_skins_folder')">Открыть папку игры</button>
+        </div>
+      </div>
+
+      <!-- СООБЩЕСТВО -->
+      <div class="pg" id="community">
+        <div class="pagehead">Сообщество</div>
+        <div class="pagesub">Связь с сервером и игроками.</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px">
+          <div class="qa" onclick="api('open_discord')"><svg class="ico" viewBox="0 0 24 24"><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 7c3-1 5-1 8 0M7 17c3 1 7 1 10 0M16 17c0 1 1.5 3 2 3 1.5 0 3-2 3.5-3.5.6-2 .4-6-1.5-11-1.4-1-3-1.3-4.5-1.5M8 17c0 1-1.4 3-1.8 3-1.4 0-2.7-1.7-3.3-3-.6-2-.5-6 1.4-11C5.7 5 7 4.7 8.5 4.5"/></svg><div class="n">Discord</div><div class="d">Чат, помощь, объявления</div></div>
+          <div class="qa" onclick="api('open_telegram')"><svg class="ico" viewBox="0 0 24 24"><path d="M21 5L2 12l6 2 2 6 3-4 4 3z"/></svg><div class="n">Telegram</div><div class="d">Новости сервера</div></div>
+          <div class="qa" onclick="api('open_map')"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg><div class="n">Карта мира</div><div class="d">Онлайн-карта сервера (BlueMap)</div></div>
+          <div class="qa" onclick="api('open_news')"><svg class="ico" viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg><div class="n">Новости</div><div class="d">Все объявления сборки</div></div>
+        </div>
+        <div class="sect" style="margin-top:16px"><h3>Адрес сервера</h3><div class="s">Добавляется в игру автоматически при первом запуске.</div><div class="n" id="srvAddr" style="font-family:monospace">—</div></div>
+      </div>
+
+      <!-- НАСТРОЙКИ -->
+      <div class="pg" id="settings">
+        <div class="pagehead">Настройки</div>
+        <div class="pagesub">Память, папка игры и восстановление сборки.</div>
+        <div class="sect">
+          <h3>Оперативная память для игры</h3><div class="s" id="memHint">—</div>
+          <input type="range" id="memRange" min="2048" max="16384" step="512" oninput="onMem(this.value)" onchange="onMemSave(this.value)">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--mut);margin-top:6px"><span id="memMin">2 ГБ</span><span id="memVal" style="color:var(--acc);font-weight:600">—</span><span id="memMax">16 ГБ</span></div>
+        </div>
+        <div class="sect">
+          <h3>Режимы для слабых машин</h3><div class="s">Те же переключатели, что во «Внешнем виде».</div>
+          <div class="row"><div><div class="n">Слабый ПК — низкая графика</div></div><div class="toggle" id="tgLow2" onclick="toggleLow()"></div></div>
+          <div class="row"><div><div class="n">Очень старая видеокарта — без Sodium</div></div><div class="toggle" id="tgNoSodium2" onclick="toggleNoSodium()"></div></div>
+        </div>
+        <div class="sect">
+          <h3>Папка игры</h3><div class="s" id="installDir" style="font-family:monospace;word-break:break-all">—</div>
+          <button class="btn" onclick="api('open_folder')">Открыть папку</button>
+        </div>
+        <div class="sect">
+          <h3>Восстановление и логи</h3>
+          <div class="s">«Переустановить» заново скачает Minecraft, NeoForge, моды и конфиги. Ваши миры и скриншоты не пострадают.</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn warn" id="repairBtn" onclick="doRepair()">Переустановить файлы</button>
+            <button class="btn" onclick="api('collect_logs')">Собрать логи для админа</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="launch">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="ava" id="ava"></div>
+      <div><div style="font-size:11px;color:var(--mut)">Ваш ник</div>
+        <div class="nickbox"><input id="nick" value="" placeholder="ник" spellcheck="false"><svg class="ico" style="width:16px;color:var(--mut)" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
+    </div>
+    <div class="meta">
+      <div><div class="l">Minecraft</div><span id="mMc">—</span></div>
+      <div><div class="l">NeoForge</div><span id="mLoader">—</span></div>
+      <div><div class="l">Память</div><span id="mMem">—</span></div>
+      <div><div class="l">Статус</div><span id="status" style="color:var(--grn)">—</span></div>
+    </div>
+    <div style="flex:1;min-width:80px"><div class="prog" id="prog"><div class="bar" id="progbar"></div></div></div>
+    <div class="play">
+      <div class="go" id="playBtn" onclick="doPlay()"><svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:#221403"><path d="M7 5v14l12-7z"/></svg><span id="playLabel">ИГРАТЬ</span></div>
+      <div class="more" onclick="api('play_menu')"><svg class="ico" style="width:18px;color:#221403" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+var BOOT={}, MODS=[], MODCAT="Все", loadedMods=false, loadedSh=false, loadedRp=false;
+var PY=function(){return (window.pywebview&&window.pywebview.api)?window.pywebview.api:null;};
+function api(m,a){var x=PY(); if(x&&x[m]){var r=x[m](a); return r&&r.catch?r.catch(function(){}):r;} }
+function $(id){return document.getElementById(id);}
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function toast(t,k){var e=$('toast'); e.textContent=t; e.className='toast show '+(k||''); clearTimeout(e._t); e._t=setTimeout(function(){e.className='toast '+(k||'');},4200);}
+window.toast=toast;
+
+function show(p){
+  document.querySelectorAll('.pg').forEach(function(e){e.classList.toggle('on',e.id===p);});
+  document.querySelectorAll('.side .nav[data-p]').forEach(function(e){e.classList.toggle('on',e.dataset.p===p);});
+  document.querySelector('.main').scrollTop=0;
+  if(p==='mods'&&!loadedMods) loadMods();
+  if(p==='look'){ if(!loadedSh) loadShaders(); if(!loadedRp) loadResources(); }
+}
+document.querySelectorAll('[data-p]').forEach(function(e){e.addEventListener('click',function(){show(e.dataset.p);});});
+$('nick').addEventListener('change',function(){api('save_nick',$('nick').value.trim());});
+
+function fill(d){
+  if(!d) return; BOOT=d;
+  $('ver').textContent='IH Launcher '+(d.launcher_version||'');
+  $('sBuild').textContent=d.modpack_version||'—'; $('sMc').textContent=d.mc||'—';
+  $('sLoader').textContent=d.loader||'—'; $('sMods').textContent=(d.mods_count!=null?d.mods_count:'—');
+  $('mMc').textContent=d.mc||'—'; $('mLoader').textContent=d.loader||'—';
+  $('mMem').textContent=(d.memory_mb?gb(d.memory_mb):'—');
+  if(d.nick) $('nick').value=d.nick;
+  if(d.install_dir) $('installDir').textContent=d.install_dir;
+  $('srvAddr').textContent=d.server_ip||'—';
+  // память
+  var r=$('memRange'); r.min=d.ram_min||2048; r.max=d.ram_max||16384; r.value=d.memory_mb||4096;
+  $('memMin').textContent=gb(d.ram_min||2048); $('memMax').textContent=gb(d.ram_max||16384);
+  onMem(r.value);
+  if(d.ram_rec) $('memHint').textContent='Рекомендуем для вашего ПК: '+gb(d.ram_rec)+(d.sys_ram?(' · всего в системе '+gb(d.sys_ram)):'');
+  setToggle('Low',!!d.low_end); setToggle('NoSodium',!!d.no_sodium);
+  var nl=$('newsList'), news=d.news||[];
+  if(!news.length){nl.innerHTML='<div class="d" style="color:var(--mut);font-size:12px">Новостей пока нет</div>';}
+  else nl.innerHTML=news.map(function(n){return '<div style="display:flex;gap:10px;padding:11px 0;border-bottom:1px solid #141c27"><span style="width:7px;height:7px;border-radius:50%;background:var(--acc);margin-top:6px;flex:0 0 auto"></span><div style="flex:1"><div style="display:flex;justify-content:space-between;gap:8px"><span style="font-weight:600;font-size:13px">'+esc(n.title||'')+'</span><span style="color:var(--mut);font-size:11px;white-space:nowrap">'+esc(n.date||'')+'</span></div><div style="color:var(--mut);font-size:12px;margin-top:3px;line-height:1.4">'+esc(n.text||'')+'</div></div></div>';}).join('');
+  setStatus(d.status||'Готово к запуску','ok');
+}
+function gb(mb){return (Math.round(mb/1024*10)/10)+' ГБ';}
+function onMem(v){ $('memVal').textContent=gb(v); }
+function onMemSave(v){ $('mMem').textContent=gb(v); api('set_memory', parseInt(v,10)); toast('Память для игры: '+gb(v),'ok'); }
+function setStatus(t,k){var e=$('status'); e.textContent=t; e.style.color=(k==='err')?'var(--red)':'var(--grn)';}
+function setServer(s){s=s||{};
+  var on=s.online; $('dot').style.background=on?'var(--grn)':'var(--red)';
+  $('dot').style.boxShadow=on?'0 0 8px #34d39988':'none';
+  $('srvText').textContent=on?'Сервер работает':'Сервер офлайн';
+  $('players').textContent=(s.players!=null?s.players:'—')+' / '+(s.max!=null?s.max:'—')+' игроков';
+  $('ping').textContent=(s.ping!=null?s.ping+' мс':'— мс');
+}
+window.pushServer=setServer; window.pushBoot=fill;
+
+/* ---- запуск ---- */
+var busy=false;
+function doPlay(){ if(busy)return; busy=true; $('playLabel').textContent='ЗАПУСК…'; api('play',$('nick').value.trim()); }
+window.onProgress=function(pct,text){
+  var p=$('prog'), b=$('progbar');
+  if(pct===0 && !text){ p.style.display='none'; b.className='bar'; b.style.width='0'; return; }
+  p.style.display='block';
+  if(pct<0){ b.className='bar ind'; b.style.width='35%'; } else { b.className='bar'; b.style.width=(pct||0)+'%'; }
+  if(text) setStatus(text,'ok');
+};
+window.onLaunchState=function(state,text){
+  busy=(state!=='idle'&&state!=='error');
+  $('playLabel').textContent=(busy?'…':'ИГРАТЬ');
+  if(text) setStatus(text, state==='error'?'err':'ok');
+  if(state==='idle'||state==='error'){ $('prog').style.display='none'; $('progbar').style.width='0'; }
+};
+
+/* ---- моды ---- */
+function loadMods(){ var a=PY(); if(!a){modsDemo();return;} loadedMods=true;
+  $('modsBox').innerHTML='<div class="loader">Читаю папку модов и уточняю названия… это может занять несколько секунд.</div>';
+  a.get_mods().then(function(r){ MODS=(r&&r.mods)||[]; buildChips((r&&r.categories)||[]); $('modsSub').textContent='Всего модов: '+MODS.length; renderMods(); })
+   .catch(function(e){ $('modsBox').innerHTML='<div class="loader">Не удалось прочитать моды.</div>'; });
+}
+function buildChips(cats){ var c=['Все'].concat(cats); $('modChips').innerHTML=c.map(function(x){return '<div class="chip'+(x===MODCAT?' on':'')+'" onclick="setCat(\''+x.replace(/'/g,"")+'\')">'+esc(x)+'</div>';}).join(''); }
+function setCat(c){ MODCAT=c; document.querySelectorAll('#modChips .chip').forEach(function(e){e.classList.toggle('on',e.textContent===c);}); renderMods(); }
+function renderMods(){
+  var q=($('modSearch').value||'').trim().toLowerCase();
+  var list=MODS.filter(function(m){
+    if(MODCAT!=='Все'&&m.category!==MODCAT) return false;
+    if(q&&(m.title+' '+m.description+' '+m.file).toLowerCase().indexOf(q)<0) return false;
+    return true;
+  });
+  if(!list.length){ $('modsBox').innerHTML='<div class="loader">Ничего не найдено.</div>'; return; }
+  $('modsBox').innerHTML='<div class="mods">'+list.map(function(m){
+    var img=m.icon?('<img src="'+esc(m.icon)+'" loading="lazy" onerror="this.style.display=\'none\'">'):('<div class="ph">'+esc((m.title||'?')[0].toUpperCase())+'</div>');
+    return '<div class="mod">'+img+'<div style="min-width:0"><div class="t">'+esc(m.title)+(m.version?' <span style="color:var(--mut);font-weight:400;font-size:11px">v'+esc(m.version)+'</span>':'')+'</div>'+
+      (m.category?'<span class="tag">'+esc(m.category)+'</span>':'')+
+      (m.description?'<div class="dd">'+esc(m.description)+'</div>':'')+
+      (m.url?'<div style="margin-top:6px"><a href="#" onclick="openUrl(\''+esc(m.url)+'\');return false">подробнее ↗</a></div>':'')+
+      '</div></div>';
+  }).join('')+'</div>';
+}
+function openUrl(u){ var a=PY(); if(a&&a.open_url){ a.open_url(u); } else if(window.open){ window.open(u,'_blank'); } }
+
+/* ---- переключатели ---- */
+function setToggle(key,on){ ['tg'+key,'tg'+key+'2'].forEach(function(id){var e=$(id); if(e) e.classList.toggle('on',on);}); }
+function toggleLow(){ var on=!$('tgLow').classList.contains('on'); setToggle('Low',on); api('set_low_end',on); toast(on?'Режим слабого ПК включён':'Режим слабого ПК выключен','ok'); }
+function toggleNoSodium(){ var on=!$('tgNoSodium').classList.contains('on'); setToggle('NoSodium',on); api('set_no_sodium',on); toast(on?'Sodium-моды будут убираться при запуске':'Sodium-моды остаются','ok'); }
+
+/* ---- шейдеры / ресурс-паки ---- */
+window.refreshShaders=function(){loadedSh=false; loadShaders();};
+window.refreshResources=function(){loadedRp=false; loadResources();};
+function loadShaders(){ var a=PY(); if(!a){$('shBox').innerHTML='<div class="loader">—</div>';return;} loadedSh=true;
+  a.get_shaders().then(function(r){ $('shBox').innerHTML=packHtml(r,'shader'); });
+}
+function loadResources(){ var a=PY(); if(!a){$('rpBox').innerHTML='<div class="loader">—</div>';return;} loadedRp=true;
+  a.get_resource_packs().then(function(r){ $('rpBox').innerHTML=packHtml(r,'res'); });
+}
+function packHtml(r,kind){
+  r=r||{}; var inst=r.installed||[], rec=r.recommended||[], h='';
+  if(inst.length){ h+='<div style="font-size:12px;color:var(--mut);margin-bottom:6px">Установлено</div>';
+    h+=inst.map(function(p){return '<div class="row"><div class="n">'+esc(p.name)+'</div><div class="toggle'+(p.enabled?' on':'')+'" onclick="tgPack(\''+kind+'\',this,\''+esc(p.name).replace(/'/g,"")+'\')"></div></div>';}).join('');
+  }
+  h+='<div style="font-size:12px;color:var(--mut);margin:12px 0 6px">Рекомендуем поставить</div>';
+  h+=rec.map(function(c){ var w=c.weight?(' · '+c.weight):'';
+    return '<div class="row"><div style="min-width:0"><div class="n">'+esc(c.name)+'<span style="color:var(--mut);font-weight:400">'+esc(w)+'</span></div><div class="d">'+esc(c.description||'')+'</div></div><button class="btn acc" onclick="instPack(\''+kind+'\',\''+esc(c.slug)+'\',this)">Поставить</button></div>';
+  }).join('');
+  return h;
+}
+function tgPack(kind,el,name){ var on=!el.classList.contains('on'); el.classList.toggle('on',on);
+  var a=PY(); if(a){ (kind==='shader'?a.toggle_shader:a.toggle_resource).call(a,name,on); }
+  toast(on?'Включено':'Выключено','ok');
+}
+function instPack(kind,slug,btn){ btn.textContent='Ставлю…'; btn.disabled=true;
+  api(kind==='shader'?'install_shader':'install_resource', slug);
+}
+
+/* ---- восстановление ---- */
+var repairArm=false;
+function doRepair(){
+  if(!repairArm){ repairArm=true; var b=$('repairBtn'); if(b){b.textContent='Точно переустановить? Нажмите ещё раз'; b.classList.add('warn');}
+    toast('Нажмите «Переустановить» ещё раз для подтверждения. Миры не пострадают.','ok');
+    setTimeout(function(){repairArm=false; var b=$('repairBtn'); if(b)b.textContent='Переустановить файлы';},5000); return; }
+  repairArm=false; var b=$('repairBtn'); if(b)b.textContent='Переустановка…';
+  api('repair'); toast('Переустанавливаю сборку — следите за прогрессом внизу.','ok');
+  setTimeout(function(){var b=$('repairBtn'); if(b)b.textContent='Переустановить файлы';},1500);
+}
+
+/* ---- автообновление ---- */
+window.updBanner=function(state,pct){ var b=$('updBar'),t=$('updText'),btn=$('updBtn'); b.style.display='flex';
+  if(state==='dl'){ t.textContent='Скачивание обновления… '+pct+'%'; btn.style.display='none'; }
+  else if(state==='done'){ t.textContent='Обновление устанавливается, перезапуск…'; btn.style.display='none'; }
+  else if(state==='err'){ t.textContent='Не удалось скачать обновление'; btn.style.display=''; btn.textContent='Повторить'; }
+};
+function applyUpd(){ var btn=$('updBtn'); btn.textContent='Обновляю…'; api('apply_update'); }
+function checkUpd(){ var a=PY(); if(!a||!a.check_update) return; a.check_update().then(function(info){
+  if(info&&info.version){ $('updBar').style.display='flex'; $('updText').textContent='Доступно обновление '+info.version; } }).catch(function(){}); }
+
+/* ---- старт: надёжное подключение к pywebview ---- */
+function boot(){ var a=PY(); if(a){ a.get_boot().then(fill).catch(function(){}); a.get_server().then(setServer).catch(function(){}); checkUpd(); return true; } return false; }
+function refreshServer(){ var a=PY(); if(a) a.get_server().then(setServer).catch(function(){}); }
+function demo(){ fill({launcher_version:'demo',modpack_version:'—',mc:'1.21.1',loader:'NeoForge',mods_count:0,nick:'',memory_mb:6144,ram_min:2048,ram_max:16384,ram_rec:6144,sys_ram:16384,install_dir:'(демо-режим в браузере)',news:[{title:'Демо-режим',text:'Открыто вне лаунчера — данные не подключены.',date:''}]}); setServer({online:false}); }
+window.addEventListener('pywebviewready', boot);
+(function(){ var n=0; var t=setInterval(function(){ n++; if(boot()){ clearInterval(t); setInterval(refreshServer,30000); } else if(n>=50){ clearInterval(t); demo(); } },100); })();
+</script>
+</body>
+</html>

@@ -392,7 +392,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.62.0",
+    "LAUNCHER_VERSION": "1.63.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -2783,33 +2783,40 @@ def render_main_background(width: int, height: int, colors: dict):
         return None
     base = _cover_fit(art, width, height).convert("RGBA")
 
-    # Логотип отдельной картинкой, а не впечатанный в арт: так его можно
-    # двигать и менять размер, не перерисовывая фон.
-    try:
-        logo = Image.open(resource_path("logo.png")).convert("RGBA")
-        # Плиток на арте больше нет (редизайн 1.59.0) — логотип центрируется
-        # по всей свободной зоне над нижней панелью.
-        free_bottom = height - BAR_H - 24
-        k = LOGO_SIZE / max(logo.width, logo.height)
-        logo = logo.resize((max(1, round(logo.width * k)), max(1, round(logo.height * k))),
-                           Image.LANCZOS)
-        base.alpha_composite(logo, ((width - logo.width) // 2,
-                                    max(10, (free_bottom - logo.height) // 2)))
-    except Exception:  # noqa: BLE001
-        pass   # логотипа нет — не беда, окно всё равно рабочее
+    # Логотип-картинку убрали (редизайн 1.62): на новом космо-фоне он смотрелся
+    # инородно. Заголовок теперь — чистый текст, рисуется прямо на холсте в
+    # build_ui (crisp-шрифт Lato), см. self._draw_title().
 
-    # Без размытия: арт под полосой и так тёмный (там земля и скала), а
-    # размытие только мылило картинку, ничего не добавляя. Осталось
-    # затемнение с мягким верхним краем.
-    top = height - BAR_H - BAR_FEATHER
-    strip = base.crop((0, top, width, height))
-    tint = Image.new("RGBA", (width, BAR_H + BAR_FEATHER), (10, 14, 20, 255))
-    ramp = Image.new("L", (1, BAR_H + BAR_FEATHER))
-    for i in range(BAR_H + BAR_FEATHER):
-        t = min(1.0, i / BAR_FEATHER)
-        ramp.putpixel((0, i), int(216 * t * t))   # квадратично: край мягкий, дальше плотно
-    tint.putalpha(ramp.resize((width, BAR_H + BAR_FEATHER)))
-    base.paste(Image.alpha_composite(strip.convert("RGBA"), tint), (0, top))
+    # Нижняя панель — матовое стекло (liquid glass): под ней арт РАЗМЫТ
+    # (frosted), сверху тёмно-тёплая полупрозрачная заливка (чтобы текст
+    # читался), тонкая светлая грань по контуру и яркий блик по верхней кромке,
+    # плюс мягкая тень под панелью для глубины. Настоящего системного размытия
+    # в tkinter нет (для него окно надо делать прозрачным), поэтому «стекло»
+    # запекаем прямо в фон одной картинкой.
+    mgn = 16
+    p_l, p_r = mgn, width - mgn
+    p_top = height - BAR_H - 6
+    p_bot = height - 12
+    pw, ph = p_r - p_l, p_bot - p_top
+    rad = 26
+    # тень под панелью
+    shadow = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rounded_rectangle(
+        [p_l, p_top + 10, p_r, p_bot + 10], radius=rad, fill=(0, 0, 0, 130))
+    base = Image.alpha_composite(base, shadow.filter(ImageFilter.GaussianBlur(20)))
+    # frosted: размытая копия арта строго в форме панели
+    region = base.crop((p_l, p_top, p_r, p_bot)).filter(ImageFilter.GaussianBlur(16))
+    mask = Image.new("L", (pw, ph), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, pw - 1, ph - 1], radius=rad, fill=255)
+    base.paste(region, (p_l, p_top), mask)
+    # стеклянная заливка + светлая грань + блик по верхней кромке
+    glass = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glass)
+    gd.rounded_rectangle([p_l, p_top, p_r, p_bot], radius=rad,
+                         fill=(18, 15, 11, 150), outline=(255, 238, 214, 42), width=1)
+    gd.line([p_l + rad, p_top + 1, p_r - rad, p_top + 1],
+            fill=(255, 244, 224, 72), width=1)
+    base = Image.alpha_composite(base, glass)
     return base.convert("RGB")
 
 
@@ -6921,6 +6928,15 @@ class LauncherApp:
             # Без Pillow или без файла арта — просто тёмный фон, окно рабочее.
             cv.create_rectangle(0, 0, width, height, fill=BG_FALLBACK, outline="")
 
+        # Заголовок — чистый текст по центру свободной зоны над панелью
+        # (логотип-картинка на космо-фоне смотрелась инородно).
+        ty = int((height - BAR_H) * 0.36)
+        cv.create_text(width // 2, ty, text=(CONFIG.get("WINDOW_TITLE") or CONFIG["PACK_NAME"]).upper(),
+                       font=(UI_FONT, 32, "bold"), fill=colors["fg"], anchor="center")
+        cv.create_text(width // 2, ty + 30,
+                       text="техно-сервер · Create · космос · Minecraft %s" % CONFIG.get("MC_VERSION", ""),
+                       font=(UI_FONT, 11), fill=colors["fg_muted"], anchor="center")
+
         self._build_bottom_bar(cv, width, height, colors)
         self._draw_status_chip()
 
@@ -7194,7 +7210,7 @@ class LauncherApp:
         # и не надо заходить в игру, чтобы это проверить.
         HEAD = 38
         self._head_plate = render_rounded(HEAD + 6, HEAD + 6, 9,
-                                          (26, 33, 44, 240), (255, 255, 255, 50))
+                                          (42, 34, 25, 225), (255, 236, 210, 55))
         if self._head_plate is not None:
             self._img_refs["head_plate"] = ImageTk.PhotoImage(self._head_plate)
             cv.create_image(left, top + 25, image=self._img_refs["head_plate"], anchor="nw")
@@ -7207,13 +7223,13 @@ class LauncherApp:
 
         # Поле ужато с 256 до 200: ники длиннее не бывают, а освободившееся
         # место в панели заняли кнопки разделов.
-        field = render_rounded(200, 38, 9, (26, 33, 44, 240), (255, 255, 255, 50))
+        field = render_rounded(200, 38, 9, (42, 34, 25, 225), (255, 236, 210, 55))
         if field is not None:
             self._img_refs["field"] = ImageTk.PhotoImage(field)
             cv.create_image(nx, top + 25, image=self._img_refs["field"], anchor="nw")
         nick_entry = tk.Entry(
             cv, textvariable=self.nick_var, font=(UI_FONT, 13),
-            bg="#1a2230", fg=colors["fg"], insertbackground=colors["fg"],
+            bg="#2a2419", fg=colors["fg"], insertbackground=colors["fg"],
             relief="flat", highlightthickness=0, bd=0,
         )
         cv.create_window(nx + 12, top + 44, window=nick_entry, anchor="w", width=176, height=24)
@@ -7290,7 +7306,7 @@ class LauncherApp:
         # запущена! Лаунчер откроется снова…») переносится на две строки и
         # раньше налезал на полосу — снизу места нет, окно кончается.
         self.progress_track = cv.create_rectangle(px, top + 76, px + pw, top + 82,
-                                                  fill="#2b3543", outline="")
+                                                  fill="#3a3226", outline="")
         self.progress_item = cv.create_rectangle(px, top + 76, px, top + 82,
                                                  fill=colors["accent"], outline="")
         self._progress_geom = (px, top + 76, pw, top + 82)
