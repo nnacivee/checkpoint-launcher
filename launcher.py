@@ -392,7 +392,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.61.4",
+    "LAUNCHER_VERSION": "1.61.5",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -404,6 +404,14 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.61.5",
+            "date": "20 июля 2026",
+            "changes": [
+                "В новостях сервера теперь может быть кликабельная ссылка "
+                "(например, на ивент в Discord).",
+            ],
+        },
         {
             "version": "1.61.4",
             "date": "20 июля 2026",
@@ -9594,6 +9602,16 @@ class LauncherApp:
                         bg=colors["bg_panel"], fg=colors["fg"], wraplength=400,
                         justify="left",
                     ).pack(anchor="w", pady=(4, 0))
+                # Необязательная кликабельная ссылка в новости (например, на
+                # ивент в Discord). Добавь "link":"https://..." в запись news.json.
+                if entry.get("link"):
+                    link_lbl = tk.Label(
+                        block, text="Подробнее →", font=(UI_FONT, 9, "underline"),
+                        bg=colors["bg_panel"], fg=colors["accent"], cursor="hand2")
+                    link_lbl.pack(anchor="w", pady=(4, 0))
+                    link_lbl.bind(
+                        "<Button-1>",
+                        lambda _e, u=str(entry["link"]): webbrowser.open(u))
                 tk.Frame(scroll_frame, bg=colors["border"], height=1).pack(
                     fill="x", padx=12, pady=(10, 0))
 
