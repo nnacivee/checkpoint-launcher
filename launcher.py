@@ -384,7 +384,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.61.0",
+    "LAUNCHER_VERSION": "1.61.1",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -396,6 +396,20 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.61.1",
+            "date": "20 июля 2026",
+            "changes": [
+                "Обновление лаунчера теперь всегда ставится само и больше не "
+                "открывает GitHub (в РФ он заблокирован — раньше кнопка вела на "
+                "недоступную страницу). Если скачать не удалось — просто нажми "
+                "ещё раз, лаунчер повторит.",
+                "Режим «Очень старая видеокарта» теперь убирает ещё и "
+                "ImmediatelyFast — из-за него игра на GPU уровня Radeon HD 7000 "
+                "запускалась и тут же закрывалась. Теперь на таком железе сборка "
+                "стартует на обычном рендере.",
+            ],
+        },
         {
             "version": "1.61.0",
             "date": "20 июля 2026",
@@ -6434,9 +6448,17 @@ def deploy_test_mods(status_cb, progress_cb) -> bool:
 # нет, и мир превращается в кашу из растянутой геометрии, текстуры не грузятся.
 # Режим «без Sodium» убирает Sodium, Iris и их аддоны — игра возвращается к
 # обычному рендеру Minecraft (медленнее, но рисует правильно). Зависимые моды
-# (Iris, reeses-sodium-options) удаляются вместе с ядром, иначе игра упадёт с
+# (Iris, reeses-sodium-options) удаляются вместе с ядром, иначе игра упала бы с
 # «missing dependency: sodium».
-_RENDER_MOD_PATTERNS = ("sodium", "iris", "reeses")
+#
+# ImmediatelyFast тоже сюда: это оптимизатор батчинга отрисовки, он использует
+# современные пути OpenGL (persistent-mapped буферы и т.п.), которых у GPU
+# 2012 года нет, и на них он крашит игру на старте ("запустилась и закрылась").
+# На старом железе смысл от него всё равно отрицательный. Проверено по сборке:
+# ни один мод не требует sodium/iris жёстко (у Create зависимость optional, у
+# create_submarine — incompatible), поэтому удаление безопасно.
+_RENDER_MOD_PATTERNS = ("sodium", "iris", "reeses", "immediatelyfast",
+                        "embeddium", "rubidium", "oculus")
 
 
 def strip_render_mods(status_cb=None) -> None:
@@ -9613,11 +9635,21 @@ class LauncherApp:
     def on_open_update(self) -> None:
         info = self.update_info or {}
         exe_url = info.get("exe_url")
-        # Если запущены как обычный .py (разработка) или у релиза нет .exe —
-        # ведём себя как раньше: открываем страницу релиза в браузере.
-        if not exe_url or not getattr(sys, "frozen", False):
+        # Собранный лаунчер ВСЕГДА обновляется сам, скачивая свежий Launcher.exe
+        # с зеркала. На GitHub не уходим НИКОГДА: у игроков в РФ он заблокирован,
+        # и раньше именно из-за перехода «на страницу релиза» обновление казалось
+        # неработающим — человек попадал на недоступный сайт вместо апдейта.
+        if not getattr(sys, "frozen", False):
+            # Только в режиме разработки (.py) самообновление невозможно —
+            # там просто открываем страницу, если она вдруг задана.
             if info.get("url"):
                 webbrowser.open(info["url"])
+            return
+        if not exe_url:
+            # Подстраховка: даже если проверка версии не отдала ссылку — берём
+            # прямой адрес Launcher.exe на зеркале.
+            exe_url = CONFIG.get("LAUNCHER_EXE_MIRROR_URL")
+        if not exe_url:
             return
         if getattr(self, "_updating", False):
             return  # уже качаем — второй клик игнорируем
@@ -9663,11 +9695,11 @@ class LauncherApp:
                 self.root.after(0, self._apply_downloaded_update, cur_exe, new_exe)
             except Exception:
                 self._updating = False
-                # при ошибке откатываемся к «открыть сайт»
-                if isinstance(self.update_info, dict):
-                    self.update_info["exe_url"] = None
+                # НЕ уводим на GitHub и НЕ гасим exe_url: при следующем клике
+                # просто повторим скачивание с зеркала. Раньше здесь ссылка
+                # обнулялась и клик открывал заблокированный в РФ GitHub.
                 self.root.after(0, lambda: self.update_banner_var.set(
-                    "⚠  Не удалось скачать — нажмите, чтобы открыть страницу"))
+                    "⚠  Не удалось скачать обновление — нажмите, чтобы повторить"))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -9718,10 +9750,9 @@ class LauncherApp:
             self.root.after(400, self.root.destroy)
         except Exception:
             self._updating = False
+            # Не уводим на GitHub — при повторном клике попробуем ещё раз.
             self.update_banner_var.set(
-                "⚠  Не удалось применить обновление — нажмите, чтобы открыть страницу")
-            if isinstance(self.update_info, dict):
-                self.update_info["exe_url"] = None
+                "⚠  Не удалось применить обновление — нажмите, чтобы повторить")
 
 
 # ================= Единственный экземпляр приложения =================
