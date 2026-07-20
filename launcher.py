@@ -248,6 +248,15 @@ CONFIG = {
     # ссылкой на скачивание), собственный сервер и т.д.
     "MODPACK_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/modpack.zip",
 
+    # Запасной источник сборки — наш игровой сервер (20.07). У части игроков
+    # провайдер режет GitHub Releases: Minecraft и NeoForge качаются нормально,
+    # а 400-мегабайтный modpack.zip рвётся на середине — «Обрыв связи при
+    # скачивании». Игровой сервер открыт у любого, кто вообще может играть
+    # (по нему уже идут мелкие моды и веб-карта), поэтому он пробуется ПЕРВЫМ,
+    # а GitHub остаётся запасным. Файл кладётся в bluemap/web/ рядом с картой.
+    # Пусто "" — механизм выключен, качаем только с GitHub.
+    "MODPACK_MIRROR_URL": "http://95.216.30.64:25980/modpack.zip",
+
     # Версия сборки модов "по умолчанию" — используется, только если ниже
     # НЕ указана MODPACK_VERSION_URL. Если её увеличить, тоже нужно заново
     # собирать .exe (см. MODPACK_VERSION_URL — так делать не обязательно).
@@ -314,6 +323,10 @@ CONFIG = {
     # Внутри архива должен лежать configpack.json — см. install_configpack().
     "CONFIGPACK_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/configpack/configpack.zip",
 
+    # Зеркало пака настроек на игровом сервере — по той же причине, что и у
+    # модпака выше (GitHub у части провайдеров недоступен). Пробуется первым.
+    "CONFIGPACK_MIRROR_URL": "http://95.216.30.64:25980/configpack.zip",
+
     # Версия пака настроек «по умолчанию» — используется, только если ниже
     # не указана CONFIGPACK_VERSION_URL или её не удалось скачать.
     "CONFIGPACK_VERSION": 1,
@@ -356,7 +369,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.60.1",
+    "LAUNCHER_VERSION": "1.60.2",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -368,6 +381,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.60.2",
+            "date": "20 июля 2026",
+            "changes": [
+                "Починена установка у тех, у кого провайдер режет GitHub: "
+                "Minecraft и NeoForge качались, а сборка модов обрывалась на "
+                "середине. Теперь сборка, настройки и часть модов сначала "
+                "берутся с игрового сервера — он открыт у всех, кто может "
+                "играть, — и только потом с GitHub.",
+            ],
+        },
         {
             "version": "1.60.1",
             "date": "20 июля 2026",
@@ -1813,11 +1837,13 @@ CONFIG = {
         # означает новый .part, огрызки остаются лежать безобидным мусором.
         {"slug": "rhino-2101-2-7-85",
          "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/rhino-2101.2.7-build.85.jar",
+         "mirror": True,
          "filename": "rhino-2101.2.7-85.jar",
          "required": True,
          "label": "Rhino (движок скриптов)"},
         {"slug": "kubejs-2101-7-2-368",
          "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/kubejs-neoforge-2101.7.2-build.368.jar",
+         "mirror": True,
          "filename": "kubejs-2101.7.2-368.jar",
          "required": True,
          "label": "KubeJS (эпохи и рецепты)"},
@@ -1905,9 +1931,11 @@ CONFIG = {
         # не хватает только common-storage-lib — он строкой ниже.
         {"slug": "adastra-github",
          "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/adastra-1.21.1-1.16.14-neoforge.jar",
+         "mirror": True,
          "label": "Ad Astra (космос: Луна, Марс, ракеты)"},
         {"slug": "common-storage-lib-github",
          "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/common-storage-lib-neoforge-1.21.1-0.0.9.jar",
+         "mirror": True,
          "label": "Common Storage Lib (библиотека Ad Astra)"},
         # Modern Industrialization 2.5.3: старая 2.5.2 сидит в modpack.zip,
         # обновляем поверх без перекачки всего пака — старый jar удаляет
@@ -1928,6 +1956,7 @@ CONFIG = {
         # байт с сервера — клиент и сервер гарантированно совпадают.
         {"slug": "modern-industrialization-2-5-3",
          "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/Modern-Industrialization-2.5.3.jar",
+         "mirror": True,
          "required": True,
          "replaces": ["Modern-Industrialization-2.5.2.jar"],
          "label": "Modern Industrialization 2.5.3 (обновление)"},
@@ -1954,6 +1983,7 @@ CONFIG = {
         # CDN не открывается (из-за этого выпускали 1.46.0), а мод обязательный.
         {"slug": "jei-19-27-0-340",
          "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/jei-1.21.1-neoforge-19.27.0.340.jar",
+         "mirror": True,
          "filename": "jei-1.21.1-neoforge-19.27.0.340.jar",
          "required": True,
          "label": "JEI (движок рецептов для EMI)"},
@@ -1963,11 +1993,13 @@ CONFIG = {
         # по одному предмету на тег и прячет дубли рецептов.
         {"slug": "almostunified-1-4-2",
          "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/almostunified-neoforge-1.21.1-1.4.2.jar",
+         "mirror": True,
          "filename": "almostunified-neoforge-1.21.1-1.4.2.jar",
          "required": True,
          "label": "AlmostUnified (единые слитки и пластины)"},
         {"slug": "ae2wtlib-19-5-0",
          "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/ae2wtlib-19.5.0.jar",
+         "mirror": True,
          "required": True,
          "label": "Беспроводные терминалы AE2"},
         # Шесть модов ниже — по списку владельца от 17.07 (скрин чужой
@@ -2010,6 +2042,7 @@ CONFIG = {
         # Лицензия MIT — перекладывать jar к себе можно.
         {"slug": "ez-actions-2-0-3-5",
          "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/ezactions-neoforge-1.21.1-2.0.3.5.jar",
+         "mirror": True,
          "filename": "ezactions-neoforge-1.21.1-2.0.3.5.jar",
          "label": "Круговое меню быстрого доступа"},
     ],
@@ -3357,6 +3390,41 @@ def download_file(url: str, dest: Path, progress_cb=None, retries: int = 5) -> N
         "с места обрыва, заново качать не придётся.\n\n(%s)" % (retries, last_error))
 
 
+def download_with_mirror(primary_url: str, mirror_url: str, dest: Path,
+                         progress_cb=None, status_cb=None) -> None:
+    """Качает файл, пробуя сначала зеркало на игровом сервере, потом основной
+    источник.
+
+    Зачем (20.07). У части игроков провайдер режет GitHub: Minecraft и NeoForge
+    скачивались нормально, а modpack.zip обрывался и установка падала с «Обрыв
+    связи при скачивании». Игровой сервер открыт у любого, кто может играть,
+    поэтому он идёт ПЕРВЫМ и всего с одной попыткой: если файла там нет (404),
+    мы почти мгновенно уходим на GitHub и ничего не теряем. Основной источник
+    остаётся с полным числом повторов.
+
+    Тот же порядок уже работает для отдельных модов (см. install_extra_client_mods).
+
+    Между источниками удаляем .part: докачивать хвост одного файла из другого
+    источника нельзя — если версии разойдутся, получится битый архив."""
+    part = dest.with_name(dest.name + ".part")
+    sources = []
+    if mirror_url:
+        sources.append((mirror_url, 1))
+    sources.append((primary_url, 5))
+
+    last_error = None
+    for index, (url, retries) in enumerate(sources):
+        try:
+            download_file(url, dest, progress_cb, retries=retries)
+            return
+        except Exception as exc:  # noqa: BLE001 — сеть падает по-разному
+            last_error = exc
+            part.unlink(missing_ok=True)
+            if index + 1 < len(sources) and status_cb:
+                status_cb("источник недоступен — пробую запасной")
+    raise last_error
+
+
 def get_remote_modpack_version() -> int:
     """Версия сборки модов. Если в CONFIG указана MODPACK_VERSION_URL —
     скачивает и читает число оттуда (так можно обновлять моды без
@@ -3393,7 +3461,8 @@ def install_modpack(status_cb, progress_cb) -> None:
         progress_cb(pct)
 
     status_cb("скачивание")
-    download_file(CONFIG["MODPACK_URL"], zip_path, download_progress)
+    download_with_mirror(CONFIG["MODPACK_URL"], CONFIG.get("MODPACK_MIRROR_URL"),
+                         zip_path, download_progress, status_cb)
 
     # Чистим старые моды/конфиги, чтобы не оставалось "мусора" от старой версии.
     # resourcepacks и shaderpacks НЕ трогаем: там лежат паки, которые игрок
@@ -3552,7 +3621,9 @@ def install_configpack(status_cb=None, progress_cb=None) -> None:
     try:
         if status_cb:
             status_cb("Скачиваю настройки сборки (меню, квесты, экран загрузки)...")
-        download_file(CONFIG["CONFIGPACK_URL"], zip_path, progress_cb)
+        download_with_mirror(CONFIG["CONFIGPACK_URL"],
+                             CONFIG.get("CONFIGPACK_MIRROR_URL"),
+                             zip_path, progress_cb, status_cb)
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             try:
