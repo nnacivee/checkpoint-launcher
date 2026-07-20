@@ -327,6 +327,21 @@ CONFIG = {
     # модпака выше (GitHub у части провайдеров недоступен). Пробуется первым.
     "CONFIGPACK_MIRROR_URL": "http://95.216.30.64:25980/configpack.zip",
 
+    # Запасной источник самого ЛАУНЧЕРА (20.07). Обновление качалось только с
+    # GitHub, а он в РФ заблокирован — игроки вроде Dimylechka застревали на
+    # старой версии и не могли получить фикс. Файл лежит на том же HTTPS-зеркале
+    # (порт 443, проходит там, где голый IP:25980 режется). Раздаём один
+    # standalone-файл Launcher.exe (тот же, что на сайте), без установщика.
+    # ВАЖНО: при каждом релизе заливать свежий Launcher.exe в bluemap/web/.
+    "LAUNCHER_EXE_MIRROR_URL": "https://industrialhorizon.dynmap.xyz/Launcher.exe",
+
+    # Крошечный текстовый файл с одной строкой — номером последней версии
+    # лаунчера (например "1.61.0"). Лежит рядом с Launcher.exe на зеркале.
+    # Лаунчер читает его при старте и, если версия там новее текущей, показывает
+    # баннер «доступна версия…». Это ОСНОВНОЙ канал обновлений в РФ: работает
+    # без GitHub. При релизе: залить Launcher.exe и вписать сюда новый номер.
+    "LAUNCHER_VERSION_MIRROR_URL": "https://industrialhorizon.dynmap.xyz/launcher_version.txt",
+
     # Версия пака настроек «по умолчанию» — используется, только если ниже
     # не указана CONFIGPACK_VERSION_URL или её не удалось скачать.
     "CONFIGPACK_VERSION": 1,
@@ -369,7 +384,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.60.3",
+    "LAUNCHER_VERSION": "1.61.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -382,7 +397,23 @@ CONFIG = {
 
     "LAUNCHER_CHANGELOG": [
         {
-            "version": "1.60.3",
+            "version": "1.61.0",
+            "date": "20 июля 2026",
+            "changes": [
+                "Новый режим «Очень старая видеокарта» в настройках: убирает "
+                "Sodium и Iris, если мир «рассыпается» и не грузятся текстуры "
+                "(например, на AMD Radeon HD 7000-й серии). Игра станет чуть "
+                "медленнее, зато будет рисоваться правильно.",
+                "Обновления лаунчера теперь приходят напрямую с игрового "
+                "сервера, минуя GitHub — те, у кого провайдер режет GitHub, "
+                "наконец будут видеть баннер «доступна новая версия» и смогут "
+                "обновиться в один клик.",
+                "Английский экран с диктором и выбором языка при первом запуске "
+                "больше не выскакивает — он отключается при каждом старте.",
+            ],
+        },
+        {
+            "version": "1.60.9",
             "date": "20 июля 2026",
             "changes": [
                 "Ad Astra и его библиотека теперь считаются обязательными: "
@@ -2308,6 +2339,15 @@ CONFIG = {
             "name": "Fresh Animations",
             "description": "Живые мобы: моргают, поворачивают головы, ходят как в мультике",
         },
+        # Просьба владельца от 20.07. Пак нашёлся на minecraft-inside, но берём
+        # его с Modrinth: там он выложен САМИМ автором (StorchSteam) и есть сборка
+        # ровно под 1.21-1.21.1 — значит обновления придут от него же, а не
+        # с перезалива. Вес всего 128 КБ, качается мгновенно.
+        {
+            "slug": "j-a-c",
+            "name": "Jewelry Armor",
+            "description": "Броня становится украшениями и не закрывает скин целиком",
+        },
     ],
 
     # ------------------- РЕСУРС-ПАКИ (АВТОДОСТАВКА) -------------------
@@ -3346,31 +3386,38 @@ def _download_parallel(url: str, dest: Path, progress_cb=None,
     return True
 
 
-def download_file(url: str, dest: Path, progress_cb=None, retries: int = 5) -> None:
-    """Качает файл с докачкой и повторами.
+def download_file(url: str, dest: Path, progress_cb=None, retries: int = 5,
+                  allow_resume: bool = True, expected_size: int = 0) -> None:
+    """Качает файл с повторами.
 
-    Раньше здесь был urlretrieve: любой обрыв связи посреди 400-мегабайтного
-    архива ронял всю установку с невнятным "IncompleteRead", и качать
-    приходилось заново с нуля. Теперь недокачанное складывается в файл .part,
-    при обрыве закачка продолжается с места остановки (заголовок HTTP Range),
-    и делается несколько попыток с нарастающей паузой. Даже если попытки
-    кончились — .part остаётся на диске, и следующий запуск продолжит с него,
-    а не начнёт заново."""
+    allow_resume=True (по умолчанию): при обрыве продолжает с места остановки
+    через HTTP Range — быстро для больших файлов на нормальных серверах.
+
+    allow_resume=False: КАЖДАЯ попытка качает файл целиком заново. Нужно для
+    зеркала BlueMap: оно на Range-запрос отвечает 206, но отдаёт байты С НАЧАЛА
+    файла, а не со смещения. Обычная докачка на таком сервере дописывает «начало»
+    к уже скачанному куску и получает мусор правильного размера. Поэтому для
+    частей модпака докачку отключаем и сверяем размер (expected_size).
+
+    expected_size: ожидаемый размер файла. Нужен, когда сервер не шлёт
+    Content-Length (BlueMap так и делает) — иначе обрыв не отличить от конца
+    файла и обрезанный кусок молча считался бы целым."""
     dest.parent.mkdir(parents=True, exist_ok=True)
 
-    # Сначала пробуем в несколько потоков — так сборка качается заметно
-    # быстрее. Если сервер этого не умеет или что-то оборвалось — ниже
-    # спокойно качаем одним потоком с докачкой.
-    if _download_parallel(url, dest, progress_cb):
+    # Параллельная докачка тоже опирается на Range — при выключенной докачке
+    # (сломанный Range у BlueMap) её не трогаем.
+    if allow_resume and _download_parallel(url, dest, progress_cb):
         return
 
     part = dest.with_name(dest.name + ".part")
     last_error = None
 
     for attempt in range(1, retries + 1):
+        if not allow_resume:
+            part.unlink(missing_ok=True)  # всегда с нуля
         have = part.stat().st_size if part.exists() else 0
         request = urllib.request.Request(url, headers={"User-Agent": "CheckpointLauncher"})
-        if have:
+        if have and allow_resume:
             request.add_header("Range", "bytes=%d-" % have)
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
@@ -3380,7 +3427,7 @@ def download_file(url: str, dest: Path, progress_cb=None, retries: int = 5) -> N
                     have = 0
                     part.unlink(missing_ok=True)
                 length = response.headers.get("Content-Length")
-                total = (int(length) + have) if length else 0
+                total = (int(length) + have) if length else expected_size
                 with open(part, "ab" if have else "wb") as fh:
                     while True:
                         chunk = response.read(65536)
@@ -3405,8 +3452,8 @@ def download_file(url: str, dest: Path, progress_cb=None, retries: int = 5) -> N
 
     raise RuntimeError(
         "Обрыв связи при скачивании — не удалось за %d попыток.\n\n"
-        "Проверьте интернет и нажмите «Играть» ещё раз: закачка продолжится "
-        "с места обрыва, заново качать не придётся.\n\n(%s)" % (retries, last_error))
+        "Проверьте интернет и нажмите «Играть» ещё раз.\n\n(%s)"
+        % (retries, last_error))
 
 
 def download_with_mirror(primary_url: str, mirror_url: str, dest: Path,
@@ -3428,8 +3475,20 @@ def download_with_mirror(primary_url: str, mirror_url: str, dest: Path,
     part = dest.with_name(dest.name + ".part")
     sources = []
     if mirror_url:
-        sources.append((mirror_url, 1))
-    sources.append((primary_url, 5))
+        # Прямой IP игрового сервера. Веб-сервер BlueMap НЕ умеет докачку (отвечает
+        # 200 на Range), поэтому большой modpack.zip качается одним куском, и любой
+        # обрыв = заново. Раньше тут была 1 попытка — при первом же обрыве установка
+        # уходила на GitHub (в РФ закрыт) и падала. Даём много попыток: рано или
+        # поздно один прогон доходит целиком (20.07).
+        sources.append((mirror_url, 6))
+        # Запасной HTTPS-домен на случай, если провайдер режет прямой IP. Через
+        # бесплатный тоннель большой файл может не дойти, но для тех, у кого IP
+        # закрыт полностью, это единственный HTTPS-шанс — пусть попробует.
+        if isinstance(mirror_url, str) and "95.216.30.64:25980" in mirror_url:
+            dom = mirror_url.replace("http://95.216.30.64:25980",
+                                     "https://industrialhorizon.dynmap.xyz")
+            sources.append((dom, 2))
+    sources.append((primary_url, 3))
 
     last_error = None
     for index, (url, retries) in enumerate(sources):
@@ -3471,6 +3530,121 @@ def get_local_modpack_version() -> int:
     return -1
 
 
+def _download_first(urls, dest, progress_cb=None, retries=5,
+                    allow_resume=True, expected_size=0):
+    """Пробует список URL по очереди; первый успешный — победа. Между источниками
+    удаляет .part: докачивать хвост одного файла из другого источника нельзя."""
+    part = dest.with_name(dest.name + ".part")
+    last = None
+    for u in urls:
+        try:
+            download_file(u, dest, progress_cb, retries=retries,
+                          allow_resume=allow_resume, expected_size=expected_size)
+            return
+        except Exception as e:  # noqa: BLE001
+            last = e
+            part.unlink(missing_ok=True)
+    raise RuntimeError("не удалось скачать %s: %s" % (dest.name, last))
+
+
+def download_modpack_archive(dest, progress_cb, status_cb):
+    """Скачивает модпак. СНАЧАЛА пробует ПО ЧАСТЯМ (modpack.zip.001, .002 ...),
+    и только если частей нет — цельным файлом (как раньше).
+
+    Зачем части. Веб-сервер BlueMap не умеет докачку (отвечает 200 на Range),
+    поэтому цельный 385-МБ архив на слабой связи рвётся и качается заново с нуля.
+    Мелкие части качаются целиком; если оборвётся — повторяется ОДНА часть, а не
+    весь архив. Число частей берётся из manifest-файла modpack.parts.txt рядом с
+    архивом на зеркале. Части склеиваются побайтово обратно в исходный zip."""
+    mirror = CONFIG.get("MODPACK_MIRROR_URL") or ""
+    if "/" in mirror:
+        root = mirror.rsplit("/", 1)[0]
+        dom_root = None
+        if "95.216.30.64:25980" in root:
+            dom_root = root.replace("http://95.216.30.64:25980",
+                                    "https://industrialhorizon.dynmap.xyz")
+
+        def roots_for(name):
+            u = [root + "/" + name]
+            if dom_root:
+                u.append(dom_root + "/" + name)
+            return u
+
+        n = 0
+        try:
+            manifest = APP_DATA_DIR / "modpack.parts.txt"
+            manifest.unlink(missing_ok=True)
+            _download_first(roots_for("modpack.parts.txt"), manifest, retries=2)
+            n = int(manifest.read_text().strip())
+        except Exception:  # noqa: BLE001 — нет manifest => качаем цельным
+            n = 0
+
+        # Ожидаемые размеры частей. КРИТИЧНО: сервер BlueMap не шлёт Content-Length,
+        # поэтому обрыв части иначе не заметить — обрезанный кусок молча склеился бы
+        # в битый zip («File is not a zip file»). Проверяем размер каждой части и
+        # перекачиваем, если не сошёлся.
+        sizes = []
+        try:
+            sz = APP_DATA_DIR / "modpack.sizes.txt"
+            sz.unlink(missing_ok=True)
+            _download_first(roots_for("modpack.sizes.txt"), sz, retries=2)
+            sizes = [int(x) for x in sz.read_text().split() if x.strip()]
+        except Exception:  # noqa: BLE001 — размеров нет => проверим только итоговый zip
+            sizes = []
+
+        if n > 0:
+            status_cb("скачивание по частям")
+            assemble = dest.with_name(dest.name + ".assemble")
+            assemble.unlink(missing_ok=True)
+            with open(assemble, "wb") as out:
+                for i in range(1, n + 1):
+                    status_cb("часть %d из %d" % (i, n))
+                    name = "modpack.zip.%03d" % i
+                    part = APP_DATA_DIR / name
+                    want = sizes[i - 1] if (i - 1) < len(sizes) else 0
+                    base_i = i - 1
+                    ok = False
+                    for _attempt in range(6):
+                        part.unlink(missing_ok=True)
+                        # allow_resume=False — BlueMap на Range отдаёт байты с начала
+                        # файла, поэтому докачка ломает часть. Качаем целиком заново.
+                        # expected_size=want — чтобы обрыв (у BlueMap нет Content-Length)
+                        # определялся и вызывал повтор.
+                        _download_first(
+                            roots_for(name), part,
+                            progress_cb=lambda p, b=base_i: progress_cb(
+                                int((b + p / 100.0) * 100 / n)),
+                            retries=3, allow_resume=False, expected_size=want)
+                        # Часть цела, если её размер совпал с ожидаемым. Без списка
+                        # размеров довольствуемся тем, что файл не пустой.
+                        got = part.stat().st_size if part.exists() else 0
+                        if (want and got == want) or (not want and got > 0):
+                            ok = True
+                            break
+                    if not ok:
+                        raise RuntimeError(
+                            "часть %d/%d повреждена при скачивании — нажмите «Играть» ещё раз"
+                            % (i, n))
+                    with open(part, "rb") as fh:
+                        shutil.copyfileobj(fh, out)
+                    part.unlink(missing_ok=True)
+            # Итоговая проверка: собрался ли валидный zip. Если нет — не трогаем
+            # рабочую сборку, чтобы не оставить игрока с битыми модами.
+            if not zipfile.is_zipfile(assemble):
+                assemble.unlink(missing_ok=True)
+                raise RuntimeError(
+                    "Сборка модпака собралась повреждённой. Нажмите «Играть» ещё раз — "
+                    "перекачаются только сбойные части.")
+            dest.unlink(missing_ok=True)
+            assemble.replace(dest)
+            return
+
+    # Частей нет — как раньше, цельным файлом (зеркало -> домен -> GitHub).
+    status_cb("скачивание")
+    download_with_mirror(CONFIG["MODPACK_URL"], CONFIG.get("MODPACK_MIRROR_URL"),
+                         dest, progress_cb, status_cb)
+
+
 def install_modpack(status_cb, progress_cb) -> None:
     """Скачивает архив с модами и распаковывает поверх папки экземпляра."""
     zip_path = APP_DATA_DIR / "modpack_download.zip"
@@ -3479,9 +3653,7 @@ def install_modpack(status_cb, progress_cb) -> None:
         # Подпись с номером шага ставит сам progress_cb — здесь только процент.
         progress_cb(pct)
 
-    status_cb("скачивание")
-    download_with_mirror(CONFIG["MODPACK_URL"], CONFIG.get("MODPACK_MIRROR_URL"),
-                         zip_path, download_progress, status_cb)
+    download_modpack_archive(zip_path, download_progress, status_cb)
 
     # Чистим старые моды/конфиги, чтобы не оставалось "мусора" от старой версии.
     # resourcepacks и shaderpacks НЕ трогаем: там лежат паки, которые игрок
@@ -4676,12 +4848,52 @@ def _version_tuple(version_str: str):
     return tuple(parts) or (0,)
 
 
+def _check_update_via_mirror():
+    """ОСНОВНОЙ канал обновлений в РФ. Читает крошечный launcher_version.txt с
+    HTTPS-зеркала (порт 443, работает там, где GitHub заблокирован) и, если
+    версия там новее текущей, возвращает {version, exe_url, url}. Файл exe
+    качается с того же зеркала (Launcher.exe). Любая ошибка -> None."""
+    url = CONFIG.get("LAUNCHER_VERSION_MIRROR_URL")
+    exe = CONFIG.get("LAUNCHER_EXE_MIRROR_URL")
+    if not url or not exe:
+        return None
+    try:
+        # Cloudflare кеширует ответы — добавляем анти-кеш метку (меняется раз в
+        # ~5 минут), иначе после релиза игроки ещё долго видят старый номер.
+        bust = ("&" if "?" in url else "?") + "t=" + str(int(time.time()) // 300)
+        request = urllib.request.Request(url + bust, headers={"User-Agent": "IH-Launcher"})
+        with urllib.request.urlopen(request, timeout=8) as response:
+            raw = response.read().decode("utf-8", "replace")
+        ver = ""
+        for tok in (raw or "").replace("\r", " ").replace("\n", " ").split():
+            t = tok.strip().lstrip("vV")
+            if t and t[0].isdigit():
+                ver = t
+                break
+        if ver and _version_tuple(ver) > _version_tuple(CONFIG["LAUNCHER_VERSION"]):
+            # Тот же exe-файл на зеркале для всех версий: анти-кеш по номеру,
+            # чтобы Cloudflare отдал именно свежий Launcher.exe.
+            exe_url = exe + (("&" if "?" in exe else "?") + "v=" + ver.replace(".", ""))
+            return {
+                "version": ver,
+                "exe_url": exe_url,
+                "url": "https://github.com/%s/releases" % (CONFIG.get("GITHUB_REPO") or ""),
+            }
+    except Exception:
+        pass
+    return None
+
+
 def check_for_launcher_update():
-    """Спрашивает у GitHub (открытое API, без ключей), какая последняя
-    версия лаунчера опубликована в репозитории из CONFIG["GITHUB_REPO"].
-    Если она новее текущей — возвращает {"version": ..., "url": ...},
-    иначе None. Любая ошибка (нет интернета, репозиторий не настроен,
-    релизов ещё не было) тоже даёт None — это не критичная функция."""
+    """Ищет более свежую версию лаунчера. Порядок: сначала HTTPS-зеркало
+    (launcher_version.txt — работает в РФ без GitHub), затем GitHub API и
+    jsDelivr как запаска. Возвращает {"version", "exe_url", "url"} или None.
+    Любая ошибка (нет интернета и т.п.) тоже даёт None — функция не критичная."""
+    # 1) Зеркало — главный и самый надёжный канал для наших игроков в РФ.
+    mirror_info = _check_update_via_mirror()
+    if mirror_info:
+        return mirror_info
+
     repo = CONFIG.get("GITHUB_REPO")
     if not repo:
         return None
@@ -4716,7 +4928,10 @@ def check_for_launcher_update():
                         rel.get("html_url") or ("https://github.com/%s/releases" % repo))
         if best:
             if best[0] > _version_tuple(CONFIG["LAUNCHER_VERSION"]):
-                return {"version": best[1], "exe_url": best[2], "url": best[3]}
+                # Ставим установщик с HTTPS-зеркала, если оно задано: GitHub в РФ
+                # заблокирован, и качать оттуда .exe большинство игроков не может.
+                ex = CONFIG.get("LAUNCHER_EXE_MIRROR_URL") or best[2]
+                return {"version": best[1], "exe_url": ex, "url": best[3]}
             return None    # GitHub ответил: новее ничего нет, запаску не дёргаем
     except Exception:
         pass
@@ -4738,13 +4953,15 @@ def check_for_launcher_update():
             if best is None or vt > best[0]:
                 best = (vt, ver)
         if best and best[0] > _version_tuple(CONFIG["LAUNCHER_VERSION"]):
-            # Ссылка на установщик собирается из номера версии: у релизов
-            # GitHub адрес releases/download/<тег>/<файл> постоянный,
-            # никакого API для него не нужно.
+            # В РФ мы попадаем сюда (GitHub API не ответил). GitHub-ссылку на .exe
+            # качать бесполезно — он заблокирован. Берём установщик с HTTPS-зеркала
+            # (порт 443). Если зеркало не задано — падаем на GitHub как раньше.
+            exe = CONFIG.get("LAUNCHER_EXE_MIRROR_URL") or (
+                "https://github.com/%s/releases/download/v%s/CheckpointSetup.exe"
+                % (repo, best[1]))
             return {
                 "version": best[1],
-                "exe_url": "https://github.com/%s/releases/download/v%s/CheckpointSetup.exe"
-                           % (repo, best[1]),
+                "exe_url": exe,
                 "url": "https://github.com/%s/releases" % repo,
             }
     except Exception:
@@ -5093,6 +5310,20 @@ def set_russian_once(status_cb=None) -> None:
     в APP_DATA, поэтому переустановка сборки язык повторно не навяжет.
 
     Сменить язык обратно можно как обычно: Настройки → Язык."""
+    # Экран «Welcome to Minecraft! Would you like to enable the Narrator?»
+    # вылезает при первом запуске поверх нашего меню и всех только путает
+    # (он на английском и появляется до того, как игрок увидит сборку).
+    # ВАЖНО: гасим его ОТДЕЛЬНО и ДО языкового маркера, при каждом запуске.
+    # Раньше это стояло внутри разового прохода — и у игроков, которым старая
+    # версия уже выставила язык (маркер есть), онбординг НЕ гасился никогда.
+    # Экран одноразовый и никому не нужен; кто захочет диктора — включит в
+    # Настройки → Специальные возможности.
+    try:
+        if _read_options_value("onboardAccessibility", "") != "false":
+            _write_options_value("onboardAccessibility", "false")
+    except Exception:
+        pass
+
     marker = APP_DATA_DIR / ".language_set_once"
     if marker.exists():
         return
@@ -5101,13 +5332,6 @@ def set_russian_once(status_cb=None) -> None:
             _write_options_value("lang", "ru_ru")
             if status_cb:
                 status_cb("Язык игры — русский.")
-        # Экран «Welcome to Minecraft! Would you like to enable the Narrator?»
-        # вылезает при первом запуске поверх нашего меню и всех только путает
-        # (он на английском и появляется до того, как игрок увидит сборку).
-        # Гасим его тем же разовым проходом — игрок при желании включит
-        # диктора в Настройках → Специальные возможности.
-        if _read_options_value("onboardAccessibility", "") != "false":
-            _write_options_value("onboardAccessibility", "false")
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text("1", encoding="utf-8")
     except Exception:
@@ -6205,6 +6429,33 @@ def deploy_test_mods(status_cb, progress_cb) -> bool:
     return True
 
 
+# Моды рендера, которые ломают ОЧЕНЬ старые видеокарты (напр. Radeon HD 7000-й
+# серии, 2012 г.): Sodium опирается на возможности OpenGL, которых у таких GPU
+# нет, и мир превращается в кашу из растянутой геометрии, текстуры не грузятся.
+# Режим «без Sodium» убирает Sodium, Iris и их аддоны — игра возвращается к
+# обычному рендеру Minecraft (медленнее, но рисует правильно). Зависимые моды
+# (Iris, reeses-sodium-options) удаляются вместе с ядром, иначе игра упадёт с
+# «missing dependency: sodium».
+_RENDER_MOD_PATTERNS = ("sodium", "iris", "reeses")
+
+
+def strip_render_mods(status_cb=None) -> None:
+    mods_dir = INSTANCE_DIR / "mods"
+    if not mods_dir.exists():
+        return
+    removed = 0
+    for jar in mods_dir.glob("*.jar"):
+        low = jar.name.lower()
+        if any(p in low for p in _RENDER_MOD_PATTERNS):
+            try:
+                jar.unlink()
+                removed += 1
+            except Exception:  # noqa: BLE001
+                pass
+    if status_cb and removed:
+        status_cb("Режим старой видеокарты: убрано %d мод(ов) рендера (Sodium/Iris)." % removed)
+
+
 def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb, progress_cb, server_override=None, test_mode=False):
     INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -6257,6 +6508,11 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     install_game_window_icon(extras_status)
     missing_required = install_extra_client_mods(extras_status, extras_progress)
     install_skin_config(extras_status)
+
+    # Режим «очень старая видеокарта»: строго ПОСЛЕ всех установок модов,
+    # чтобы снять и Sodium из сборки, и его аддоны из доп-модов.
+    if load_settings().get("no_sodium"):
+        strip_render_mods(extras_status)
 
     # Мода, который есть на сервере, у игрока нет — запускать игру бессмысленно:
     # сервер оборвёт соединение на входе («Канал мода отсутствует на стороне
@@ -6376,6 +6632,7 @@ class LauncherApp:
         self.nick_var = tk.StringVar(value=settings.get("username", ""))
         self.memory_var = tk.IntVar(value=saved_memory)
         self.low_end_var = tk.BooleanVar(value=settings.get("low_end_mode", False))
+        self.no_sodium_var = tk.BooleanVar(value=settings.get("no_sodium", False))
         self.status_var = tk.StringVar(value="Готово к запуску")
         self.progress_var = tk.IntVar(value=0)
 
@@ -8220,6 +8477,22 @@ class LauncherApp:
             highlightthickness=0, bd=0, cursor="hand2", anchor="w", justify="left",
         ).pack(fill="x", pady=(0, 6))
 
+        # ---- Режим «очень старая видеокарта» (без Sodium) ----
+        def on_no_sodium_toggle():
+            update_settings(no_sodium=self.no_sodium_var.get())
+            self._refresh_settings_summary()
+
+        tk.Checkbutton(
+            outer, text=" Очень старая видеокарта — убрать Sodium/Iris.\n"
+                        " Включи, если мир «рассыпается» и текстуры не грузятся\n"
+                        " (например, AMD Radeon HD 7000-й серии и старше)",
+            image=self.icons.get("gauge"), compound="left",
+            variable=self.no_sodium_var, font=(UI_FONT, 9), command=on_no_sodium_toggle,
+            bg=colors["bg_panel"], fg=colors["fg"], activebackground=colors["bg_panel"],
+            activeforeground=colors["fg"], selectcolor=colors["bg_field"],
+            highlightthickness=0, bd=0, cursor="hand2", anchor="w", justify="left",
+        ).pack(fill="x", pady=(0, 6))
+
         # При закрытии окна запоминаем выбранный объём памяти.
         dialog.bind("<Destroy>", lambda e: (
             update_settings(memory_mb=int(self.memory_var.get())),
@@ -9356,7 +9629,7 @@ class LauncherApp:
                 # Качаем во временную папку, а не рядом с .exe: иначе у
                 # пользователя на рабочем столе на время обновления появлялся
                 # второй ярлык лаунчера и тут же пропадал.
-                new_exe = Path(tempfile.gettempdir()) / "CheckpointSetup_new.exe"
+                new_exe = Path(tempfile.gettempdir()) / "Launcher_new.exe"
 
                 def prog(pct):
                     self.root.after(0, lambda: self.update_banner_var.set(
@@ -9399,43 +9672,49 @@ class LauncherApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _apply_downloaded_update(self, cur_exe: Path, new_exe: Path) -> None:
-        """Ставит обновление скачанным установщиком и перезапускает лаунчер.
+        """Подменяет сам себя скачанным Launcher.exe и перезапускается.
 
-        Раньше здесь .exe подменялся файлом целиком — и первый запуск после
-        подмены регулярно падал с "Failed to load Python DLL python312.dll".
-        Причина была в сборке одним файлом: при старте он распаковывал Python
-        в Temp, а антивирус в этот момент ещё проверял свежий .exe. Теперь
-        обновление ставит установщик, а лаунчер лежит обычной папкой и ничего
-        не распаковывает — падать нечему.
+        Мы раздаём один standalone-файл Launcher.exe (--onefile), без
+        установщика: и на сайте, и на зеркале лежит именно он. Поэтому
+        обновление — это «заменить свой .exe новым и запуститься снова».
 
-        Скрипт кладём во ВРЕМЕННУЮ папку, а пути передаём аргументами (%1/%2),
-        а не вписываем в текст: иначе кириллица в пути ломает .bat."""
-        bat = Path(tempfile.gettempdir()) / ("checkpoint_update_%d.bat" % os.getpid())
-        # Лаунчер отсюда НЕ запускаем — это делает сам установщик (см. installer.iss,
-        # секция [Run] без skipifsilent). Раньше запускал этот скрипт, и лаунчер
-        # не открывался: setup.exe от Inno завершается сразу, не дожидаясь конца
-        # установки, скрипт стартовал лаунчер посреди копирования файлов, а
-        # CloseApplications=force его убивал.
+        Windows не даёт перезаписать работающий .exe, поэтому подмену делает
+        .bat уже ПОСЛЕ того, как лаунчер закрылся:
+          1) ждём выхода лаунчера;
+          2) в цикле пытаемся удалить старый .exe, пока файл не освободится;
+          3) переносим новый .exe на место старого;
+          4) запускаем и подчищаем за собой.
+
+        Пути передаём аргументами (%1 — новый файл, %2 — текущий .exe), а не
+        вписываем в текст скрипта: иначе кириллица в пути ломает .bat.
+
+        Про «Failed to load Python DLL»: старый костыль (установщик) больше не
+        нужен — файл проверяется на MZ и размер до подмены, а перед запуском
+        выдержана пауза, чтобы антивирус успел проверить свежий .exe."""
+        bat = Path(tempfile.gettempdir()) / ("ih_update_%d.bat" % os.getpid())
         script = (
             "@echo off\r\n"
-            # Ждём, пока лаунчер закроется, иначе установщик упрётся в занятые файлы.
+            # Ждём ~2 c, пока лаунчер закроется и отпустит свой .exe.
             "ping -n 3 127.0.0.1 >nul\r\n"
-            # /VERYSILENT — без окон и вопросов, /NORESTART — не трогать систему.
-            "%1 /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /NOCANCEL\r\n"
-            # Установщик работает своим чередом и сам поднимет лаунчер.
-            # Ждём и подчищаем за собой.
-            "ping -n 12 127.0.0.1 >nul\r\n"
-            'del %1 >nul 2>&1\r\n'
+            # Пытаемся освободить старый файл: если ещё занят — ждём и повторяем.
+            ":retry\r\n"
+            'del %2 >nul 2>&1\r\n'
+            'if exist %2 ( ping -n 2 127.0.0.1 >nul & goto retry )\r\n'
+            # Переносим новый .exe на место старого.
+            'move /y %1 %2 >nul\r\n'
+            # Небольшая пауза — чтобы антивирус успел проверить свежий файл.
+            "ping -n 3 127.0.0.1 >nul\r\n"
+            # Запускаем обновлённый лаунчер и подчищаем скрипт.
+            'start "" %2\r\n'
             'del "%~f0" >nul 2>&1\r\n'
         )
         try:
             bat.write_text(script, encoding="ascii")
             CREATE_NO_WINDOW = 0x08000000  # скрипт работает без чёрного окна
-            # %1 — установщик. Путь к лаунчеру больше не передаём: запускает его
-            # сам установщик, когда действительно закончит.
-            subprocess.Popen(["cmd", "/c", str(bat), str(new_exe)],
+            # %1 — новый файл (Temp), %2 — текущий .exe, который заменяем.
+            subprocess.Popen(["cmd", "/c", str(bat), str(new_exe), str(cur_exe)],
                              creationflags=CREATE_NO_WINDOW, close_fds=True)
-            self.update_banner_var.set("✅  Обновление установлено, перезапуск…")
+            self.update_banner_var.set("✅  Обновление скачано, перезапуск…")
             self.root.after(400, self.root.destroy)
         except Exception:
             self._updating = False
