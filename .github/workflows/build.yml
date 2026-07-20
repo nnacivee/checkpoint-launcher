@@ -123,31 +123,14 @@ jobs:
           "${{ steps.version.outputs.version }}" | Out-File -FilePath "deploy\launcher_version.txt" -Encoding ascii -NoNewline
           Get-ChildItem deploy
 
-      # Автозагрузка на зеркало по SFTP (панель хостинга). GitHub в РФ
-      # заблокирован, поэтому игроки качают Launcher.exe именно с зеркала —
-      # этот шаг кладёт туда свежий файл сам, без ручной заливки по FTP.
-      #
-      # Секреты (Settings -> Secrets and variables -> Actions):
-      #   MIRROR_SFTP_SERVER   — хост SFTP панели (напр. mgr.hosting-minecraft.pro)
-      #   MIRROR_SFTP_PORT     — порт SFTP (у Pterodactyl обычно 2022)
-      #   MIRROR_SFTP_USER     — логин SFTP (напр. name.381b54ac)
-      #   MIRROR_SFTP_PASSWORD — пароль от панели
-      #   MIRROR_REMOTE_DIR    — папка веб-корня зеркала, куда лежат Launcher.exe
-      #                          и launcher_version.txt (напр. /bluemap/web)
-      #
-      # continue-on-error: даже если зеркало недоступно или секрет с опечаткой —
-      # релиз на GitHub всё равно выходит, а файл можно долить руками.
-      - name: Upload to mirror (SFTP)
-        continue-on-error: true
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
+      # Передаём готовые файлы в следующий Linux-джоб, который зальёт их на
+      # зеркало. Артефакт — единственный способ отдать файлы между джобами.
+      - name: Upload build artifact for the deploy job
+        uses: actions/upload-artifact@v4
         with:
-          server: ${{ secrets.MIRROR_SFTP_SERVER }}
-          port: ${{ secrets.MIRROR_SFTP_PORT }}
-          username: ${{ secrets.MIRROR_SFTP_USER }}
-          password: ${{ secrets.MIRROR_SFTP_PASSWORD }}
-          local_path: "./deploy/*"
-          remote_path: ${{ secrets.MIRROR_REMOTE_DIR }}
-          delete_remote_files: false
+          name: mirror-files
+          path: deploy/
+          retention-days: 1
 
       # Проверяем ДО создания релиза: выходила ли уже эта версия. От этого
       # зависит, писать ли в Telegram. Пересборка той же версии (правка
@@ -203,3 +186,52 @@ jobs:
           python tg_notify.py
           "${{ steps.version.outputs.version }}"
           "https://github.com/${{ github.repository }}/releases/tag/v${{ steps.version.outputs.version }}"
+
+  # ------------------------------------------------------------------------
+  # Заливка на зеркало. Отдельный джоб на Linux: игровой хостинг отдаёт файлы
+  # только по SFTP, а инструменты SFTP надёжно работают именно на Linux
+  # (на windows-latest контейнер-экшены и sshpass недоступны — из-за этого
+  # первая версия шага падала с «Container action is only supported on Linux»).
+  # Берём собранный артефакт и кладём его в веб-корень зеркала обычным lftp —
+  # без сторонних экшенов, чтобы не зависеть от чужих контейнеров.
+  #
+  # Секреты (Settings -> Secrets and variables -> Actions -> New secret):
+  #   MIRROR_SFTP_SERVER   — хост SFTP панели (напр. mgr.hosting-minecraft.pro)
+  #   MIRROR_SFTP_PORT     — порт SFTP (у этого хостинга обычно 2022)
+  #   MIRROR_SFTP_USER     — логин SFTP (в панели: «SFTP-данные», напр. name.381b54ac)
+  #   MIRROR_SFTP_PASSWORD — пароль от панели
+  #   MIRROR_REMOTE_DIR    — путь до веб-корня зеркала (напр. /bluemap/web)
+  # Пока секретов нет, шаг тихо пропускается и сборку не роняет.
+  # ------------------------------------------------------------------------
+  deploy-mirror:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download built files
+        uses: actions/download-artifact@v4
+        with:
+          name: mirror-files
+          path: deploy
+
+      - name: Upload to mirror over SFTP (lftp)
+        env:
+          SRV: ${{ secrets.MIRROR_SFTP_SERVER }}
+          PRT: ${{ secrets.MIRROR_SFTP_PORT }}
+          USR: ${{ secrets.MIRROR_SFTP_USER }}
+          PW: ${{ secrets.MIRROR_SFTP_PASSWORD }}
+          DIR: ${{ secrets.MIRROR_REMOTE_DIR }}
+        run: |
+          if [ -z "$SRV" ] || [ -z "$USR" ] || [ -z "$PW" ]; then
+            echo "::warning::Секреты MIRROR_SFTP_* не заданы — загрузка на зеркало пропущена."
+            echo "Добавьте их в Settings -> Secrets and variables -> Actions, затем перезапустите сборку."
+            exit 0
+          fi
+          sudo apt-get update -y >/dev/null && sudo apt-get install -y lftp >/dev/null
+          PORT="${PRT:-2022}"
+          REMOTE="${DIR:-/}"
+          echo "Заливаю Launcher.exe и launcher_version.txt на $SRV:$PORT$REMOTE"
+          # Одной строкой (lftp -c), без heredoc: в YAML-блоке отступы ломают
+          # закрывающий разделитель heredoc. Кавычки '...' вокруг логина/пароля
+          # и пути защищают значения с пробелами.
+          lftp -c "set sftp:auto-confirm yes; set net:timeout 20; set net:max-retries 2; open -u '$USR','$PW' -p $PORT sftp://$SRV; cd '$REMOTE'; put deploy/Launcher.exe; put deploy/launcher_version.txt; bye"
+          echo "Готово: зеркало обновлено."
