@@ -343,6 +343,13 @@ CONFIG = {
     # без GitHub. При релизе: залить Launcher.exe и вписать сюда новый номер.
     "LAUNCHER_VERSION_MIRROR_URL": "https://industrialhorizon.dynmap.xyz/launcher_version.txt",
 
+    # Новости сервера. Лаунчер тянет этот JSON с зеркала и показывает в разделе
+    # «Сообщество» → «Новости». Владелец правит файл на зеркале (bluemap/web/
+    # news.json) — новости обновляются у всех БЕЗ пересборки лаунчера. Формат:
+    # {"items":[{"title":"...","date":"20 июля","text":"..."}, ...]}.
+    # Оставьте "", чтобы убрать пункт «Новости».
+    "NEWS_URL": "https://industrialhorizon.dynmap.xyz/news.json",
+
     # Версия пака настроек «по умолчанию» — используется, только если ниже
     # не указана CONFIGPACK_VERSION_URL или её не удалось скачать.
     "CONFIGPACK_VERSION": 1,
@@ -385,7 +392,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.61.3",
+    "LAUNCHER_VERSION": "1.61.4",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -397,6 +404,14 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.61.4",
+            "date": "20 июля 2026",
+            "changes": [
+                "Новый раздел «Новости» (в «Сообщество») — здесь появляются "
+                "новости и анонсы сервера прямо в лаунчере.",
+            ],
+        },
         {
             "version": "1.61.3",
             "date": "20 июля 2026",
@@ -3728,6 +3743,34 @@ def install_modpack(status_cb, progress_cb) -> None:
     progress_cb(100)
 
 
+def fetch_server_news() -> list:
+    """Тянет новости сервера с зеркала (news.json) и возвращает список записей
+    вида {title, date, text}. Владелец правит файл на зеркале — новости
+    обновляются у всех без пересборки лаунчера. Любая ошибка (нет файла, нет
+    сети) -> пустой список, это не критичная функция.
+
+    Сначала пробуем домен (HTTPS, работает в РФ), затем прямой IP-зеркало."""
+    urls = []
+    if CONFIG.get("NEWS_URL"):
+        urls.append(CONFIG["NEWS_URL"])
+    urls.append("http://95.216.30.64:25980/news.json")
+    for url in urls:
+        try:
+            # Анти-кеш (меняется раз в ~5 минут), иначе Cloudflare отдаёт старое.
+            busted = url + (("&" if "?" in url else "?") + "t="
+                            + str(int(time.time()) // 300))
+            request = urllib.request.Request(
+                busted, headers={"User-Agent": "IH-Launcher"})
+            with urllib.request.urlopen(request, timeout=8) as response:
+                data = json.loads(response.read().decode("utf-8", "replace"))
+            items = data.get("items") if isinstance(data, dict) else data
+            if isinstance(items, list):
+                return [x for x in items if isinstance(x, dict)]
+        except Exception:  # noqa: BLE001
+            continue
+    return []
+
+
 def get_remote_configpack_version() -> int:
     """То же, что get_remote_modpack_version(), но для пака настроек."""
     url = CONFIG.get("CONFIGPACK_VERSION_URL")
@@ -6891,6 +6934,8 @@ class LauncherApp:
                  self.on_show_mod_list, bool(CONFIG.get("MOD_SHOWCASE"))),
             ]),
             ("telegram", "Сообщество", [
+                ("Новости", "list",
+                 self.on_open_news, bool(CONFIG.get("NEWS_URL"))),
                 ("Telegram", "telegram",
                  self.on_open_telegram, bool(CONFIG.get("TELEGRAM_URL"))),
                 ("Discord", "discord",
@@ -9467,6 +9512,97 @@ class LauncherApp:
                 threading.Thread(target=lambda: load_icons(mods), daemon=True).start()
             dialog.after(0, done)
 
+        threading.Thread(target=worker, daemon=True).start()
+
+    def on_open_news(self) -> None:
+        """Живая панель новостей сервера. Список тянется с зеркала (news.json)
+        в фоне, чтобы не подвешивать окно. Владелец правит файл на зеркале —
+        новости меняются у всех без пересборки лаунчера."""
+        colors = THEMES[self.theme_name]
+
+        dialog = tk.Toplevel(self.root)
+        apply_window_icon(dialog)
+        dialog.title("Новости сервера")
+        dialog.configure(bg=colors["bg_panel"])
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.geometry("460x520")
+        set_titlebar_dark(dialog, self.theme_name == "dark")
+
+        outer = tk.Frame(dialog, bg=colors["bg_panel"])
+        outer.pack(fill="both", expand=True, padx=16, pady=16)
+
+        tk.Label(
+            outer, text="Новости %s" % CONFIG["PACK_NAME"], font=(UI_FONT, 14, "bold"),
+            bg=colors["bg_panel"], fg=colors["fg"],
+        ).pack(anchor="w")
+        subtitle = tk.Label(outer, text="Загружаю…", font=(UI_FONT, 9),
+                            bg=colors["bg_panel"], fg=colors["fg_muted"])
+        subtitle.pack(anchor="w", pady=(2, 12))
+
+        list_container = tk.Frame(outer, bg=colors["bg_panel"],
+                                   highlightbackground=colors["border"], highlightthickness=1)
+        list_container.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(list_container, bg=colors["bg_panel"], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=canvas.yview)
+        scroll_frame = tk.Frame(canvas, bg=colors["bg_panel"])
+        scroll_frame.bind(
+            "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        def on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", on_mousewheel)
+        dialog.bind("<Destroy>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+        loading = tk.Label(scroll_frame, text="Загрузка новостей…", font=(UI_FONT, 9),
+                           bg=colors["bg_panel"], fg=colors["fg_muted"])
+        loading.pack(padx=12, pady=12, anchor="w")
+
+        def render(items):
+            try:
+                loading.destroy()
+            except Exception:  # noqa: BLE001
+                pass
+            if not items:
+                subtitle.configure(text="Пока новостей нет")
+                tk.Label(
+                    scroll_frame, text="Здесь будут появляться новости сервера.",
+                    font=(UI_FONT, 9), bg=colors["bg_panel"], fg=colors["fg_muted"],
+                    wraplength=390, justify="left",
+                ).pack(padx=12, pady=12, anchor="w")
+                return
+            subtitle.configure(text="%d записей" % len(items))
+            for index, entry in enumerate(items):
+                block = tk.Frame(scroll_frame, bg=colors["bg_panel"])
+                block.pack(fill="x", padx=12, pady=(12 if index == 0 else 8, 0))
+                tk.Label(
+                    block, text=str(entry.get("title", "Новость")),
+                    font=(UI_FONT, 11, "bold"), bg=colors["bg_panel"], fg=colors["accent"],
+                    wraplength=400, justify="left",
+                ).pack(anchor="w")
+                if entry.get("date"):
+                    tk.Label(block, text=str(entry["date"]), font=(UI_FONT, 8),
+                             bg=colors["bg_panel"], fg=colors["fg_muted"]).pack(anchor="w")
+                if entry.get("text"):
+                    tk.Label(
+                        block, text=str(entry["text"]), font=(UI_FONT, 9),
+                        bg=colors["bg_panel"], fg=colors["fg"], wraplength=400,
+                        justify="left",
+                    ).pack(anchor="w", pady=(4, 0))
+                tk.Frame(scroll_frame, bg=colors["border"], height=1).pack(
+                    fill="x", padx=12, pady=(10, 0))
+
+        def worker():
+            items = fetch_server_news()
+            try:
+                dialog.after(0, lambda: render(items))
+            except Exception:  # noqa: BLE001
+                pass
         threading.Thread(target=worker, daemon=True).start()
 
     def on_show_changelog(self) -> None:
