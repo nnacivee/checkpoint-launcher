@@ -7,6 +7,7 @@ on:
       - "launcher.py"
       - "tg_notify.py"
       - "requirements.txt"
+      - "installer.iss"
       - "icon.ico"
       - "window_icon.png"
       - "background.png"
@@ -14,18 +15,12 @@ on:
       - "mods_ru.json"
       - "icons/**"
       - "fonts/**"
-      # Сам файл сборки тоже отслеживаем. Без этой строки правка build.yml
-      # не запускала пересборку: однажды из-за этого вышла версия, куда не
-      # попал фон — лаунчер показывал чёрное окно вместо арта.
       - ".github/workflows/build.yml"
   workflow_dispatch: {}
 
 permissions:
   contents: write
 
-# Сборки идут по очереди, а не одновременно. 15.07 два пуша подряд запустили
-# #59 и #60 параллельно — обе успели бы решить, что версия ещё не выходила, и
-# написали бы в Telegram по посту. Очередь убирает эту гонку.
 concurrency:
   group: build-and-release
   cancel-in-progress: false
@@ -46,8 +41,6 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      # Дешёвая проверка синтаксиса до тяжёлых шагов: PyInstaller на опечатке
-      # падает где-то в середине сборки и невнятно, а тут ошибка видна сразу.
       - name: Check launcher.py compiles
         run: python -m py_compile launcher.py
 
@@ -60,14 +53,15 @@ jobs:
           echo "Detected version: $version"
           echo "version=$version" >> $env:GITHUB_OUTPUT
 
-      # --onefile: ровно один Launcher.exe, тот же формат, что раздаёт сайт и
-      # зеркало и что уже стоит у всех игроков. Обновление подменяет этот один
-      # файл собой (см. _apply_downloaded_update в launcher.py) — никакого
-      # установщика и второй копии рядом со старой.
-      - name: Build Launcher.exe
+      # --onedir, а НЕ --onefile. Один .exe распаковывал себя в Temp при каждом
+      # запуске, и это регулярно падало с "Failed to load Python DLL
+      # python312.dll" (антивирус/среда не успевали загрузить DLL из Temp).
+      # Папка ничего не распаковывает — ошибка невозможна в принципе.
+      # Пользователь всё равно качает один файл: установщик ниже.
+      - name: Build app folder
         shell: pwsh
         run: |
-          $args = @("--onefile", "--noconsole", "--name", "Launcher")
+          $args = @("--onedir", "--noconsole", "--name", "Launcher")
           if (Test-Path "icon.ico") {
             $args += "--icon=icon.ico"
             $args += "--add-data=icon.ico;."
@@ -87,44 +81,59 @@ jobs:
           if (Test-Path "mods_ru.json") {
             $args += "--add-data=mods_ru.json;."
           }
-          # Lato для интерфейса. Без этой строки шрифты не попадут в сборку,
-          # load_bundled_fonts() не найдёт файлы и лаунчер молча останется на
-          # Segoe UI — ошибки не будет, поэтому проверять надо глазами.
           if (Test-Path "fonts") {
             $args += "--add-data=fonts;fonts"
           }
           $args += "launcher.py"
           pyinstaller @args
 
-      - name: Check Launcher.exe really built
+      - name: Check the app folder really built
         shell: pwsh
         run: |
-          if (-not (Test-Path "dist\Launcher.exe")) {
-            throw "dist\Launcher.exe not found"
+          if (-not (Test-Path "dist\Launcher\Launcher.exe")) {
+            throw "dist\Launcher\Launcher.exe not found"
           }
-          $size = (Get-Item "dist\Launcher.exe").Length / 1MB
-          echo ("Launcher.exe size: {0:N1} MB" -f $size)
-          # Заголовок PE "MZ" — минимальная гарантия, что это работающий .exe,
-          # а не обрывок. Заодно отсекаем совсем маленькие битые файлы.
-          $bytes = [System.IO.File]::ReadAllBytes("dist\Launcher.exe")
-          if ($bytes.Length -lt 3000000 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
-            throw "dist\Launcher.exe looks corrupted (no MZ header or too small)"
+          # DLL должна лежать рядом, а не распаковываться в Temp.
+          $dll = Get-ChildItem -Path "dist\Launcher" -Recurse -Filter "python3*.dll"
+          if (-not $dll) { throw "python3xx.dll is missing from the app folder" }
+          echo "OK: $($dll[0].FullName)"
+          foreach ($res in @("background.png", "logo.png", "mods_ru.json", "icon.ico", "window_icon.png")) {
+            if (Test-Path $res) {
+              $found = Get-ChildItem -Path "dist\Launcher" -Recurse -Filter $res
+              if (-not $found) { throw "$res is missing from the built app" }
+              echo "OK: $res -> $($found[0].FullName)"
+            }
           }
-          echo "OK: MZ header present"
+          $icons = Get-ChildItem -Path "dist\Launcher" -Recurse -Filter "discord_dark.png"
+          if (-not $icons) { throw "icons/ are missing from the built app" }
 
-      # Файл версии для зеркала. Лаунчер игроков читает его при старте
-      # (LAUNCHER_VERSION_MIRROR_URL) и показывает баннер «доступна версия…».
-      # Генерируем из launcher.py, чтобы номер всегда совпадал со сборкой.
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found at $iscc" }
+          & $iscc "/DMyAppVersion=${{ steps.version.outputs.version }}" installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with $LASTEXITCODE" }
+          if (-not (Test-Path "installer_out\CheckpointSetup.exe")) {
+            throw "installer was not produced"
+          }
+          $size = (Get-Item "installer_out\CheckpointSetup.exe").Length / 1MB
+          echo ("Installer size: {0:N1} MB" -f $size)
+
+      # Файлы для зеркала: установщик + номер версии. Лаунчер игроков читает
+      # launcher_version.txt (LAUNCHER_VERSION_MIRROR_URL) и качает установщик
+      # с зеркала (LAUNCHER_EXE_MIRROR_URL) — минуя заблокированный в РФ GitHub.
       - name: Prepare mirror upload folder
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path deploy | Out-Null
-          Copy-Item "dist\Launcher.exe" "deploy\Launcher.exe" -Force
+          Copy-Item "installer_out\CheckpointSetup.exe" "deploy\CheckpointSetup.exe" -Force
           "${{ steps.version.outputs.version }}" | Out-File -FilePath "deploy\launcher_version.txt" -Encoding ascii -NoNewline
           Get-ChildItem deploy
 
-      # Передаём готовые файлы в следующий Linux-джоб, который зальёт их на
-      # зеркало. Артефакт — единственный способ отдать файлы между джобами.
       - name: Upload build artifact for the deploy job
         uses: actions/upload-artifact@v4
         with:
@@ -132,10 +141,6 @@ jobs:
           path: deploy/
           retention-days: 1
 
-      # Проверяем ДО создания релиза: выходила ли уже эта версия. От этого
-      # зависит, писать ли в Telegram. Пересборка той же версии (правка
-      # build.yml, повторный запуск, докинули файл) — не новость, и постить
-      # её второй раз не надо.
       - name: Has this version been released before?
         id: released
         shell: pwsh
@@ -150,33 +155,19 @@ jobs:
             } -ErrorAction Stop | Out-Null
             $exists = "true"
           } catch {
-            # 404 = релиза нет, значит версия новая. Любая другая ошибка —
-            # тоже считаем, что нет: пропущенный пост не так обиден, как
-            # упавшая сборка.
             $exists = "false"
           }
           echo "Release $tag exists: $exists"
           echo "exists=$exists" >> $env:GITHUB_OUTPUT
 
-      - name: Create GitHub Release with Launcher.exe attached
+      - name: Create GitHub Release with the installer attached
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
-          files: dist/Launcher.exe
+          files: installer_out/CheckpointSetup.exe
           generate_release_notes: false
 
-      # Пост в Telegram-канал. Текст берётся из LAUNCHER_CHANGELOG в
-      # launcher.py — писать его отдельно не нужно.
-      #
-      # Токены живут в Settings -> Secrets and variables -> Actions:
-      #   TELEGRAM_BOT_TOKEN — токен от @BotFather
-      #   TELEGRAM_CHAT_ID   — id канала, для приватного вида -100...
-      # Пока секретов нет, шаг тихо ничего не делает и сборку не роняет.
-      #
-      # Шаг идёт ПОСЛЕ релиза: если сборка упала, в канал ничего не уходит.
-      # А условие ниже — про то, что новость это только первый выход версии:
-      # без него пересборка той же 1.20.0 продублировала пост в группе.
       - name: Tell Telegram about the release
         if: steps.released.outputs.exists == 'false'
         env:
@@ -188,20 +179,10 @@ jobs:
           "https://github.com/${{ github.repository }}/releases/tag/v${{ steps.version.outputs.version }}"
 
   # ------------------------------------------------------------------------
-  # Заливка на зеркало. Отдельный джоб на Linux: игровой хостинг отдаёт файлы
-  # только по SFTP, а инструменты SFTP надёжно работают именно на Linux
-  # (на windows-latest контейнер-экшены и sshpass недоступны — из-за этого
-  # первая версия шага падала с «Container action is only supported on Linux»).
-  # Берём собранный артефакт и кладём его в веб-корень зеркала обычным lftp —
-  # без сторонних экшенов, чтобы не зависеть от чужих контейнеров.
-  #
-  # Секреты (Settings -> Secrets and variables -> Actions -> New secret):
-  #   MIRROR_SFTP_SERVER   — хост SFTP панели (напр. mgr.hosting-minecraft.pro)
-  #   MIRROR_SFTP_PORT     — порт SFTP (у этого хостинга обычно 2022)
-  #   MIRROR_SFTP_USER     — логин SFTP (в панели: «SFTP-данные», напр. name.381b54ac)
-  #   MIRROR_SFTP_PASSWORD — пароль от панели
-  #   MIRROR_REMOTE_DIR    — путь до веб-корня зеркала (напр. /bluemap/web)
-  # Пока секретов нет, шаг тихо пропускается и сборку не роняет.
+  # Заливка установщика на зеркало (Linux-джоб: SFTP-инструменты надёжно
+  # работают именно на Linux). Берём собранный CheckpointSetup.exe и кладём в
+  # веб-корень зеркала обычным lftp. Пока секретов нет — шаг тихо пропускается.
+  #   MIRROR_SFTP_SERVER / _PORT / _USER / _PASSWORD / MIRROR_REMOTE_DIR
   # ------------------------------------------------------------------------
   deploy-mirror:
     runs-on: ubuntu-latest
@@ -223,15 +204,11 @@ jobs:
         run: |
           if [ -z "$SRV" ] || [ -z "$USR" ] || [ -z "$PW" ]; then
             echo "::warning::Секреты MIRROR_SFTP_* не заданы — загрузка на зеркало пропущена."
-            echo "Добавьте их в Settings -> Secrets and variables -> Actions, затем перезапустите сборку."
             exit 0
           fi
           sudo apt-get update -y >/dev/null && sudo apt-get install -y lftp >/dev/null
           PORT="${PRT:-2022}"
           REMOTE="${DIR:-/}"
-          echo "Заливаю Launcher.exe и launcher_version.txt на $SRV:$PORT$REMOTE"
-          # Одной строкой (lftp -c), без heredoc: в YAML-блоке отступы ломают
-          # закрывающий разделитель heredoc. Кавычки '...' вокруг логина/пароля
-          # и пути защищают значения с пробелами.
-          lftp -c "set sftp:auto-confirm yes; set net:timeout 20; set net:max-retries 2; open -u '$USR','$PW' -p $PORT sftp://$SRV; cd '$REMOTE'; put deploy/Launcher.exe; put deploy/launcher_version.txt; bye"
+          echo "Заливаю CheckpointSetup.exe и launcher_version.txt на $SRV:$PORT$REMOTE"
+          lftp -c "set sftp:auto-confirm yes; set net:timeout 20; set net:max-retries 2; open -u '$USR','$PW' -p $PORT sftp://$SRV; cd '$REMOTE'; put deploy/CheckpointSetup.exe; put deploy/launcher_version.txt; bye"
           echo "Готово: зеркало обновлено."
