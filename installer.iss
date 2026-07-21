@@ -26,7 +26,19 @@
 AppId={{8E4B1F2A-6C3D-4A7E-9B15-2D8F0A3C7E51}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppPublisher=Checkpoint
+AppPublisher=Industrial Horizon
+; Метаданные САМОГО установщика (CheckpointSetup.exe). Без них у файла пустые
+; свойства (издатель/описание/версия) — а для неподписанного .exe это один из
+; поводов для McAfee/Defender считать его подозрительным. Заполняем, чтобы
+; ложных срабатываний было меньше. AppId, AppName и DefaultDirName НЕ трогаем:
+; их смена завела бы вторую копию установки и сломала обновление поверх.
+VersionInfoVersion={#MyAppVersion}
+VersionInfoCompany=Industrial Horizon
+VersionInfoDescription=Industrial Horizon Launcher Setup
+VersionInfoProductName=Industrial Horizon Launcher
+VersionInfoProductVersion={#MyAppVersion}
+VersionInfoOriginalFileName=CheckpointSetup.exe
+VersionInfoCopyright=(c) Industrial Horizon
 DefaultDirName={localappdata}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
