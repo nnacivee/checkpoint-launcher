@@ -402,7 +402,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.64.8",
+    "LAUNCHER_VERSION": "1.64.9",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -2184,6 +2184,13 @@ CONFIG = {
     # не заставляя всех перекачивать 400 МБ: модпак ставится только при
     # смене версии, и выброшенный из него мод сам собой не исчезнет.
     "REMOVED_MODS": [
+        # sodiumoptionsapi + sodiumextras: Reese's Sodium Options 2.2.3 с ними
+        # несовместима и роняет игру ("reeses_sodium_options is incompatible
+        # with sodiumoptionsapi"). Новая Reese's заменяет их собой. После
+        # обновления модов эти jar остаются лежать в mods/ у игроков, поэтому
+        # вырезать их из сборки мало — удаляем принудительно при каждом запуске.
+        "sodiumoptionsapi",
+        "sodiumextras",
         # Chisels & Bits — убран по решению владельца (16.07).
         "chisels-and-bits-neoforge-21.1.32.jar",
         # Industrial Horizons — временно убран владельцем (16.07). Его руды
