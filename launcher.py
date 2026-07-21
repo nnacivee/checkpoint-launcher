@@ -392,7 +392,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.64.1",
+    "LAUNCHER_VERSION": "1.64.2",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -6614,7 +6614,13 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
         apply_optional_mods(extras_status, extras_progress)
 
     ensure_pinned_server(extras_status)
-    apply_low_end_mode(low_end_enabled, extras_status)
+    # Режим «очень старая видеокарта» (no_sodium) — это заведомо очень слабый ПК:
+    # раз ему не по силам Sodium, то и обычная дальность прорисовки с графикой
+    # Fancy тоже. Без Sodium старый драйвер AMD упирается в 1 fps даже при 3%
+    # загрузки ГП. Поэтому вместе с удалением Sodium принудительно включаем
+    # минимальную графику (низкая дальность, Fast), иначе играть невозможно.
+    weak_gpu = bool(load_settings().get("no_sodium"))
+    apply_low_end_mode(low_end_enabled or weak_gpu, extras_status)
     apply_forced_options(extras_status)
     install_extra_shaderpacks(extras_status, extras_progress)
     # Faithful 32x + апскейл модов. После шейдеров: обе загрузки некритичные,
