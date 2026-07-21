@@ -8,6 +8,7 @@
 Старый tkinter-интерфейс (launcher.py, main()) остаётся рабочим и нетронутым —
 этот файл запускается отдельно, чтобы обкатать новый вид, ничего не ломая.
 """
+import base64
 import json
 import os
 import subprocess
@@ -15,6 +16,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 import zipfile
 from pathlib import Path
 
@@ -61,6 +63,48 @@ class Api:
         self.window = None
         self._launching = False
         self._busy = False  # общий флаг для длительных операций (repair/установка)
+        self._pack_icon_cache = {}  # slug -> icon_url с Modrinth
+
+    def _pack_icons(self, slugs):
+        """Иконки паков/шейдеров с Modrinth ПАЧКОЙ (один запрос), с кэшем.
+        Неизвестные Modrinth slug'и (наш кастомный пак) просто без картинки."""
+        need = [s for s in dict.fromkeys(slugs) if s and s not in self._pack_icon_cache]
+        if need:
+            try:
+                data = L._modrinth_api_get(
+                    "https://api.modrinth.com/v2/projects?ids="
+                    + urllib.parse.quote(json.dumps(need)))
+                found = {p.get("slug"): (p.get("icon_url") or "") for p in data}
+                for s in need:
+                    self._pack_icon_cache[s] = found.get(s, "")
+            except Exception:  # noqa: BLE001
+                for s in need:
+                    self._pack_icon_cache.setdefault(s, "")
+        return {s: self._pack_icon_cache.get(s, "") for s in slugs}
+
+    @staticmethod
+    def _pack_thumb(path):
+        """Родная иконка установленного пака (pack.png в корне архива/папки),
+        завёрнутая в data-URI для показа прямо в карточке. Нет иконки — ''."""
+        try:
+            p = Path(path)
+            data = None
+            if p.is_file() and zipfile.is_zipfile(p):
+                with zipfile.ZipFile(p) as zf:
+                    names = zf.namelist()
+                    for cand in ("pack.png", "pack.PNG"):
+                        if cand in names:
+                            data = zf.read(cand)
+                            break
+            elif p.is_dir():
+                f = p / "pack.png"
+                if f.exists():
+                    data = f.read_bytes()
+            if data and len(data) < 400_000:
+                return "data:image/png;base64," + base64.b64encode(data).decode("ascii")
+        except Exception:  # noqa: BLE001
+            pass
+        return ""
 
     # --- отправка данных обратно в страницу ---
     def _js(self, code: str) -> None:
@@ -287,13 +331,17 @@ class Api:
 
     def get_shaders(self):
         try:
-            installed = [{"name": p.get("name", ""), "enabled": bool(p.get("enabled"))}
+            installed = [{"name": p.get("name", ""), "enabled": bool(p.get("enabled")),
+                          "icon": self._pack_thumb(p.get("path"))}
                          for p in L.list_shader_packs()]
         except Exception:  # noqa: BLE001
             installed = []
+        cfgs = L.CONFIG.get("RECOMMENDED_SHADER_PACKS", [])
+        icons = self._pack_icons([c.get("slug", "") for c in cfgs])
         rec = [{"slug": c.get("slug", ""), "name": c.get("name", ""),
-                "weight": c.get("weight", ""), "description": c.get("description", "")}
-               for c in L.CONFIG.get("RECOMMENDED_SHADER_PACKS", [])]
+                "weight": c.get("weight", ""), "description": c.get("description", ""),
+                "icon": icons.get(c.get("slug", ""), "")}
+               for c in cfgs]
         return {"installed": installed, "recommended": rec}
 
     def toggle_shader(self, name, enabled):
@@ -328,13 +376,17 @@ class Api:
 
     def get_resource_packs(self):
         try:
-            installed = [{"name": p.get("name", ""), "enabled": bool(p.get("enabled"))}
+            installed = [{"name": p.get("name", ""), "enabled": bool(p.get("enabled")),
+                          "icon": self._pack_thumb(p.get("path"))}
                          for p in L.list_resource_packs()]
         except Exception:  # noqa: BLE001
             installed = []
+        cfgs = L.CONFIG.get("RECOMMENDED_RESOURCE_PACKS", [])
+        icons = self._pack_icons([c.get("slug", "") for c in cfgs])
         rec = [{"slug": c.get("slug", ""), "name": c.get("name", ""),
-                "description": c.get("description", "")}
-               for c in L.CONFIG.get("RECOMMENDED_RESOURCE_PACKS", [])]
+                "description": c.get("description", ""),
+                "icon": icons.get(c.get("slug", ""), "")}
+               for c in cfgs]
         return {"installed": installed, "recommended": rec}
 
     def toggle_resource(self, name, enabled):
@@ -487,12 +539,15 @@ def main():
     try:
         import webview  # pywebview — может отсутствовать/не завестись без WebView2
         api = Api()
+        # Обычное системное окно (не frameless): его можно свободно растягивать
+        # за края, есть родные «свернуть/развернуть/закрыть», и ничего не
+        # перехватывает клики. min_size не даёт сжать до нечитаемого.
         window = webview.create_window(
             L.CONFIG.get("WINDOW_TITLE") or "Industrial Horizon",
             url=_res("ui/index.html"),
             js_api=api,
-            width=1160, height=740, min_size=(980, 640),
-            frameless=True, easy_drag=False, background_color="#0a0e14",
+            width=1160, height=740, min_size=(900, 600),
+            resizable=True, background_color="#0a0e14",
         )
         api.window = window
         webview.start()

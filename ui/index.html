@@ -15,8 +15,8 @@
   .ico{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;
        stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
   .app{display:flex;flex-direction:column;height:100vh}
-  .topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;
-          border-bottom:1px solid var(--bd);-webkit-app-region:drag}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;
+          border-bottom:1px solid var(--bd)}
   .logo{display:flex;align-items:center;gap:12px}
   .logo .mark{width:30px;height:30px;border:2px solid var(--acc);border-radius:8px;display:flex;
               align-items:center;justify-content:center;font-weight:700;font-size:13px;color:var(--acc)}
@@ -46,21 +46,21 @@
         background:radial-gradient(1200px 500px at 70% -10%, #0e1826 0%, #0a0e14 60%)}
   .pg{display:none;animation:fade .18s ease}.pg.on{display:block}
   @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-  .hero{position:relative;border-radius:16px;overflow:hidden;border:1px solid var(--bd);
-        min-height:270px;background:linear-gradient(115deg,#0c1a24,#0a1520 45%,#0a1119)}
-  .hero .glow{position:absolute;inset:0;background:radial-gradient(500px 260px at 78% 40%,
-              rgba(34,211,238,.16),transparent 70%)}
-  .hero .rig{position:absolute;right:0;bottom:0;top:0;width:46%;opacity:.5;
-        background:linear-gradient(180deg,transparent,#0a0e14),
-        repeating-linear-gradient(90deg,#12324a 0 3px,transparent 3px 22px)}
-  .hero .in{position:relative;padding:34px 32px}
+  .homegrid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:18px;align-items:stretch}
+  @media (max-width:860px){.homegrid{grid-template-columns:1fr}}
+  .hero{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--bd);
+        min-height:300px;background:linear-gradient(135deg,#0c1822,#0a121a 60%,#0a0e14)}
+  .hero .glow{position:absolute;inset:0;background:radial-gradient(460px 240px at 80% 30%,
+              rgba(34,211,238,.13),transparent 70%)}
+  .hero .in{position:relative;padding:36px 34px}
   .htitle{font-weight:800;font-size:44px;line-height:.98;letter-spacing:2px}
   .htitle .c{color:var(--acc)}
   .slogan{margin-top:14px;color:#9fb0c0;letter-spacing:5px;font-size:14px;font-weight:600}
   .stats{display:flex;gap:10px;margin-top:34px;flex-wrap:wrap}
   .stat{background:rgba(10,16,24,.6);border:1px solid var(--bd);border-radius:10px;padding:10px 16px}
   .stat .l{font-size:11px;color:var(--mut)}.stat .v{font-weight:700;margin-top:3px}
-  .news{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:18px}
+  .news{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:18px;
+        display:flex;flex-direction:column}
   .news .h{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
   .news .h .t{font-weight:600;letter-spacing:1px;color:#cdd7e3;font-size:13px}
   .news .h .a{color:var(--acc);font-size:12px;cursor:pointer}
@@ -122,6 +122,22 @@
   .mod .dd{font-size:12px;color:var(--mut);margin-top:6px;line-height:1.4}
   .mod a{color:var(--acc);font-size:11px;text-decoration:none}
   .loader{color:var(--mut);font-size:13px;padding:20px 0;text-align:center}
+  .subtabs{display:flex;gap:4px;margin:14px 0 18px;border-bottom:1px solid var(--bd)}
+  .subtab{padding:9px 16px;cursor:pointer;color:var(--mut);font-size:13px;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .subtab:hover{color:var(--tx)}
+  .subtab.on{color:var(--acc);border-bottom-color:var(--acc)}
+  .sub{display:none}.sub.on{display:block;animation:fade .18s ease}
+  .subhead{font-size:12px;color:var(--mut);margin:4px 2px 10px;letter-spacing:.3px}
+  .packgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px}
+  .packcard{display:flex;gap:12px;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;align-items:center}
+  .thumb{width:58px;height:58px;border-radius:10px;flex:0 0 auto;background:#0f1620;position:relative;
+         overflow:hidden;display:flex;align-items:center;justify-content:center;color:#3a4655}
+  .thumb svg{width:24px;height:24px}
+  .thumb .phl{font-weight:700;font-size:22px;color:var(--acc)}
+  .thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;image-rendering:pixelated}
+  .packcard .t{font-weight:600;font-size:13px}
+  .packcard .w{font-size:11px;color:var(--mut);margin-top:2px}
+  .packcard .d{font-size:12px;color:var(--mut);margin-top:4px;line-height:1.35}
   .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:#131a24;border:1px solid var(--bd);
          color:var(--tx);padding:12px 18px;border-radius:12px;max-width:560px;font-size:13px;line-height:1.4;
          box-shadow:0 12px 34px #000a;opacity:0;transition:.25s;pointer-events:none;z-index:60;text-align:center}
@@ -133,15 +149,8 @@
 <div class="app">
   <div class="topbar">
     <div class="logo"><div class="mark">IH</div><div class="name">INDUSTRIAL HORIZON</div></div>
-    <div style="display:flex;align-items:center;gap:14px;-webkit-app-region:no-drag">
-      <div class="srv"><span style="display:flex;align-items:center;gap:7px"><span class="dot" id="dot"></span><span id="srvText">Проверка…</span></span>
-        <span class="sep">|</span><span id="players">— / —</span><span class="sep">|</span><span id="ping">— мс</span></div>
-      <div class="wbtns">
-        <div class="wbtn" onclick="api('minimize')"><svg class="ico" viewBox="0 0 24 24"><path d="M5 12h14"/></svg></div>
-        <div class="wbtn" onclick="api('maximize')"><svg class="ico" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></div>
-        <div class="wbtn close" onclick="api('close')"><svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6l-12 12"/></svg></div>
-      </div>
-    </div>
+    <div class="srv"><span style="display:flex;align-items:center;gap:7px"><span class="dot" id="dot"></span><span id="srvText">Проверка…</span></span>
+      <span class="sep">|</span><span id="players">— / —</span><span class="sep">|</span><span id="ping">— мс</span></div>
   </div>
   <div id="updBar" style="display:none;align-items:center;justify-content:center;gap:14px;padding:8px 14px;background:#12324a;border-bottom:1px solid var(--bd);font-size:13px;color:#dbe9f5">
     <span id="updText">Доступно обновление</span>
@@ -168,25 +177,18 @@
     <div class="main">
       <!-- ГЛАВНАЯ -->
       <div class="pg on" id="home">
-        <div style="display:grid;grid-template-columns:1.55fr 1fr;gap:18px">
-          <div class="hero"><div class="glow"></div><div class="rig"></div><div class="in">
+        <div class="homegrid">
+          <div class="hero"><div class="glow"></div><div class="in">
             <div class="htitle">INDUSTRIAL<br><span class="c">HORIZON</span></div>
-            <div class="slogan">BUILD. AUTOMATE. EXPLORE.</div>
+            <div class="slogan">BUILD · AUTOMATE · EXPLORE</div>
             <div class="stats">
-              <div class="stat"><div class="l">Версия сборки</div><div class="v" id="sBuild">—</div></div>
+              <div class="stat"><div class="l">Сборка</div><div class="v" id="sBuild">—</div></div>
               <div class="stat"><div class="l">Minecraft</div><div class="v" id="sMc">—</div></div>
               <div class="stat"><div class="l">NeoForge</div><div class="v" id="sLoader">—</div></div>
               <div class="stat"><div class="l">Модов</div><div class="v" id="sMods">—</div></div>
             </div>
           </div></div>
-          <div class="news"><div class="h"><div class="t">НОВОСТИ</div><div class="a" onclick="api('open_news')">Все новости →</div></div><div id="newsList"></div></div>
-        </div>
-        <div class="qatitle">БЫСТРЫЙ ДОСТУП</div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">
-          <div class="qa" data-p="mods"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg><div class="n">Моды</div><div class="d">Настройка и управление модами</div></div>
-          <div class="qa" data-p="look"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3a9 9 0 100 18c1 0 1.5-.8 1.5-1.6 0-1.2-1-1.4-1-2.4 0-.7.6-1.2 1.4-1.2H16a4 4 0 004-4c0-4.4-3.6-6.8-8-6.8z"/><circle cx="8.5" cy="10.5" r="1"/><circle cx="12" cy="8" r="1"/><circle cx="15.5" cy="10.5" r="1"/></svg><div class="n">Внешний вид</div><div class="d">Скины, текстуры, шейдеры</div></div>
-          <div class="qa" data-p="community"><svg class="ico" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3"/><path d="M3 20c0-3 2.7-5 6-5s6 2 6 5"/><path d="M16 6a3 3 0 010 6"/></svg><div class="n">Сообщество</div><div class="d">Discord, Telegram и другое</div></div>
-          <div class="qa" data-p="settings"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 00-2.3-1.3L14 2h-4l-.2 2.4a7 7 0 00-2.3 1.3l-2.4-1-2 3.4 2 1.6A7 7 0 005 12c0 .4 0 .9.1 1.3l-2 1.6 2 3.4 2.4-1a7 7 0 002.3 1.3L10 22h4l.2-2.4a7 7 0 002.3-1.3l2.4 1 2-3.4-2-1.6z"/></svg><div class="n">Настройки</div><div class="d">Параметры лаунчера и игры</div></div>
+          <div class="news"><div class="h"><div class="t">НОВОСТИ</div><div class="a" onclick="api('open_news')">Все →</div></div><div id="newsList"></div></div>
         </div>
       </div>
 
@@ -202,31 +204,40 @@
       <!-- ВНЕШНИЙ ВИД -->
       <div class="pg" id="look">
         <div class="pagehead">Внешний вид</div>
-        <div class="pagesub">Графика, шейдеры, ресурс-паки и скины. Применяйте при закрытой игре.</div>
-        <div class="sect">
-          <h3>Пресеты графики</h3><div class="s">Одна кнопка настраивает дальность, свет и облака в самой игре.</div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <button class="btn" onclick="api('graphics_preset','potato')">🥔 Слабый ПК</button>
-            <button class="btn acc" onclick="api('graphics_preset','balance')">⚖ Баланс</button>
-            <button class="btn" onclick="api('graphics_preset','beauty')">✨ Красота</button>
+        <div class="subtabs">
+          <div class="subtab on" data-s="gfx">Графика</div>
+          <div class="subtab" data-s="sh">Шейдеры</div>
+          <div class="subtab" data-s="rp">Текстуры</div>
+          <div class="subtab" data-s="skin">Скины</div>
+        </div>
+        <div class="sub on" data-sub="gfx">
+          <div class="sect">
+            <h3>Пресеты графики</h3><div class="s">Одна кнопка настраивает дальность, свет и облака в самой игре. Применяйте при закрытой игре.</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <button class="btn" onclick="api('graphics_preset','potato')">Слабый ПК</button>
+              <button class="btn acc" onclick="api('graphics_preset','balance')">Баланс</button>
+              <button class="btn" onclick="api('graphics_preset','beauty')">Красота</button>
+            </div>
+          </div>
+          <div class="sect">
+            <h3>Режимы для слабых машин</h3><div class="s">Помогает, если игра тормозит или вылетает на старой видеокарте.</div>
+            <div class="row"><div><div class="n">Слабый ПК — низкая графика</div><div class="d">Минимум эффектов, максимум FPS.</div></div><div class="toggle" id="tgLow" onclick="toggleLow()"></div></div>
+            <div class="row"><div><div class="n">Очень старая видеокарта — убрать Sodium</div><div class="d">Лечит артефакты и вылеты на GPU уровня AMD HD 7000.</div></div><div class="toggle" id="tgNoSodium" onclick="toggleNoSodium()"></div></div>
           </div>
         </div>
-        <div class="sect">
-          <h3>Режимы для слабых машин</h3><div class="s">Помогает, если игра тормозит или вылетает на старой видеокарте.</div>
-          <div class="row"><div><div class="n">Слабый ПК — низкая графика</div><div class="d">Минимум эффектов, максимум FPS.</div></div><div class="toggle" id="tgLow" onclick="toggleLow()"></div></div>
-          <div class="row"><div><div class="n">Очень старая видеокарта — убрать Sodium/шейдерные моды</div><div class="d">Лечит артефакты и вылеты на GPU уровня AMD HD 7000.</div></div><div class="toggle" id="tgNoSodium" onclick="toggleNoSodium()"></div></div>
-        </div>
-        <div class="sect">
-          <h3>Шейдеры</h3><div class="s">Включён может быть только один. Пометка — насколько шейдер требователен.</div>
+        <div class="sub" data-sub="sh">
+          <div class="subhead">Включён может быть только один шейдер. Метка показывает, насколько он требователен к видеокарте.</div>
           <div id="shBox"><div class="loader">Загрузка…</div></div>
         </div>
-        <div class="sect">
-          <h3>Ресурс-паки (текстуры)</h3><div class="s">Готовые паки ставятся в один клик.</div>
+        <div class="sub" data-sub="rp">
+          <div class="subhead">Готовые наборы текстур ставятся в один клик. Можно включать несколько сразу.</div>
           <div id="rpBox"><div class="loader">Загрузка…</div></div>
         </div>
-        <div class="sect">
-          <h3>Скины</h3><div class="s">Файлы скинов и плащей лежат в папке игры.</div>
-          <button class="btn" onclick="api('open_skins_folder')">Открыть папку игры</button>
+        <div class="sub" data-sub="skin">
+          <div class="sect">
+            <h3>Скины и плащи</h3><div class="s">Файлы скинов лежат в папке игры. Полноценный выбор скина добавлю в следующем обновлении.</div>
+            <button class="btn" onclick="api('open_skins_folder')">Открыть папку игры</button>
+          </div>
         </div>
       </div>
 
@@ -306,7 +317,6 @@ function show(p){
   document.querySelectorAll('.side .nav[data-p]').forEach(function(e){e.classList.toggle('on',e.dataset.p===p);});
   document.querySelector('.main').scrollTop=0;
   if(p==='mods'&&!loadedMods) loadMods();
-  if(p==='look'){ if(!loadedSh) loadShaders(); if(!loadedRp) loadResources(); }
 }
 document.querySelectorAll('[data-p]').forEach(function(e){e.addEventListener('click',function(){show(e.dataset.p);});});
 $('nick').addEventListener('change',function(){api('save_nick',$('nick').value.trim());});
@@ -403,17 +413,35 @@ function loadShaders(){ var a=PY(); if(!a){$('shBox').innerHTML='<div class="loa
 function loadResources(){ var a=PY(); if(!a){$('rpBox').innerHTML='<div class="loader">—</div>';return;} loadedRp=true;
   a.get_resource_packs().then(function(r){ $('rpBox').innerHTML=packHtml(r,'res'); });
 }
+function thumb(icon,name){ var nm=((name||'').trim()||'?'); var ltr=esc(nm.charAt(0).toUpperCase());
+  var s='<div class="thumb"><span class="phl">'+ltr+'</span>';
+  if(icon) s+='<img src="'+esc(icon)+'" loading="lazy" onerror="this.remove()">';
+  return s+'</div>'; }
 function packHtml(r,kind){
   r=r||{}; var inst=r.installed||[], rec=r.recommended||[], h='';
-  if(inst.length){ h+='<div style="font-size:12px;color:var(--mut);margin-bottom:6px">Установлено</div>';
-    h+=inst.map(function(p){return '<div class="row"><div class="n">'+esc(p.name)+'</div><div class="toggle'+(p.enabled?' on':'')+'" onclick="tgPack(\''+kind+'\',this,\''+esc(p.name).replace(/'/g,"")+'\')"></div></div>';}).join('');
+  if(inst.length){
+    h+='<div class="subhead">Установлено ('+inst.length+')</div><div class="packgrid">';
+    h+=inst.map(function(p){
+      return '<div class="packcard">'+thumb(p.icon,p.name)+'<div style="flex:1;min-width:0"><div class="t">'+esc(p.name)+'</div><div class="w">'+(p.enabled?'включён':'выключен')+'</div></div>'+
+        '<div class="toggle'+(p.enabled?' on':'')+'" onclick="tgPack(\''+kind+'\',this,\''+esc(p.name).replace(/'/g,"")+'\')"></div></div>';
+    }).join('')+'</div>';
   }
-  h+='<div style="font-size:12px;color:var(--mut);margin:12px 0 6px">Рекомендуем поставить</div>';
-  h+=rec.map(function(c){ var w=c.weight?(' · '+c.weight):'';
-    return '<div class="row"><div style="min-width:0"><div class="n">'+esc(c.name)+'<span style="color:var(--mut);font-weight:400">'+esc(w)+'</span></div><div class="d">'+esc(c.description||'')+'</div></div><button class="btn acc" onclick="instPack(\''+kind+'\',\''+esc(c.slug)+'\',this)">Поставить</button></div>';
-  }).join('');
+  h+='<div class="subhead">Рекомендуем поставить</div><div class="packgrid">';
+  h+=rec.map(function(c){
+    return '<div class="packcard">'+thumb(c.icon,c.name)+'<div style="flex:1;min-width:0"><div class="t">'+esc(c.name)+'</div>'+
+      (c.weight?'<div class="w">'+esc(c.weight)+'</div>':'')+
+      '<div class="d">'+esc(c.description||'')+'</div></div>'+
+      '<button class="btn acc" onclick="instPack(\''+kind+'\',\''+esc(c.slug)+'\',this)">Поставить</button></div>';
+  }).join('')+'</div>';
   return h;
 }
+document.querySelectorAll('#look .subtab').forEach(function(e){ e.addEventListener('click',function(){
+  var s=e.dataset.s;
+  document.querySelectorAll('#look .subtab').forEach(function(x){x.classList.toggle('on',x===e);});
+  document.querySelectorAll('#look .sub').forEach(function(x){x.classList.toggle('on',x.dataset.sub===s);});
+  if(s==='sh'&&!loadedSh) loadShaders();
+  if(s==='rp'&&!loadedRp) loadResources();
+});});
 function tgPack(kind,el,name){ var on=!el.classList.contains('on'); el.classList.toggle('on',on);
   var a=PY(); if(a){ (kind==='shader'?a.toggle_shader:a.toggle_resource).call(a,name,on); }
   toast(on?'Включено':'Выключено','ok');
