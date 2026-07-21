@@ -374,6 +374,11 @@ CONFIG = {
     # Ссылка на ваш Discord-сервер (кнопка в лаунчере). Оставьте "", чтобы
     # кнопку не показывать.
     "DISCORD_URL": "https://discord.gg/rN22JGV9C",
+    # Discord Rich Presence: статус «Играет в Industrial Horizon» в профиле игрока.
+    # Пусто = выключено. Чтобы включить: создать приложение на
+    # https://discord.com/developers, назвать "Industrial Horizon", в Rich Presence
+    # → Art Assets загрузить логотип под именем "logo", и вписать сюда Application ID.
+    "DISCORD_APP_ID": "1529101947381219348",
     "TELEGRAM_URL": "https://t.me/+mq769D_rHc04ZmYy",
 
     # Веб-карта мира (BlueMap крутится прямо на сервере, отдельный порт).
@@ -392,7 +397,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.64.4",
+    "LAUNCHER_VERSION": "1.64.6",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -6067,6 +6072,11 @@ LOW_END_OPTIONS = {
     "clouds": "false",         # то же самое, старое название ключа
     "entityShadows": "false",
     "biomeBlendRadius": "0",
+    # «Облегчённые текстуры» для слабых видеокарт: мипмапы (сглаживание текстур
+    # вдали) заметно грузят видеопамять и GPU у старых карт вроде AMD HD 7000.
+    # 0 = без мипмапов. Плюс упрощаем модели блоков (меньше геометрии).
+    "mipmapLevels": "0",
+    "entityDistanceScaling": "0.5",  # мобы/сущности рисуются ближе — меньше нагрузка
 }
 
 # Настройки, которые лаунчер выставляет ВСЕГДА — и на слабом ПК, и на мощном.
@@ -6826,6 +6836,7 @@ class LauncherApp:
         self.refresh_server_status()
         self._check_launcher_update_async()
         self._serve_single_instance()
+        self._rp_update("В лаунчере", "В меню")  # Discord Rich Presence (если настроен)
 
     # ------------------------------------------------------------------
     # Окно: показать, вернуть на экран, второй запуск, корректный выход
@@ -6922,9 +6933,38 @@ class LauncherApp:
                 server.close()
             except OSError:
                 pass
+        # Если обновление скачано — тихо ставим его именно СЕЙЧАС, при закрытии.
+        # Так лаунчер не перезапускается во время работы: апдейт применяется,
+        # когда человек и так уходит, и окно заново не открывается.
+        pending = getattr(self, "_pending_update", None)
+        if pending:
+            self._launch_update_installer(pending)
+        self._rp_close()
         try:
             self.root.destroy()
         except tk.TclError:
+            pass
+
+    def _launch_update_installer(self, new_exe) -> None:
+        """Тихо запускает скачанный установщик обновления и НЕ открывает лаунчер
+        заново (installer.iss [Run] со skipifsilent). Скрипт ждёт, пока лаунчер
+        закроется, ставит обновление молча и убирает за собой. Вызывается из
+        on_close — чтобы обновление не перезапускало лаунчер посреди работы."""
+        bat = Path(tempfile.gettempdir()) / ("ih_update_%d.bat" % os.getpid())
+        script = (
+            "@echo off\r\n"
+            "ping -n 3 127.0.0.1 >nul\r\n"
+            "%1 /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /NOCANCEL\r\n"
+            "ping -n 12 127.0.0.1 >nul\r\n"
+            "del %1 >nul 2>&1\r\n"
+            'del "%~f0" >nul 2>&1\r\n'
+        )
+        try:
+            bat.write_text(script, encoding="ascii")
+            create_no_window = 0x08000000  # без чёрного окна консоли
+            subprocess.Popen(["cmd", "/c", str(bat), str(new_exe)],
+                             creationflags=create_no_window, close_fds=True)
+        except Exception:  # noqa: BLE001
             pass
 
     # ------------------------------------------------------------------
@@ -9193,8 +9233,56 @@ class LauncherApp:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _rp_update(self, details: str, state: str, reset_time: bool = False) -> None:
+        """Discord Rich Presence — «Играет в Industrial Horizon» в профиле игрока.
+        Всё в фоне и под замком: pypresence не потокобезопасен, а connect может
+        подвиснуть при странно запущенном Discord — поэтому UI это не трогает.
+        Нет APP_ID или Discord не запущен — тихо ничего не делаем."""
+        app_id = CONFIG.get("DISCORD_APP_ID")
+        if not app_id:
+            return
+        if not hasattr(self, "_rp_lock"):
+            self._rp_lock = threading.Lock()
+            self._rpc = None
+            self._rpc_start = int(time.time())
+
+        def worker():
+            with self._rp_lock:
+                try:
+                    if self._rpc is None:
+                        from pypresence import Presence
+                        self._rpc = Presence(str(app_id))
+                        self._rpc.connect()
+                        self._rpc_start = int(time.time())
+                    if reset_time:
+                        self._rpc_start = int(time.time())
+                    self._rpc.update(
+                        details=details, state=state,
+                        large_image="logo", large_text="Industrial Horizon",
+                        start=self._rpc_start)
+                except Exception:  # noqa: BLE001
+                    try:
+                        if self._rpc:
+                            self._rpc.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self._rpc = None
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _rp_close(self) -> None:
+        rpc = getattr(self, "_rpc", None)
+        if rpc is not None:
+            try:
+                rpc.clear()
+                rpc.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._rpc = None
+
     def _on_game_started(self) -> None:
         self.set_status("Игра запущена! Лаунчер откроется снова, когда вы закроете Minecraft.")
+        self._rp_update("В игре", "Industrial Horizon", reset_time=True)
         # Сворачиваем в панель задач, а НЕ прячем полностью (withdraw):
         # раньше окно исчезало отовсюду и вернуть его было нечем — со стороны
         # это и выглядело как "процесс есть, окна нет".
@@ -9222,6 +9310,7 @@ class LauncherApp:
     def _on_game_ended(self, game_started: bool) -> None:
         self.play_button.set_enabled(True)
         self.show_window()
+        self._rp_update("В лаунчере", "В меню", reset_time=True)
         if game_started:
             if getattr(self, "_last_game_crashed", False):
                 self.set_status("Игра закрылась с ошибкой — могу собрать логи.")
@@ -9969,12 +10058,15 @@ class LauncherApp:
                         pass
                     raise RuntimeError("скачанный файл повреждён")
 
-                # Пробного запуска тут больше нет. Он был костылём против
-                # "Failed to load Python DLL": грел антивирус, чтобы тот успел
-                # проверить свежий .exe до подмены. Костыль не работал (ошибка
-                # возвращалась), а теперь и не нужен: обновление ставит
-                # установщик, лаунчер лежит папкой и ничего не распаковывает.
-                self.root.after(0, self._apply_downloaded_update, cur_exe, new_exe)
+                # Обновление НЕ применяем сразу — иначе лаунчер закрылся бы и
+                # перезапустился посреди работы. Запоминаем скачанный установщик
+                # и поставим его ТИХО, когда игрок сам закроет лаунчер (см.
+                # on_close). Тогда никакого перезапуска: апдейт встаёт при выходе
+                # и заново окно не открывает (installer.iss, skipifsilent).
+                self._pending_update = new_exe
+                self.root.after(0, lambda: self.update_banner_var.set(
+                    "✅  Обновление %s готово — установится при закрытии лаунчера"
+                    % (info.get("version", "") or "")))
             except Exception:
                 self._updating = False
                 # НЕ уводим на GitHub и НЕ гасим exe_url: при следующем клике
