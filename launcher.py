@@ -392,7 +392,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.64.0",
+    "LAUNCHER_VERSION": "1.64.1",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -6546,11 +6546,15 @@ def deploy_test_mods(status_cb, progress_cb) -> bool:
 # ImmediatelyFast тоже сюда: это оптимизатор батчинга отрисовки, он использует
 # современные пути OpenGL (persistent-mapped буферы и т.п.), которых у GPU
 # 2012 года нет, и на них он крашит игру на старте ("запустилась и закрылась").
-# На старом железе смысл от него всё равно отрицательный. Проверено по сборке:
-# ни один мод не требует sodium/iris жёстко (у Create зависимость optional, у
-# create_submarine — incompatible), поэтому удаление безопасно.
+# На старом железе смысл от него всё равно отрицательный.
+#
+# ВАЖНО: мод createbetterfps ЖЁСТКО требует sodium ("Missing or unsupported
+# mandatory dependencies: sodium, requested by createbetterfps"). Если убрать
+# sodium, но оставить createbetterfps — игра падает на старте. Поэтому его тоже
+# удаляем вместе с рендер-модами. (У Create зависимость от sodium optional, у
+# create_submarine — incompatible, так что там проблем нет.)
 _RENDER_MOD_PATTERNS = ("sodium", "iris", "reeses", "immediatelyfast",
-                        "embeddium", "rubidium", "oculus")
+                        "embeddium", "rubidium", "oculus", "createbetterfps")
 
 
 def strip_render_mods(status_cb=None) -> None:
