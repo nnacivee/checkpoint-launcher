@@ -86,17 +86,10 @@ jobs:
           if (Test-Path "fonts") {
             $args += "--add-data=fonts;fonts"
           }
-          # Новый интерфейс: HTML/CSS/JS страницы кладём рядом с exe.
-          if (Test-Path "ui") {
-            $args += "--add-data=ui;ui"
-          }
-          # pywebview тащит бэкенд WebView2 и pythonnet — собираем целиком,
-          # иначе окно нового интерфейса не откроется на чистой машине.
-          $args += "--collect-all=webview"
-          # Точка входа — webui.py (окно pywebview). Он импортирует launcher.py
-          # ради всей логики и сам откатывается на старый tkinter, если на ПК
-          # почему-то нет WebView2.
-          $args += "webui.py"
+          # Точка входа — launcher.py (проверенный tkinter-интерфейс). Веб-версия
+          # (webui.py, ui/) остаётся в репозитории, но в сборку не идёт: у части
+          # игроков новое окно открывалось криво/висело, поэтому вернулись на старое.
+          $args += "launcher.py"
           pyinstaller @args
 
       - name: Check the app folder really built
@@ -118,13 +111,6 @@ jobs:
           }
           $icons = Get-ChildItem -Path "dist\Launcher" -Recurse -Filter "discord_dark.png"
           if (-not $icons) { throw "icons/ are missing from the built app" }
-          # Страница нового интерфейса обязана попасть в сборку.
-          $ui = Get-ChildItem -Path "dist\Launcher" -Recurse -Filter "index.html"
-          if (-not $ui) { throw "ui/index.html is missing from the built app" }
-          echo "OK: ui -> $($ui[0].FullName)"
-          # Бэкенд WebView2 от pywebview (WebView2Loader.dll).
-          $wv = Get-ChildItem -Path "dist\Launcher" -Recurse -Filter "WebView2Loader.dll" -ErrorAction SilentlyContinue
-          if ($wv) { echo "OK: WebView2Loader.dll -> $($wv[0].FullName)" } else { echo "WARN: WebView2Loader.dll not found (pywebview may load it at runtime)" }
 
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
