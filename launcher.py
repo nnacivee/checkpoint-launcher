@@ -392,7 +392,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.64.2",
+    "LAUNCHER_VERSION": "1.64.3",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -6554,7 +6554,39 @@ def deploy_test_mods(status_cb, progress_cb) -> bool:
 # удаляем вместе с рендер-модами. (У Create зависимость от sodium optional, у
 # create_submarine — incompatible, так что там проблем нет.)
 _RENDER_MOD_PATTERNS = ("sodium", "iris", "reeses", "immediatelyfast",
-                        "embeddium", "rubidium", "oculus", "createbetterfps")
+                        "rubidium", "oculus", "createbetterfps")
+
+
+def install_embeddium(status_cb=None) -> None:
+    """Ставит Embeddium — форк Sodium на СТАРОМ движке рендера (0.5). Только для
+    режима «очень старая видеокарта»: у таких GPU (AMD HD 7000) новый Sodium 0.6
+    бьётся артефактами, а совсем без оптимизатора игра идёт на 1 fps. Embeddium
+    часто работает там, где Sodium ломается. Ставим ПОСЛЕ удаления Sodium (иначе
+    они конфликтуют). Любая ошибка (нет сети) не должна мешать запуску."""
+    try:
+        mods_dir = INSTANCE_DIR / "mods"
+        mods_dir.mkdir(parents=True, exist_ok=True)
+        if any("embeddium" in p.name.lower() for p in mods_dir.glob("*.jar")):
+            return  # уже стоит — не качаем каждый запуск
+        fname, url = _find_modrinth_download(
+            "embeddium", CONFIG["MC_VERSION"], [CONFIG["MOD_LOADER"]])
+        if url:
+            download_file(url, mods_dir / fname)
+            if status_cb:
+                status_cb("Ставлю Embeddium — оптимизатор для старой видеокарты.")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def remove_embeddium() -> None:
+    """Убирает Embeddium — нужно, когда режим слабой видеокарты выключен: рядом
+    с обычным Sodium из сборки Embeddium конфликтует и роняет игру."""
+    try:
+        for jar in (INSTANCE_DIR / "mods").glob("*.jar"):
+            if "embeddium" in jar.name.lower():
+                jar.unlink()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def strip_render_mods(status_cb=None) -> None:
@@ -6634,9 +6666,15 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     install_skin_config(extras_status)
 
     # Режим «очень старая видеокарта»: строго ПОСЛЕ всех установок модов,
-    # чтобы снять и Sodium из сборки, и его аддоны из доп-модов.
+    # чтобы снять и Sodium из сборки, и его аддоны из доп-модов, и вместо
+    # Sodium 0.6 (он бьётся артефактами на GPU 2012 года) поставить Embeddium
+    # на старом движке 0.5. Когда режим выключен — Embeddium убираем, иначе он
+    # конфликтует с обычным Sodium из сборки.
     if load_settings().get("no_sodium"):
         strip_render_mods(extras_status)
+        install_embeddium(extras_status)
+    else:
+        remove_embeddium()
 
     # Мода, который есть на сервере, у игрока нет — запускать игру бессмысленно:
     # сервер оборвёт соединение на входе («Канал мода отсутствует на стороне
