@@ -392,7 +392,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.65.1",
+    "LAUNCHER_VERSION": "1.65.2",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -404,6 +404,18 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.65.2",
+            "date": "21 июля 2026",
+            "changes": [
+                "Починена проверка обновлений у игроков, чей провайдер "
+                "блокирует адрес зеркала: теперь у проверки версии сборки, "
+                "настроек и самого лаунчера есть запасной путь по прямому "
+                "адресу сервера. Раньше лаунчер в этом случае молча решал "
+                "«всё актуально», и человек застревал на старых модах с "
+                "ошибкой «Клиент несовместим» при входе.",
+            ],
+        },
         {
             "version": "1.65.1",
             "date": "21 июля 2026",
@@ -3656,22 +3668,68 @@ def download_with_mirror(primary_url: str, mirror_url: str, dest: Path,
     raise last_error
 
 
+def _mirror_url_variants(url: str) -> list:
+    """Для маленьких служебных файлов зеркала (номера версий и т.п.) возвращает
+    список источников: сначала указанный URL, затем тот же путь через запасной
+    канал — домен <-> прямой IP игрового сервера.
+
+    Зачем (21.07, случай VolFA99). Сам модпак давно качается с запасными
+    источниками (см. download_with_mirror), а вот ПРОВЕРКА версии ходила только
+    на https-домен. У игрока, чей провайдер режет dynmap.xyz, проверка молча
+    падала, лаунчер решал «сборка актуальна» — и человек неделями сидел на
+    древних модах, получая «Клиент несовместим» при входе на сервер. Теперь у
+    проверки версий те же запасные пути, что и у самого скачивания."""
+    urls = [url]
+    if "industrialhorizon.dynmap.xyz" in url:
+        urls.append(url.replace("https://industrialhorizon.dynmap.xyz",
+                                "http://95.216.30.64:25980"))
+    elif "95.216.30.64:25980" in url:
+        urls.append(url.replace("http://95.216.30.64:25980",
+                                "https://industrialhorizon.dynmap.xyz"))
+    return urls
+
+
+def _fetch_tiny_text(urls):
+    """Скачивает крошечный текстовый файл, пробуя список URL по очереди;
+    возвращает строку или None, если не вышло нигде.
+
+    Анти-кеш ?t= (метка меняется раз в ~5 минут) — как в fetch_server_news:
+    Cloudflare на домене кеширует ответы, и без метки игроки после релиза
+    ещё долго видели бы старый номер версии."""
+    for u in urls:
+        try:
+            busted = u + (("&" if "?" in u else "?") + "t="
+                          + str(int(time.time()) // 300))
+            request = urllib.request.Request(
+                busted, headers={"User-Agent": "IH-Launcher"})
+            with urllib.request.urlopen(request, timeout=10) as response:
+                raw = response.read().decode("utf-8", "replace").strip()
+            if raw:
+                return raw
+        except Exception:  # noqa: BLE001 — сеть падает по-разному
+            continue
+    return None
+
+
 def get_remote_modpack_version() -> int:
     """Версия сборки модов. Если в CONFIG указана MODPACK_VERSION_URL —
     скачивает и читает число оттуда (так можно обновлять моды без
-    пересборки .exe). Если ссылки нет или скачать не удалось — использует
-    число из CONFIG."""
+    пересборки .exe). Проверка идёт по нескольким источникам — домен и
+    прямой IP (см. _mirror_url_variants). Если ссылки нет или скачать не
+    удалось нигде — использует число из CONFIG."""
     url = CONFIG.get("MODPACK_VERSION_URL")
     if not url:
         return CONFIG["MODPACK_VERSION"]
-    try:
-        with urllib.request.urlopen(url, timeout=10) as response:
-            return int(response.read().decode("utf-8").strip())
-    except Exception:
-        # Нет интернета / файл не отвечает — не считаем это поводом
-        # переустанавливать моды, просто используем то, что уже стоит.
-        local = get_local_modpack_version()
-        return local if local != -1 else CONFIG["MODPACK_VERSION"]
+    raw = _fetch_tiny_text(_mirror_url_variants(url))
+    if raw is not None:
+        try:
+            return int(raw.split()[0])
+        except Exception:
+            pass  # 200-ответ с мусором (страница-заглушка) — это не версия
+    # Нет интернета / файл не отвечает — не считаем это поводом
+    # переустанавливать моды, просто используем то, что уже стоит.
+    local = get_local_modpack_version()
+    return local if local != -1 else CONFIG["MODPACK_VERSION"]
 
 
 def get_local_modpack_version() -> int:
@@ -4073,18 +4131,30 @@ def fetch_server_news() -> list:
 
 
 def get_remote_configpack_version() -> int:
-    """То же, что get_remote_modpack_version(), но для пака настроек."""
+    """То же, что get_remote_modpack_version(), но для пака настроек.
+
+    Основной адрес — GitHub (туда пак кладёт релиз), запасные — зеркало
+    (домен и прямой IP): у части игроков GitHub заблокирован, и раньше эта
+    проверка у них молча падала — обновления меню/квестов не доезжали.
+    CI копирует configpack_version.txt на зеркало вместе с самим паком."""
     url = CONFIG.get("CONFIGPACK_VERSION_URL")
     if not url:
         return CONFIG.get("CONFIGPACK_VERSION", 0)
-    try:
-        with urllib.request.urlopen(url, timeout=10) as response:
-            return int(response.read().decode("utf-8").strip())
-    except Exception:
-        # Нет интернета или файл не отвечает — не повод переустанавливать
-        # настройки. Оставляем то, что уже стоит.
-        local = _read_configpack_marker().get("version")
-        return local if isinstance(local, int) else CONFIG.get("CONFIGPACK_VERSION", 0)
+    candidates = [url]
+    for extra in ("https://industrialhorizon.dynmap.xyz/configpack_version.txt",
+                  "http://95.216.30.64:25980/configpack_version.txt"):
+        if extra not in candidates:
+            candidates.append(extra)
+    raw = _fetch_tiny_text(candidates)
+    if raw is not None:
+        try:
+            return int(raw.split()[0])
+        except Exception:
+            pass  # 200-ответ с мусором — это не версия
+    # Нет интернета или файл не отвечает — не повод переустанавливать
+    # настройки. Оставляем то, что уже стоит.
+    local = _read_configpack_marker().get("version")
+    return local if isinstance(local, int) else CONFIG.get("CONFIGPACK_VERSION", 0)
 
 
 def _read_configpack_marker() -> dict:
@@ -5242,10 +5312,20 @@ def _check_update_via_mirror():
     try:
         # Cloudflare кеширует ответы — добавляем анти-кеш метку (меняется раз в
         # ~5 минут), иначе после релиза игроки ещё долго видят старый номер.
-        bust = ("&" if "?" in url else "?") + "t=" + str(int(time.time()) // 300)
-        request = urllib.request.Request(url + bust, headers={"User-Agent": "IH-Launcher"})
-        with urllib.request.urlopen(request, timeout=8) as response:
-            raw = response.read().decode("utf-8", "replace")
+        # Пробуем домен, затем прямой IP (_mirror_url_variants): у части
+        # игроков провайдер режет домен — раньше они не видели обновлений.
+        raw, src = None, None
+        for u in _mirror_url_variants(url):
+            try:
+                bust = ("&" if "?" in u else "?") + "t=" + str(int(time.time()) // 300)
+                request = urllib.request.Request(
+                    u + bust, headers={"User-Agent": "IH-Launcher"})
+                with urllib.request.urlopen(request, timeout=8) as response:
+                    raw = response.read().decode("utf-8", "replace")
+                src = u
+                break
+            except Exception:  # noqa: BLE001
+                continue
         ver = ""
         for tok in (raw or "").replace("\r", " ").replace("\n", " ").split():
             t = tok.strip().lstrip("vV")
@@ -5255,7 +5335,14 @@ def _check_update_via_mirror():
         if ver and _version_tuple(ver) > _version_tuple(CONFIG["LAUNCHER_VERSION"]):
             # Тот же exe-файл на зеркале для всех версий: анти-кеш по номеру,
             # чтобы Cloudflare отдал именно свежий Launcher.exe.
-            exe_url = exe + (("&" if "?" in exe else "?") + "v=" + ver.replace(".", ""))
+            exe_src = exe
+            if src and "95.216.30.64" in src:
+                # Номер версии дошёл только через прямой IP — значит, домен у
+                # игрока закрыт, и установщик тоже качаем по IP.
+                exe_src = exe.replace("https://industrialhorizon.dynmap.xyz",
+                                      "http://95.216.30.64:25980")
+            exe_url = exe_src + (("&" if "?" in exe_src else "?")
+                                 + "v=" + ver.replace(".", ""))
             return {
                 "version": ver,
                 "exe_url": exe_url,
