@@ -402,7 +402,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.64.7",
+    "LAUNCHER_VERSION": "1.64.8",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -7421,44 +7421,32 @@ class LauncherApp:
         self.progress_var.trace_add("write", lambda *a: self._redraw_progress())
         self._redraw_progress()
 
-        # Баннер обновления — плашкой, а не бледной строчкой поверх арта:
-        # мелкий текст на картинке просто не замечали.
+        # Баннер обновления — НАСТОЯЩАЯ кнопка-виджет поверх холста, а не рисунок.
+        # Раньше это была нарисованная плашка: клик по ней проходил через раз —
+        # элементы холста, нарисованные позже (градиент нижней панели и пр.),
+        # перехватывали <Button-1>, и «нажмите, чтобы обновить» не срабатывало
+        # (жалобы 18.07 и позже). У виджета-кнопки клик ловится всегда и по всей
+        # площади, поверх любого холста. Форму (скругление) приносим в жертву
+        # надёжности — это того стоит.
         by = height - BAR_H - 116
-        plate = render_rounded(460, 34, 17, _hex_to_rgb(colors["accent"]) + (235,))
-        if plate is not None:
-            self._img_refs["upd_plate"] = ImageTk.PhotoImage(plate)
-            self.update_plate = cv.create_image(width // 2, by, anchor="center",
-                                                image=self._img_refs["upd_plate"],
-                                                tags=("upd",), state="hidden")
-        else:
-            self.update_plate = cv.create_rectangle(width // 2 - 230, by - 17,
-                                                    width // 2 + 230, by + 17,
-                                                    fill=colors["accent"], outline="",
-                                                    tags=("upd",), state="hidden")
-        self.update_banner = _CanvasText(
-            cv, cv.create_text(width // 2, by, anchor="center",
-                               font=(UI_FONT, 10, "bold"), fill="#ffffff",
-                               text=self.update_banner_var.get(), tags=("upd",)))
+        self.update_button = tk.Button(
+            cv, textvariable=self.update_banner_var,
+            font=(UI_FONT, 10, "bold"), fg="#ffffff",
+            bg=colors["accent"], activebackground=colors["accent_hover"],
+            activeforeground="#ffffff", relief="flat", bd=0, cursor="hand2",
+            padx=20, pady=7, command=self.on_open_update)
+        self.update_banner_window = cv.create_window(
+            width // 2, by, anchor="center", window=self.update_button, state="hidden")
 
         def show_banner(*_a):
             text = self.update_banner_var.get()
-            self.update_banner.set_text(text)
             try:
-                cv.itemconfig(self.update_plate, state="normal" if text else "hidden")
-                # Плашку наверх z-порядка. Без этого клики по ней НЕ доходили:
-                # элементы, нарисованные на холсте позже (градиент нижней
-                # панели и пр.), лежали выше и перехватывали <Button-1> —
-                # игрок жал «нажмите, чтобы обновить», а ничего не происходило
-                # (жалобы 18.07: курсор даже не менялся на руку).
-                if text:
-                    cv.tag_raise("upd")
+                cv.itemconfig(self.update_banner_window,
+                              state="normal" if text else "hidden")
             except tk.TclError:
                 pass
 
         self.update_banner_var.trace_add("write", show_banner)
-        cv.tag_bind("upd", "<Button-1>", lambda _e: self.on_open_update())
-        cv.tag_bind("upd", "<Enter>", lambda _e: cv.configure(cursor="hand2"))
-        cv.tag_bind("upd", "<Leave>", lambda _e: cv.configure(cursor=""))
 
     def _refresh_head(self) -> None:
         """Перерисовывает голову рядом с ником. Вызывается при смене ника и
