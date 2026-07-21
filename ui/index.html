@@ -337,11 +337,14 @@ function fill(d){
   onMem(r.value);
   if(d.ram_rec) $('memHint').textContent='Рекомендуем для вашего ПК: '+gb(d.ram_rec)+(d.sys_ram?(' · всего в системе '+gb(d.sys_ram)):'');
   setToggle('Low',!!d.low_end); setToggle('NoSodium',!!d.no_sodium);
-  var nl=$('newsList'), news=d.news||[];
-  if(!news.length){nl.innerHTML='<div class="d" style="color:var(--mut);font-size:12px">Новостей пока нет</div>';}
-  else nl.innerHTML=news.map(function(n){return '<div style="display:flex;gap:10px;padding:11px 0;border-bottom:1px solid #141c27"><span style="width:7px;height:7px;border-radius:50%;background:var(--acc);margin-top:6px;flex:0 0 auto"></span><div style="flex:1"><div style="display:flex;justify-content:space-between;gap:8px"><span style="font-weight:600;font-size:13px">'+esc(n.title||'')+'</span><span style="color:var(--mut);font-size:11px;white-space:nowrap">'+esc(n.date||'')+'</span></div><div style="color:var(--mut);font-size:12px;margin-top:3px;line-height:1.4">'+esc(n.text||'')+'</div></div></div>';}).join('');
+  if(d.news) fillNews(d.news);
   setStatus(d.status||'Готово к запуску','ok');
 }
+function fillNews(news){ var nl=$('newsList'); news=news||[];
+  if(!news.length){ nl.innerHTML='<div style="color:var(--mut);font-size:12px">Новостей пока нет</div>'; return; }
+  nl.innerHTML=news.map(function(n){return '<div style="display:flex;gap:10px;padding:11px 0;border-bottom:1px solid #141c27"><span style="width:7px;height:7px;border-radius:50%;background:var(--acc);margin-top:6px;flex:0 0 auto"></span><div style="flex:1"><div style="display:flex;justify-content:space-between;gap:8px"><span style="font-weight:600;font-size:13px">'+esc(n.title||'')+'</span><span style="color:var(--mut);font-size:11px;white-space:nowrap">'+esc(n.date||'')+'</span></div><div style="color:var(--mut);font-size:12px;margin-top:3px;line-height:1.4">'+esc(n.text||'')+'</div></div></div>';}).join('');
+}
+window.pushNews=fillNews;
 function gb(mb){return (Math.round(mb/1024*10)/10)+' ГБ';}
 function onMem(v){ $('memVal').textContent=gb(v); }
 function onMemSave(v){ $('mMem').textContent=gb(v); api('set_memory', parseInt(v,10)); toast('Память для игры: '+gb(v),'ok'); }
@@ -472,9 +475,9 @@ function checkUpd(){ var a=PY(); if(!a||!a.check_update) return; a.check_update(
   if(info&&info.version){ $('updBar').style.display='flex'; $('updText').textContent='Доступно обновление '+info.version; } }).catch(function(){}); }
 
 /* ---- старт: надёжное подключение к pywebview ---- */
-function boot(){ var a=PY(); if(a){ a.get_boot().then(fill).catch(function(){}); a.get_server().then(setServer).catch(function(){}); checkUpd(); return true; } return false; }
-function refreshServer(){ var a=PY(); if(a) a.get_server().then(setServer).catch(function(){}); }
-function demo(){ fill({launcher_version:'demo',modpack_version:'—',mc:'1.21.1',loader:'NeoForge',mods_count:0,nick:'',memory_mb:6144,ram_min:2048,ram_max:16384,ram_rec:6144,sys_ram:16384,install_dir:'(демо-режим в браузере)',news:[{title:'Демо-режим',text:'Открыто вне лаунчера — данные не подключены.',date:''}]}); setServer({online:false}); }
+function boot(){ var a=PY(); if(a){ a.get_boot().then(fill).catch(function(){}); a.refresh_server(); a.load_news(); checkUpd(); return true; } return false; }
+function refreshServer(){ api('refresh_server'); }
+function demo(){ fill({launcher_version:'demo',modpack_version:'—',mc:'1.21.1',loader:'NeoForge',mods_count:0,nick:'',memory_mb:6144,ram_min:2048,ram_max:16384,ram_rec:6144,sys_ram:16384,install_dir:'(демо-режим в браузере)'}); fillNews([{title:'Демо-режим',text:'Открыто вне лаунчера — данные не подключены.',date:''}]); setServer({online:false}); }
 window.addEventListener('pywebviewready', boot);
 (function(){ var n=0; var t=setInterval(function(){ n++; if(boot()){ clearInterval(t); setInterval(refreshServer,30000); } else if(n>=50){ clearInterval(t); demo(); } },100); })();
 </script>

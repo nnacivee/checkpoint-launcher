@@ -119,13 +119,12 @@ class Api:
 
     # ================= ГЛАВНАЯ =================
     def get_boot(self):
+        # ВАЖНО: ничего сетевого здесь — этот вызов должен возвращаться мгновенно,
+        # иначе окно висит на «—» и кажется, будто кнопки не работают. Новости и
+        # статус сервера грузятся отдельными вызовами (get_news / get_server).
         s = L.load_settings()
         loader_key = L.CONFIG.get("MOD_LOADER", "")
         loader = L.LOADER_DISPLAY_NAMES.get(loader_key, (loader_key or "").capitalize())
-        try:
-            news = L.fetch_server_news()
-        except Exception:  # noqa: BLE001
-            news = []
         sys_ram = L.get_system_ram_mb()
         cap = 16384
         ram_max = max(4096, min((sys_ram - 1024) if sys_ram else cap, cap))
@@ -147,23 +146,38 @@ class Api:
             "ram_rec": rec,
             "sys_ram": sys_ram,
             "install_dir": str(L.INSTANCE_DIR),
-            "news": news,
             "status": "Готово к запуску",
         }
 
-    def get_server(self):
-        try:
-            pinned = L.CONFIG.get("PINNED_SERVER") or {}
-            host, port = L.parse_host_port(pinned.get("ip", ""))
-            st = L.ping_server(host, port)
-            return {
-                "online": bool(st.get("online")),
-                "players": st.get("players_online"),
-                "max": st.get("players_max"),
-                "ping": st.get("ping_ms"),
-            }
-        except Exception:  # noqa: BLE001
-            return {"online": False}
+    def load_news(self):
+        # Сеть — в фоне, результат прилетает в страницу через pushNews. Так
+        # окно не ждёт ответа сервера и остаётся отзывчивым.
+        def worker():
+            try:
+                news = L.fetch_server_news()
+            except Exception:  # noqa: BLE001
+                news = []
+            self._js("window.pushNews && window.pushNews(%s)" % _q(news))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def refresh_server(self):
+        # Пинг сервера тоже в фоне — иначе окно подвисало бы на время опроса.
+        def worker():
+            data = {"online": False}
+            try:
+                pinned = L.CONFIG.get("PINNED_SERVER") or {}
+                host, port = L.parse_host_port(pinned.get("ip", ""))
+                st = L.ping_server(host, port)
+                data = {"online": bool(st.get("online")),
+                        "players": st.get("players_online"),
+                        "max": st.get("players_max"),
+                        "ping": st.get("ping_ms")}
+            except Exception:  # noqa: BLE001
+                data = {"online": False}
+            self._js("window.pushServer && window.pushServer(%s)" % _q(data))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def save_nick(self, nick):
         try:
