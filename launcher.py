@@ -392,7 +392,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.64.3",
+    "LAUNCHER_VERSION": "1.64.4",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -6665,16 +6665,17 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     missing_required = install_extra_client_mods(extras_status, extras_progress)
     install_skin_config(extras_status)
 
+    # Embeddium пробовали как замену Sodium для старых видеокарт, но в ЭТОЙ
+    # сборке он несовместим с Veil (Veil идёт внутри мода Sable как jar-in-jar,
+    # а Sable нужен для серверных блоков и убрать его нельзя). Итог: игра падала
+    # с "Mod 'veil' is incompatible with 'embeddium'". Поэтому Embeddium всегда
+    # убираем, а на старой видеокарте играем на Sodium-OFF + минимальная графика
+    # (её включает weak_gpu выше). Это без артефактов, ценой FPS.
+    remove_embeddium()
     # Режим «очень старая видеокарта»: строго ПОСЛЕ всех установок модов,
-    # чтобы снять и Sodium из сборки, и его аддоны из доп-модов, и вместо
-    # Sodium 0.6 (он бьётся артефактами на GPU 2012 года) поставить Embeddium
-    # на старом движке 0.5. Когда режим выключен — Embeddium убираем, иначе он
-    # конфликтует с обычным Sodium из сборки.
+    # чтобы снять и Sodium из сборки, и его аддоны из доп-модов.
     if load_settings().get("no_sodium"):
         strip_render_mods(extras_status)
-        install_embeddium(extras_status)
-    else:
-        remove_embeddium()
 
     # Мода, который есть на сервере, у игрока нет — запускать игру бессмысленно:
     # сервер оборвёт соединение на входе («Канал мода отсутствует на стороне
