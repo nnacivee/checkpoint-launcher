@@ -392,7 +392,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.64.10",
+    "LAUNCHER_VERSION": "1.65.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -404,6 +404,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.65.0",
+            "date": "21 июля 2026",
+            "changes": [
+                "Обновления сборки стали лёгкими: лаунчер сравнивает моды по "
+                "контрольным суммам и скачивает только изменённые файлы — "
+                "вместо всех 400 МБ, как раньше.",
+                "Первая установка ускорена: части сборки скачиваются "
+                "параллельно в 4 потока.",
+            ],
+        },
         {
             "version": "1.64.10",
             "date": "21 июля 2026",
@@ -3714,38 +3725,52 @@ def download_modpack_archive(dest, progress_cb, status_cb):
             sizes = []
 
         if n > 0:
-            status_cb("скачивание по частям")
+            # ПАРАЛЛЕЛЬНАЯ загрузка частей (1.65.0). Раньше части качались по
+            # одной — скорость упиралась в одно соединение. Сервер BlueMap
+            # не умеет Range/Content-Length, но по ЧАСТЯМ параллелить можно:
+            # каждая часть — отдельный запрос. 4 потока: больше — риск
+            # задушить слабый веб-сервер зеркала (замерено на 20 частях).
+            # Вся проверка целостности сохранена: размер каждой части +
+            # zip-проверка после склейки.
+            status_cb("скачивание по частям (параллельно)")
+            from concurrent.futures import ThreadPoolExecutor
+
+            done_lock = threading.Lock()
+            done_count = [0]
+
+            def fetch_part(i):
+                name = "modpack.zip.%03d" % i
+                part = APP_DATA_DIR / name
+                want = sizes[i - 1] if (i - 1) < len(sizes) else 0
+                for _attempt in range(6):
+                    part.unlink(missing_ok=True)
+                    try:
+                        # allow_resume=False — BlueMap на Range отдаёт байты с
+                        # начала файла. expected_size — обрыв без Content-Length
+                        # иначе не заметить.
+                        _download_first(roots_for(name), part, retries=3,
+                                        allow_resume=False, expected_size=want)
+                    except Exception:  # noqa: BLE001 — повторим ещё раз
+                        continue
+                    got = part.stat().st_size if part.exists() else 0
+                    if (want and got == want) or (not want and got > 0):
+                        with done_lock:
+                            done_count[0] += 1
+                            status_cb("частей готово: %d из %d" % (done_count[0], n))
+                            progress_cb(int(done_count[0] * 100 / n))
+                        return part
+                raise RuntimeError(
+                    "часть %d/%d повреждена при скачивании — нажмите «Играть» ещё раз"
+                    % (i, n))
+
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                # map сохраняет порядок результатов = порядок частей
+                parts = list(pool.map(fetch_part, range(1, n + 1)))
+
             assemble = dest.with_name(dest.name + ".assemble")
             assemble.unlink(missing_ok=True)
             with open(assemble, "wb") as out:
-                for i in range(1, n + 1):
-                    status_cb("часть %d из %d" % (i, n))
-                    name = "modpack.zip.%03d" % i
-                    part = APP_DATA_DIR / name
-                    want = sizes[i - 1] if (i - 1) < len(sizes) else 0
-                    base_i = i - 1
-                    ok = False
-                    for _attempt in range(6):
-                        part.unlink(missing_ok=True)
-                        # allow_resume=False — BlueMap на Range отдаёт байты с начала
-                        # файла, поэтому докачка ломает часть. Качаем целиком заново.
-                        # expected_size=want — чтобы обрыв (у BlueMap нет Content-Length)
-                        # определялся и вызывал повтор.
-                        _download_first(
-                            roots_for(name), part,
-                            progress_cb=lambda p, b=base_i: progress_cb(
-                                int((b + p / 100.0) * 100 / n)),
-                            retries=3, allow_resume=False, expected_size=want)
-                        # Часть цела, если её размер совпал с ожидаемым. Без списка
-                        # размеров довольствуемся тем, что файл не пустой.
-                        got = part.stat().st_size if part.exists() else 0
-                        if (want and got == want) or (not want and got > 0):
-                            ok = True
-                            break
-                    if not ok:
-                        raise RuntimeError(
-                            "часть %d/%d повреждена при скачивании — нажмите «Играть» ещё раз"
-                            % (i, n))
+                for part in parts:
                     with open(part, "rb") as fh:
                         shutil.copyfileobj(fh, out)
                     part.unlink(missing_ok=True)
@@ -3766,8 +3791,195 @@ def download_modpack_archive(dest, progress_cb, status_cb):
                          dest, progress_cb, status_cb)
 
 
+# ---------- ДЕЛЬТА-ОБНОВЛЕНИЯ СБОРКИ (1.65.0) ----------
+# Раньше ЛЮБОЕ изменение версии сборки перекачивало все ~400 МБ. Теперь
+# лаунчер сначала берёт с зеркала маленький manifest.json (список модов с
+# SHA-256), сравнивает с тем, что уже стоит, и скачивает ТОЛЬКО новые и
+# изменённые jar'ы из /files/mods/ на зеркале. Любая проблема на любом
+# шаге -> молча откатываемся на старый полный путь (части модпака), так
+# что хуже, чем было, стать не может.
+#
+# Дельта касается ТОЛЬКО mods/*: config/kubejs в modpack.zip приезжают из
+# ПРЕДЫДУЩЕГО архива как есть (см. build_zip в update_all.py) и через этот
+# конвейер не меняются — у игрока с прошлой полной установки лежит ровно
+# то же самое. Флаг modsOnly в манифесте это подтверждает; без него дельта
+# не применяется.
+
+MODS_SHA_INDEX_FILE_NAME = "mods_sha_index.json"
+
+
+def _sha_index_load() -> dict:
+    try:
+        f = APP_DATA_DIR / MODS_SHA_INDEX_FILE_NAME
+        if f.exists():
+            data = json.loads(f.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+    except Exception:  # noqa: BLE001
+        pass
+    return {}
+
+
+def _sha_index_save(index: dict) -> None:
+    try:
+        (APP_DATA_DIR / MODS_SHA_INDEX_FILE_NAME).write_text(
+            json.dumps(index), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _sha256_cached(path: Path, index: dict) -> str:
+    """SHA-256 файла с кэшем по (размер, mtime): не пересчитываем сотни
+    мегабайт при каждой проверке — только для новых/изменённых файлов."""
+    try:
+        st = path.stat()
+        key = path.name
+        rec = index.get(key)
+        if rec and rec.get("size") == st.st_size and rec.get("mtime") == int(st.st_mtime):
+            return rec.get("sha", "")
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        sha = h.hexdigest()
+        index[key] = {"size": st.st_size, "mtime": int(st.st_mtime), "sha": sha}
+        return sha
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _fetch_modpack_manifest():
+    """manifest.json с зеркала. Ошибка/нет файла -> None (дельта пропускается)."""
+    mirror = CONFIG.get("MODPACK_MIRROR_URL") or ""
+    if "/" not in mirror:
+        return None
+    root = mirror.rsplit("/", 1)[0]
+    roots = [root]
+    if "95.216.30.64:25980" in root:
+        roots.append(root.replace("http://95.216.30.64:25980",
+                                  "https://industrialhorizon.dynmap.xyz"))
+    bust = "?t=" + str(int(time.time()) // 300)
+    for r in roots:
+        try:
+            request = urllib.request.Request(
+                r + "/manifest.json" + bust,
+                headers={"User-Agent": "CheckpointLauncher"})
+            with urllib.request.urlopen(request, timeout=10) as response:
+                data = json.loads(response.read().decode("utf-8", "replace"))
+            if isinstance(data, dict) and isinstance(data.get("files"), list):
+                return data
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def install_modpack_delta(status_cb, progress_cb) -> bool:
+    """Пробует обновить сборку дельтой. True — обновление применено (полная
+    установка не нужна), False — нужно идти старым полным путём."""
+    try:
+        mods_dir = INSTANCE_DIR / "mods"
+        if get_local_modpack_version() < 0 or not mods_dir.is_dir():
+            return False  # первой установке — полный путь (архив частями)
+        man = _fetch_modpack_manifest()
+        if not man or not man.get("modsOnly"):
+            return False
+        remote_ver = get_remote_modpack_version()
+        files = []
+        for f in man["files"]:
+            path = str(f.get("path", ""))
+            name = path.split("/")[-1]
+            # Гигиена: только простые имена jar внутри mods/
+            if (not path.startswith("mods/") or not name.lower().endswith(".jar")
+                    or "/" in path[5:] or "\\" in name or ".." in name):
+                return False
+            files.append({"name": name, "size": int(f.get("size", 0)),
+                          "sha": str(f.get("sha256", ""))})
+        if len(files) < 20:
+            return False  # подозрительно маленький манифест — не рискуем
+
+        status_cb("проверка установленных модов")
+        index = _sha_index_load()
+        need = []
+        for f in files:
+            local = mods_dir / f["name"]
+            if (not local.exists() or local.stat().st_size != f["size"]
+                    or _sha256_cached(local, index) != f["sha"]):
+                need.append(f)
+        _sha_index_save(index)
+
+        total_bytes = sum(f["size"] for f in need)
+        if total_bytes > 150 * 1024 * 1024:
+            return False  # изменилось слишком много — полный путь быстрее
+
+        # Удаления: ТОЛЬКО имена из deletedFiles манифеста. Файлы игрока,
+        # которых нет в манифесте (опциональные моды и т.п.), не трогаем.
+        for path in man.get("deletedFiles", []):
+            name = str(path).split("/")[-1]
+            if name.lower().endswith(".jar") and "\\" not in name and ".." not in name:
+                (mods_dir / name).unlink(missing_ok=True)
+
+        if need:
+            status_cb("дельта-обновление: %d файлов, %.1f МБ"
+                      % (len(need), total_bytes / 1048576.0))
+            mirror = CONFIG["MODPACK_MIRROR_URL"].rsplit("/", 1)[0]
+            roots = [mirror + "/files/mods/"]
+            if "95.216.30.64:25980" in mirror:
+                roots.append(mirror.replace(
+                    "http://95.216.30.64:25980",
+                    "https://industrialhorizon.dynmap.xyz") + "/files/mods/")
+
+            from concurrent.futures import ThreadPoolExecutor
+            done_lock = threading.Lock()
+            done = [0]
+
+            def fetch_one(f):
+                quoted = urllib.parse.quote(f["name"])
+                tmp = mods_dir / (f["name"] + ".download")
+                for _attempt in range(3):
+                    tmp.unlink(missing_ok=True)
+                    try:
+                        _download_first([r + quoted for r in roots], tmp,
+                                        retries=2, allow_resume=False,
+                                        expected_size=f["size"])
+                    except Exception:  # noqa: BLE001
+                        continue
+                    h = hashlib.sha256()
+                    with open(tmp, "rb") as fh:
+                        for chunk in iter(lambda: fh.read(1 << 20), b""):
+                            h.update(chunk)
+                    if h.hexdigest() == f["sha"]:
+                        # Файл заменяем только после успешной проверки
+                        (mods_dir / f["name"]).unlink(missing_ok=True)
+                        tmp.replace(mods_dir / f["name"])
+                        with done_lock:
+                            done[0] += 1
+                            status_cb("моды: %d из %d" % (done[0], len(need)))
+                            progress_cb(int(done[0] * 100 / len(need)))
+                        return True
+                tmp.unlink(missing_ok=True)
+                return False
+
+            with ThreadPoolExecutor(max_workers=6) as pool:
+                results = list(pool.map(fetch_one, need))
+            if not all(results):
+                return False  # что-то не скачалось — полный путь всё починит
+
+        MODPACK_VERSION_FILE.write_text(str(remote_ver))
+        # config/kubejs не трогали — пак настроек остаётся на месте,
+        # отметку CONFIGPACK_MARKER_FILE сбрасывать не нужно.
+        progress_cb(100)
+        status_cb("сборка обновлена (дельта)")
+        return True
+    except Exception:  # noqa: BLE001 — любой сюрприз -> полный путь
+        return False
+
+
 def install_modpack(status_cb, progress_cb) -> None:
-    """Скачивает архив с модами и распаковывает поверх папки экземпляра."""
+    """Скачивает архив с модами и распаковывает поверх папки экземпляра.
+    Сначала пробует лёгкое дельта-обновление (только изменённые моды по
+    manifest.json); полный путь остаётся запасным и для первой установки."""
+    if install_modpack_delta(status_cb, progress_cb):
+        return
+
     zip_path = APP_DATA_DIR / "modpack_download.zip"
 
     def download_progress(pct):
