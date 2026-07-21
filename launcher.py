@@ -304,7 +304,12 @@ CONFIG = {
     # пересборки .exe и нового релиза лаунчера. Теперь достаточно перезалить
     # modpack.zip и поправить одно число в modpack_version.txt (1 байт).
     # Ровно так же уже работает пак настроек — см. CONFIGPACK_VERSION_URL.
-    "MODPACK_VERSION_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/modpack_version.txt",
+    #
+    # 21.07: перевели проверку версии с GitHub на зеркало. GitHub в РФ
+    # блокируется — а саму сборку мы и так качаем с зеркала. Держать номер
+    # версии там же (рядом с launcher_version.txt) надёжнее: инструмент
+    # publish_modpack.py кладёт modpack_version.txt в ту же папку, что и части.
+    "MODPACK_VERSION_URL": "https://industrialhorizon.dynmap.xyz/modpack_version.txt",
 
     # ------------------------- ПАК НАСТРОЕК -------------------------
     # Маленький архив (единицы мегабайт) с тем, что делает сборку «нашей»:
@@ -397,7 +402,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.64.6",
+    "LAUNCHER_VERSION": "1.64.7",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -6713,7 +6718,16 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
         "username": username,
         "uuid": offline_uuid(username),
         "token": "",
-        "jvmArguments": ["-Xmx%dM" % memory_mb, "-Xms1024M"],
+        # Xms = Xmx: куча сразу нужного размера, без пауз на её рост при
+        # загрузке. G1GC с настройками Aikar — стандарт для ускорения Minecraft.
+        "jvmArguments": [
+            "-Xmx%dM" % memory_mb, "-Xms%dM" % memory_mb,
+            "-XX:+UseG1GC", "-XX:+ParallelRefProcEnabled",
+            "-XX:MaxGCPauseMillis=200", "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+DisableExplicitGC", "-XX:G1NewSizePercent=30",
+            "-XX:G1ReservePercent=20", "-XX:G1HeapRegionSize=16M",
+            "-XX:+UseStringDeduplication",
+        ],
     }
 
     # Автоподключение к серверу — это штатная возможность самого
@@ -8117,7 +8131,7 @@ class LauncherApp:
             tk.Checkbutton(actions, text="Включён", variable=var, command=on_toggle,
                            font=(UI_FONT, 9), bg=colors["bg_field"], fg=colors["fg"],
                            activebackground=colors["bg_field"], activeforeground=colors["fg"],
-                           selectcolor=colors["bg_panel"], highlightthickness=0, bd=0,
+                           selectcolor=colors["accent"], highlightthickness=0, bd=0,
                            cursor="hand2").pack(side="right", padx=(0, 8))
 
             mid = tk.Frame(body, bg=colors["bg_field"])
@@ -8687,7 +8701,7 @@ class LauncherApp:
             image=self.icons.get("gauge"), compound="left",
             variable=self.low_end_var, font=(UI_FONT, 9), command=on_low_end_toggle,
             bg=colors["bg_panel"], fg=colors["fg"], activebackground=colors["bg_panel"],
-            activeforeground=colors["fg"], selectcolor=colors["bg_field"],
+            activeforeground=colors["fg"], selectcolor=colors["accent"],
             highlightthickness=0, bd=0, cursor="hand2", anchor="w", justify="left",
         ).pack(fill="x", pady=(0, 6))
 
@@ -8703,7 +8717,7 @@ class LauncherApp:
             image=self.icons.get("gauge"), compound="left",
             variable=self.no_sodium_var, font=(UI_FONT, 9), command=on_no_sodium_toggle,
             bg=colors["bg_panel"], fg=colors["fg"], activebackground=colors["bg_panel"],
-            activeforeground=colors["fg"], selectcolor=colors["bg_field"],
+            activeforeground=colors["fg"], selectcolor=colors["accent"],
             highlightthickness=0, bd=0, cursor="hand2", anchor="w", justify="left",
         ).pack(fill="x", pady=(0, 6))
 
@@ -9051,7 +9065,7 @@ class LauncherApp:
             cb = tk.Checkbutton(
                 body, text="", variable=var,
                 bg=colors["bg_field"], activebackground=colors["bg_field"],
-                selectcolor=colors["bg_panel"], highlightthickness=0, bd=0,
+                selectcolor=colors["accent"], highlightthickness=0, bd=0,
                 cursor="hand2", command=lambda m=mod: on_toggle(m),
             )
             cb.pack(side="right", padx=(6, 0))
