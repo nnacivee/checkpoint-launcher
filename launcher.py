@@ -392,7 +392,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.65.0",
+    "LAUNCHER_VERSION": "1.65.1",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -404,6 +404,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.65.1",
+            "date": "21 июля 2026",
+            "changes": [
+                "Ревизия сборки: убраны сырые альфа-моды (гипертрубы, "
+                "Enchantment Industry), дубли (chisel, pipez, два мода "
+                "структур Create) и шуточная версия Garnished — вместо неё "
+                "обычная. Лаунчер вычистит лишнее сам.",
+            ],
+        },
         {
             "version": "1.65.0",
             "date": "21 июля 2026",
@@ -2209,6 +2219,17 @@ CONFIG = {
         # вернёт файл из кэша. Убирать надо из обоих мест.
         "sodiumoptionsapi",
         "sodiumextras",
+        # Ревизия сборки 21.07 (решение владельца, опрос): сырые альфы,
+        # дубли и первоапрельский Garnished. Обычный Garnished 2.1.9.1
+        # приезжает с modpack.zip. ВНИМАНИЕ: блоки chisel и трубы pipez,
+        # уже поставленные в мире, исчезнут из построек.
+        "create_hypertube",
+        "create-enchantment-industry",
+        "chisel-neoforge",
+        "pipez-neoforge",
+        "create_easy_structures",
+        "create_rustic_structures",
+        "garnished-april-foods",
         # GraveStone (21.07, 1.64.10): могилы убраны с сервера, а мод
         # регистрирует обязательный сетевой канал — клиент с ним на сервер
         # без него не заходит («Канал мода GraveStone... отсутствует на
