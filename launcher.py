@@ -392,7 +392,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.65.2",
+    "LAUNCHER_VERSION": "1.66.0",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -404,6 +404,19 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.0",
+            "date": "22 июля 2026",
+            "changes": [
+                "В каталог оформления добавлено 10 новых текстур-паков и "
+                "10 новых шейдеров для Minecraft 1.21.1 — от лёгких "
+                "Vanilla Plus и Sildur's Enhanced Default до FastPBR, "
+                "Noble и Kappa.",
+                "Исправлен выбор вариантов шейдеров: лаунчер теперь честно "
+                "скачивает указанный Medium/Fast, даже если Lite, High и "
+                "Extreme опубликованы отдельными релизами Modrinth.",
+            ],
+        },
         {
             "version": "1.65.2",
             "date": "21 июля 2026",
@@ -2506,6 +2519,56 @@ CONFIG = {
             "name": "Jewelry Armor",
             "description": "Броня становится украшениями и не закрывает скин целиком",
         },
+        {
+            "slug": "tras-fresh-player",
+            "name": "Fresh Moves",
+            "description": "Плавные анимации игрока: походка, бег, плавание и живые движения",
+        },
+        {
+            "slug": "fresh-animations-extensions",
+            "name": "Fresh Animations: Extensions",
+            "description": "Официальные дополнения для Fresh Animations. Ставить вместе с основным паком",
+        },
+        {
+            "slug": "mandalas-gui-dark-mode",
+            "name": "Mandala's GUI — Dark Mode",
+            "description": "Нарядный тёмный интерфейс для меню, сундуков и рабочих блоков",
+        },
+        {
+            "slug": "enchant-icons-countxd",
+            "name": "Enchant Icons",
+            "description": "Цветные значки у названий зачарований — нужный эффект видно быстрее",
+        },
+        {
+            "slug": "enhanced-boss-bars",
+            "name": "Enhanced Boss Bars",
+            "description": "У каждого босса своя красивая и легко узнаваемая шкала здоровья",
+        },
+        {
+            "slug": "low-shield-pack",
+            "name": "Low Shield",
+            "description": "Опускает щит ниже, чтобы он не закрывал половину экрана",
+        },
+        {
+            "slug": "cubic-sun-moon",
+            "name": "Cubic Sun & Moon",
+            "description": "Объёмные кубические солнце и луна в ванильном стиле",
+        },
+        {
+            "slug": "3d-crops",
+            "name": "3D Crops Revamped",
+            "description": "Пшеница, морковь, картофель и другие грядки становятся объёмными",
+        },
+        {
+            "slug": "recolourful-containers-gui",
+            "name": "Recolourful Containers GUI",
+            "description": "Цветные тематические интерфейсы сундуков, печей и рабочих станций",
+        },
+        {
+            "slug": "create-sophisticated-backpacks",
+            "name": "Create Style Sophisticated Backpacks",
+            "description": "Перерисовывает рюкзаки Sophisticated Backpacks в стиле механизмов Create",
+        },
     ],
 
     # ------------------- РЕСУРС-ПАКИ (АВТОДОСТАВКА) -------------------
@@ -2641,6 +2704,68 @@ CONFIG = {
             "name": "AstraLex",
             "weight": "Тяжёлый",
             "description": "Максимум эффектов и настроек. Для мощных ПК",
+        },
+        {
+            "slug": "sildurs-vibrant-shaders",
+            "name": "Sildur's Vibrant — Medium",
+            "weight": "Средний",
+            "prefer_keyword": "Medium",
+            "description": "Классические яркие шейдеры с красивым небом, водой и тенями",
+        },
+        {
+            "slug": "sildurs-enhanced-default-shaders",
+            "name": "Sildur's Enhanced Default — Fast",
+            "weight": "Лёгкий",
+            "prefer_keyword": "Fast",
+            "description": "Почти ванильная картинка с тенями и отражениями для слабых ПК",
+        },
+        {
+            "slug": "vanilla-plus-shader",
+            "name": "Vanilla Plus",
+            "weight": "Лёгкий",
+            "description": "Современный свет и тени без потери узнаваемого стиля Minecraft",
+        },
+        {
+            "slug": "bloop-shaders",
+            "name": "Bloop",
+            "weight": "Лёгкий",
+            "description": "Быстрый масштабируемый шейдер: от слабых ноутбуков до мощных ПК",
+        },
+        {
+            "slug": "i-like-vanilla",
+            "name": "I Like Vanilla",
+            "weight": "Лёгкий",
+            "description": "Улучшает освещение и атмосферу, не превращая игру в фотореализм",
+        },
+        {
+            "slug": "visual-vibrance",
+            "name": "Visual Vibrance",
+            "weight": "Средний",
+            "description": "Яркая картинка в духе Vibrant Visuals с насыщенным цветным светом",
+        },
+        {
+            "slug": "fastpbr",
+            "name": "FastPBR",
+            "weight": "Средний",
+            "description": "Быстрый реалистичный свет с поддержкой PBR-материалов",
+        },
+        {
+            "slug": "noble",
+            "name": "Noble Shaders",
+            "weight": "Тяжеловат",
+            "description": "Чистое объёмное освещение и гибкие настройки для красивой игры",
+        },
+        {
+            "slug": "kappa-shader",
+            "name": "Kappa Shader",
+            "weight": "Тяжёлый",
+            "description": "Качественная реалистичная картинка для мощной видеокарты",
+        },
+        {
+            "slug": "insanity-shader",
+            "name": "Insanity Shader",
+            "weight": "Средний",
+            "description": "Мрачный хоррор-стиль с густым туманом и тревожным освещением",
         },
     ],
 
@@ -4827,7 +4952,8 @@ def _install_recommended_pack(pack_cfg: dict, dst_dir: Path, loaders: list,
         url = pack_cfg["url"]
     else:
         filename, url = _find_modrinth_download(
-            pack_cfg["slug"], CONFIG["MC_VERSION"], loaders)
+            pack_cfg["slug"], CONFIG["MC_VERSION"], loaders,
+            pack_cfg.get("prefer_keyword"))
     if not url:
         raise RuntimeError("Не удалось найти «%s» для Minecraft %s"
                            % (pack_cfg["name"], CONFIG["MC_VERSION"]))
@@ -5474,18 +5600,26 @@ def _find_modrinth_download(slug: str, mc_version: str, loaders: list, prefer_ke
     if not versions:
         return None, None
 
-    version = versions[0]  # первая в списке — самая свежая подходящая
-    files = version.get("files") or []
-    if not files:
-        return None, None
-
     chosen = None
     if prefer_keyword:
-        chosen = next(
-            (f for f in files if prefer_keyword.lower() in (f.get("filename") or "").lower()),
-            None,
-        )
+        # У некоторых проектов варианты качества опубликованы отдельными
+        # версиями с одинаковым номером (Sildur's: Lite/Medium/High/Extreme),
+        # а не несколькими файлами в одном релизе. Поэтому ищем ключевое слово
+        # по всем подходящим версиям, сохраняя порядок «сначала самые свежие».
+        for candidate_version in versions:
+            candidate_files = candidate_version.get("files") or []
+            chosen = next(
+                (f for f in candidate_files
+                 if prefer_keyword.lower() in (f.get("filename") or "").lower()),
+                None,
+            )
+            if chosen is not None:
+                break
     if chosen is None:
+        version = versions[0]  # первая в списке — самая свежая подходящая
+        files = version.get("files") or []
+        if not files:
+            return None, None
         chosen = next((f for f in files if f.get("primary")), files[0])
 
     return chosen.get("filename"), chosen.get("url")
