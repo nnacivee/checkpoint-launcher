@@ -18,10 +18,14 @@ import ctypes
 import hashlib
 import io
 import json
+import logging
+import logging.handlers
 import os
 import re
+import secrets
 import shutil
 import socket
+import stat
 import struct
 import subprocess
 import sys
@@ -228,8 +232,13 @@ class _NBTWriter:
 # Здесь настраиваете лаунчер конкретно под вашу сборку.
 
 CONFIG = {
-    # Имя вашей сборки — будет папкой на диске у игрока и заголовком окна
+    # Техническое имя уже установленной сборки. Не переименовывать: от него
+    # зависят существующие папки и настройки игроков.
     "PACK_NAME": "Checkpoint",
+
+    # Видимое название модпака и сервера. Его можно менять без создания у
+    # игроков второй пустой установки.
+    "DISPLAY_NAME": "Industrial Horizon",
 
     # Версия Minecraft, под которую собраны моды
     "MC_VERSION": "1.21.1",
@@ -341,7 +350,9 @@ CONFIG = {
     # Новости сервера. Лаунчер тянет этот JSON с зеркала и показывает в разделе
     # «Сообщество» → «Новости». Владелец правит файл на зеркале (bluemap/web/
     # news.json) — новости обновляются у всех БЕЗ пересборки лаунчера. Формат:
-    # {"items":[{"title":"...","date":"20 июля","text":"..."}, ...]}.
+    # {"items":[{"title":"...","date":"2026-07-22","text":"...",
+    #   "category":"server","points":[["Заголовок","Описание"]]}, ...]}.
+    # category: launcher | client | content | server; points необязателен.
     # Оставьте "", чтобы убрать пункт «Новости».
     "NEWS_URL": "https://industrialhorizon.dynmap.xyz/news.json",
 
@@ -392,7 +403,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.0",
+    "LAUNCHER_VERSION": "1.66.7",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -404,6 +415,79 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.7",
+            "date": "22 июля 2026",
+            "changes": [
+                "Клиент сразу показывает локальную готовность, а поиск новой "
+                "версии выполняется в фоне и больше не блокирует кнопку запуска.",
+                "Восстановление клиента получило понятное подтверждение внутри "
+                "лаунчера и защиту от запуска во время работающего Minecraft.",
+                "Исправлено отображение встроенного скина по нику рядом с профилем.",
+            ],
+        },
+        {
+            "version": "1.66.6",
+            "date": "22 июля 2026",
+            "changes": [
+                "Главный экран получил понятные состояния проверки, обновления, "
+                "офлайн-запуска и работы игры с аккуратным индикатором прогресса.",
+                "Каталоги модов, текстур и шейдеров дополнены поиском, фильтрами, "
+                "состояниями загрузки, повтором после ошибки и прогрессом установки.",
+                "Обновление сборки теперь применяется транзакционно: при сбое "
+                "лаунчер откатывает незавершённые изменения и сохраняет рабочий клиент.",
+                "Добавлены проверка SHA-256, восстановление сессии Minecraft, "
+                "расширенные логи и безопасный ремонт пользовательской установки.",
+            ],
+        },
+        {
+            "version": "1.66.5",
+            "date": "22 июля 2026",
+            "changes": [
+                "Nedologin полностью удалён из клиентской сборки; вместе с ним "
+                "исчезла кнопка «P» в главном меню.",
+                "Исправлено повторное появление кнопки Dark Mode и подписи Mojang "
+                "после обновления настроек сборки.",
+            ],
+        },
+        {
+            "version": "1.66.4",
+            "date": "22 июля 2026",
+            "changes": [
+                "Исправлен вылет Minecraft при запуске после отключения режима "
+                "«без Sodium»: лаунчер теперь всегда восстанавливает совместимую "
+                "версию Sodium 0.6.13, необходимую Iris и динамическому свету.",
+            ],
+        },
+        {
+            "version": "1.66.3",
+            "date": "22 июля 2026",
+            "changes": [
+                "Minecraft при первом запуске теперь открывается в оконном режиме; после этого полноэкранный режим "
+                "можно свободно включать вручную через F11 или настройки игры.",
+                "Экран загрузки пересобран под 2560×1440: фон, надписи и полоса больше не растягиваются из низкого разрешения.",
+            ],
+        },
+        {
+            "version": "1.66.2",
+            "date": "22 июля 2026",
+            "changes": [
+                "Перед каждым запуском выбирается новый неповторяющийся порядок "
+                "длинных фраз на экране загрузки Minecraft.",
+                "Обновлено оформление главного меню и входа на сервер; кнопки "
+                "теперь заметно и без задержки реагируют на наведение и нажатие.",
+            ],
+        },
+        {
+            "version": "1.66.1",
+            "date": "22 июля 2026",
+            "changes": [
+                "Видимое название лаунчера, окна Minecraft и закреплённого "
+                "сервера изменено на Industrial Horizon.",
+                "Обновление сохраняет прежнюю папку установки и настройки, "
+                "поэтому переустанавливать сборку заново не потребуется.",
+            ],
+        },
         {
             "version": "1.66.0",
             "date": "22 июля 2026",
@@ -1770,7 +1854,7 @@ CONFIG = {
     # игрок добавил сам, никак не затрагиваются. Оставьте "ip": "" чтобы
     # выключить эту функцию.
     "PINNED_SERVER": {
-        "name": "Checkpoint",
+        "name": "Industrial Horizon",
         "ip": "95.216.30.64:25760",
     },
 
@@ -1838,19 +1922,6 @@ CONFIG = {
         # тормозила (жалоба владельца). Версии прибиты; при обновлении
         # мода менять url и filename руками. slug остаётся ключом кэша —
         # без нужды не менять, иначе мод перекачается у всех.
-        # Авторизация (Nedologin, 20.07): защита ников на пиратке. Мод читает
-        # пароль из файла .sl_password, который лаунчер пишет из поля «Пароль
-        # сервера» — в игре пароль вводить не надо, вход автоматический. Мод
-        # ОБЯЗАТЕЛЕН и на сервере (иначе handshake не сойдётся), поэтому
-        # required=True. mirror=True — качаем с зеркала (для РФ, где
-        # cdn.modrinth закрыт). Файл один на fabric+neoforge, версии сервера
-        # и клиента совпадают байт-в-байт.
-        {"slug": "nedologin",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/fnP1u8PK/versions/VPxEDVP2/nedologin-3.0.0-rc3-1.21.1-fabric-neoforge.jar",
-         "filename": "nedologin-3.0.0-rc3-1.21.1-fabric-neoforge.jar",
-         "required": True,
-         "label": "Nedologin (авторизация по паролю из лаунчера)"},
         {"slug": "sound-physics-remastered",
          "mirror": True,
          "url": "https://cdn.modrinth.com/data/qyVF9oeo/versions/Dd2tmpsk/sound-physics-remastered-neoforge-1.21.1-1.5.1.jar",
@@ -1886,21 +1957,6 @@ CONFIG = {
         # и с modpack.zip, не только отсюда. Если могилы когда-нибудь вернутся
         # НА СЕРВЕР — верни запись (история в git, версия до 1.64.10) и убери
         # "gravestone-neoforge" из REMOVED_MODS.
-        # Вейн-майнер (18.07): зажми ` (клавишу слева от 1) — копаются сразу
-        # вся жила руды/дерево. На Modrinth мода нет, ссылка на ОФИЦИАЛЬНЫЙ
-        # maven FTB. На сервере стоит с 18.07, поэтому required.
-        {"slug": "ftb-ultimine-2101-1-15",
-         "url": "https://maven.ftb.dev/releases/dev/ftb/mods/ftb-ultimine-neoforge/2101.1.15/ftb-ultimine-neoforge-2101.1.15.jar",
-         "filename": "ftb-ultimine-neoforge-2101.1.15.jar",
-         # Запасной источник (19.07, жалоба игрока kafka): у части
-         # провайдеров закрыт и maven.ftb.dev — мод required, игра не
-         # запускалась. CurseForge — официальный канал FTB, file id 8231400,
-         # та же версия 2101.1.15. В свой релиз класть нельзя (лицензия FTB),
-         # оба источника — официальные.
-         "fallback_url": "https://mediafilez.forgecdn.net/files/8231/400/ftb-ultimine-neoforge-2101.1.15.jar",
-         "fallback_filename": "ftb-ultimine-neoforge-2101.1.15.jar",
-         "required": True,
-         "label": "FTB Ultimine (жила руды одним ударом)"},
         # Тишина в углу (просьба владельца 19.07): убрать спам «Открыты новые
         # рецепты!» при каждом входе на сервер — KubeJS-скрипты сборки
         # перерегистрируют рецепты, и ванилла честно вопит тостами. Оба мода
@@ -2205,6 +2261,25 @@ CONFIG = {
         # действий не нужно. Sodium Dynamic Lights от него НЕ зависит
         # (проверено по neoforge.mods.toml), так что динамический свет
         # остаётся.
+        # Sodium — обязательная основа Iris 1.8.12 и Sodium Dynamic Lights.
+        # Раньше он приезжал только внутри modpack.zip. Если игрок однажды
+        # включал режим «без Sodium», strip_render_mods() удалял jar, а после
+        # выключения режима лаунчер не возвращал его до следующей версии
+        # модпака: Iris восстанавливался из опционального кэша и падал с
+        # NoClassDefFoundError VertexSerializer. Теперь Sodium лежит также в
+        # постоянном кэше доп. модов и копируется назад при каждом запуске.
+        # ВНИМАНИЕ (22.07.2026): пин намеренно 0.6.13 — НЕ поднимать до 0.8.x!
+        # Бэкпорт Sodium 0.8.12 удаляет класс SodiumGameOptions: Sable 1.2.2
+        # падает на старте с MixinTransformerError, а Iris 1.8.12 по Modrinth
+        # жёстко требует именно 0.6.13. Новее Sable/Iris для 1.21.1 нет
+        # (проверено 22.07.2026). Поднимать пин можно только синхронно с
+        # совместимыми Sable и Iris внутри modpack.zip.
+        {"slug": "sodium-0-6-13-mc1-21-1",
+         "url": "https://cdn.modrinth.com/data/AANobbMI/versions/Pb3OXVqC/sodium-neoforge-0.6.13%2Bmc1.21.1.jar",
+         "filename": "sodium-neoforge-0.6.13+mc1.21.1.jar",
+         "required": True,
+         "replaces": ["sodium-neoforge-0.8.12+mc1.21.1.jar"],
+         "label": "Sodium 0.6.13 (основа графики и шейдеров)"},
         {"slug": "sodium-dynamic-lights",
          "mirror": True,
          "url": "https://cdn.modrinth.com/data/PxQSWIcD/versions/XI0WLXdn/sodiumdynamiclights-neoforge-1.0.10-1.21.1.jar",
@@ -2234,6 +2309,10 @@ CONFIG = {
     # был второй такой же ключ — Python молча брал только этот, нижний, а
     # записи верхнего терялись. "xaeroworldmap" переехал сюда оттуда.
     "REMOVED_MODS": [
+        # Удалён владельцем 22.07: мод добавлял кнопку «P» в главное меню и
+        # требовал одинаковую установку на клиенте и сервере. Запись нужна,
+        # чтобы вычистить jar, уже приехавший игрокам со старым modpack.zip.
+        "nedologin-3.0.0-rc3-1.21.1-fabric-neoforge.jar",
         # sodiumoptionsapi + sodiumextras: Reese's Sodium Options 2.2.3 с ними
         # несовместима и роняет игру ("reeses_sodium_options is incompatible
         # with sodiumoptionsapi"). Новая Reese's заменяет их собой. После
@@ -2254,6 +2333,10 @@ CONFIG = {
         "pipez-neoforge",
         "create_easy_structures",
         "create_rustic_structures",
+        # Вайп 22.07: Create Structures Arise убран вместе с генерируемым
+        # лутом, FTB Ultimine заменён серверным вейн-майнером на 32 блока.
+        "create_structures_arise",
+        "ftb-ultimine-neoforge",
         "garnished-april-foods",
         # GraveStone (21.07, 1.64.10): могилы убраны с сервера, а мод
         # регистрирует обязательный сетевой канал — клиент с ним на сервер
@@ -3220,6 +3303,11 @@ SETTINGS_FILE = APP_DATA_DIR / "settings.json"
 OPTIONAL_CACHE_DIR = APP_DATA_DIR / "optional_mods_cache"
 MOD_ICONS_DIR = APP_DATA_DIR / "mod_icons"
 SKIN_CACHE_DIR = APP_DATA_DIR / "skin_pack_cache"
+LOADING_VARIANT_STATE_FILE = APP_DATA_DIR / "loading_variant.json"
+RUNTIME_LOG_DIR = APP_DATA_DIR / "logs"
+RUNTIME_LOG_FILE = RUNTIME_LOG_DIR / "launcher.log"
+GAME_SESSION_FILE = APP_DATA_DIR / "game_session.json"
+MODPACK_MANIFEST_CACHE_FILE = APP_DATA_DIR / "modpack_manifest.json"
 
 # Папка с самой игрой. По умолчанию — на диске C рядом с настройками, но
 # пользователь может перенести её куда угодно (например, D:\Games\IC3).
@@ -3232,18 +3320,253 @@ CONFIGPACK_MARKER_FILE = INSTANCE_DIR / ".configpack.json"
 INSTALL_MARKER_FILE = INSTANCE_DIR / ".install_complete.json"
 
 
-def load_settings() -> dict:
-    if SETTINGS_FILE.exists():
+_RUNTIME_LOGGER = logging.getLogger("industrial_horizon.launcher")
+_RUNTIME_LOGGER.setLevel(logging.INFO)
+_RUNTIME_LOGGER.propagate = False
+_RUNTIME_HOOKS_INSTALLED = False
+_SETTINGS_LOCK = threading.RLock()
+
+
+def _atomic_write_text(path, text: str, encoding="utf-8", keep_backup=False) -> None:
+    """Replace a small state file without exposing a half-written version.
+
+    Launcher state is read during startup, often immediately after Windows or
+    an antivirus interrupted the previous process.  Writing next to the target
+    and using ``os.replace`` keeps either the old complete file or the new one.
+    Settings additionally keep one known-good ``.bak`` copy.
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp = target.with_name(
+        ".%s.%d.%d.tmp" % (target.name, os.getpid(), threading.get_ident())
+    )
+    try:
+        with open(temp, "w", encoding=encoding, newline="") as fh:
+            fh.write(str(text))
+            fh.flush()
+            try:
+                os.fsync(fh.fileno())
+            except OSError:
+                pass
+        if keep_backup and target.is_file():
+            try:
+                shutil.copy2(target, target.with_name(target.name + ".bak"))
+            except OSError:
+                pass
+        os.replace(temp, target)
+    finally:
         try:
-            return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _atomic_write_json(path, data, *, keep_backup=False) -> None:
+    _atomic_write_text(
+        path,
+        json.dumps(data, ensure_ascii=False, indent=2),
+        keep_backup=keep_backup,
+    )
+
+
+def configure_runtime_logging() -> None:
+    """Enable a bounded launcher log suitable for support archives."""
+    if _RUNTIME_LOGGER.handlers:
+        return
+    try:
+        RUNTIME_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        handler = logging.handlers.RotatingFileHandler(
+            RUNTIME_LOG_FILE,
+            maxBytes=2 * 1024 * 1024,
+            backupCount=3,
+            encoding="utf-8",
+        )
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s | %(levelname)s | %(threadName)s | %(message)s"
+        ))
+        _RUNTIME_LOGGER.addHandler(handler)
+        _RUNTIME_LOGGER.info(
+            "launcher_start version=%s frozen=%s python=%s",
+            CONFIG.get("LAUNCHER_VERSION", "?"),
+            bool(getattr(sys, "frozen", False)),
+            sys.version.split()[0],
+        )
+    except Exception:  # noqa: BLE001 — diagnostics must never block startup
+        pass
+
+
+def runtime_log(message: str, *args, level=logging.INFO, exc_info=None) -> None:
+    """Write a diagnostic event when file logging is available."""
+    try:
+        if not _RUNTIME_LOGGER.handlers:
+            return
+        _RUNTIME_LOGGER.log(level, message, *args, exc_info=exc_info)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def install_runtime_exception_hooks() -> None:
+    """Record otherwise-unhandled main/background exceptions before exit."""
+    global _RUNTIME_HOOKS_INSTALLED
+    if _RUNTIME_HOOKS_INSTALLED:
+        return
+    _RUNTIME_HOOKS_INSTALLED = True
+    configure_runtime_logging()
+
+    previous_sys_hook = sys.excepthook
+
+    def sys_hook(exc_type, exc, tb):
+        runtime_log(
+            "unhandled_main_exception",
+            level=logging.CRITICAL,
+            exc_info=(exc_type, exc, tb),
+        )
+        previous_sys_hook(exc_type, exc, tb)
+
+    sys.excepthook = sys_hook
+
+    previous_thread_hook = getattr(threading, "excepthook", None)
+    if previous_thread_hook is not None:
+        def thread_hook(args):
+            runtime_log(
+                "unhandled_thread_exception thread=%s",
+                getattr(args.thread, "name", "?"),
+                level=logging.ERROR,
+                exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+            )
+            previous_thread_hook(args)
+
+        threading.excepthook = thread_hook
+
+
+def _process_is_running(pid: int) -> bool:
+    """Return whether *pid* is alive without adding a psutil dependency."""
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        try:
+            from ctypes import wintypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.OpenProcess.argtypes = (
+                wintypes.DWORD, wintypes.BOOL, wintypes.DWORD,
+            )
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.GetExitCodeProcess.argtypes = (
+                wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD),
+            )
+            kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+            kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+            kernel32.CloseHandle.restype = wintypes.BOOL
+            process = kernel32.OpenProcess(0x1000, False, pid)
+            if not process:
+                return False
+            try:
+                exit_code = wintypes.DWORD()
+                if not kernel32.GetExitCodeProcess(
+                        process, ctypes.byref(exit_code)):
+                    return False
+                return exit_code.value == 259  # STILL_ACTIVE
+            finally:
+                kernel32.CloseHandle(process)
+        except Exception:  # noqa: BLE001
+            return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def get_active_game_session():
+    """Return the persisted game session, clearing it once the PID is stale."""
+    if not GAME_SESSION_FILE.exists():
+        return None
+    try:
+        data = json.loads(GAME_SESSION_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and _process_is_running(data.get("pid")):
+            return data
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        GAME_SESSION_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
+    return None
+
+
+def record_game_started(process, log_path=None) -> None:
+    """Persist enough state to prevent duplicate launches after a UI crash."""
+    data = {
+        "pid": int(process.pid),
+        "started_at": int(time.time()),
+        "launcher_version": CONFIG.get("LAUNCHER_VERSION", ""),
+        "instance_dir": str(INSTANCE_DIR),
+    }
+    if log_path:
+        data["log"] = str(log_path)
+    try:
+        _atomic_write_json(GAME_SESSION_FILE, data)
+        runtime_log("game_started pid=%s", process.pid)
+    except Exception as exc:  # noqa: BLE001
+        runtime_log("game_session_write_failed: %s", exc, level=logging.WARNING)
+
+
+def record_game_finished(process) -> None:
+    """Clear a session only when it still belongs to the supplied process."""
+    try:
+        data = json.loads(GAME_SESSION_FILE.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        data = {}
+    if data and data.get("pid") != getattr(process, "pid", None):
+        return
+    try:
+        GAME_SESSION_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
+    runtime_log(
+        "game_finished pid=%s returncode=%s",
+        getattr(process, "pid", "?"),
+        getattr(process, "returncode", None),
+    )
+
+
+def get_runtime_log_files() -> list:
+    """Files owned by the launcher that are useful in a support archive."""
+    result = []
+    try:
+        for path in sorted(RUNTIME_LOG_DIR.glob("launcher.log*")):
+            if path.is_file():
+                result.append(path)
+    except OSError:
+        pass
+    if GAME_SESSION_FILE.is_file():
+        result.append(GAME_SESSION_FILE)
+    return result
+
+
+def load_settings() -> dict:
+    candidates = (SETTINGS_FILE, SETTINGS_FILE.with_name(SETTINGS_FILE.name + ".bak"))
+    with _SETTINGS_LOCK:
+        for candidate in candidates:
+            if not candidate.exists():
+                continue
+            try:
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    return data
+            except Exception:
+                continue
     return {}
 
 
 def save_settings(data: dict) -> None:
-    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    SETTINGS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    with _SETTINGS_LOCK:
+        _atomic_write_json(SETTINGS_FILE, data, keep_backup=True)
 
 
 def set_install_dir(path) -> None:
@@ -3367,6 +3690,10 @@ class RequiredModsMissing(Exception):
     достаточно нажать «Играть» ещё раз."""
 
 
+class GameAlreadyRunning(RuntimeError):
+    """A previous launcher session still owns a running Minecraft process."""
+
+
 def apply_window_icon(win) -> None:
     """Ставит окну иконку сборки.
 
@@ -3413,9 +3740,10 @@ def open_folder(path: Path) -> None:
 
 def update_settings(**kwargs) -> None:
     """Обновляет только переданные ключи в settings.json, не затирая остальные."""
-    data = load_settings()
-    data.update(kwargs)
-    save_settings(data)
+    with _SETTINGS_LOCK:
+        data = load_settings()
+        data.update(kwargs)
+        save_settings(data)
 
 
 def resource_path(filename: str) -> Path:
@@ -3425,6 +3753,61 @@ def resource_path(filename: str) -> Path:
     иначе иконка/другие приложенные файлы не найдутся внутри .exe."""
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
     return base / filename
+
+
+def _apply_local_configpack_override(workspace_root=None, marker_path=None) -> bool:
+    """Use the local v47 candidate only for an explicitly local test build.
+
+    Source runs discover the candidate in this workspace.  Frozen builds require
+    an explicit marker in APP_DATA_DIR; ordinary installed launchers never have
+    that marker and therefore remain on the published production channel.
+    """
+    frozen = bool(getattr(sys, "frozen", False))
+    if frozen:
+        marker = Path(marker_path) if marker_path else (
+            APP_DATA_DIR / "dev_configpack_v47.json"
+        )
+        try:
+            payload = json.loads(marker.read_text(encoding="utf-8"))
+            if payload.get("enabled") is not True or int(payload.get("version")) != 47:
+                return False
+            archive = Path(payload["archive"]).expanduser().resolve()
+            version_file = Path(payload["version_file"]).expanduser().resolve()
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+            return False
+    else:
+        root = (
+            Path(workspace_root).resolve()
+            if workspace_root is not None
+            else Path(__file__).resolve().parent.parent
+        )
+        candidate_dir = root / "quest_work" / "create_rework"
+        archive = candidate_dir / "configpack_v47_candidate.zip"
+        version_file = candidate_dir / "configpack_version_v47_candidate.txt"
+    if (
+        archive.name != "configpack_v47_candidate.zip"
+        or version_file.name != "configpack_version_v47_candidate.txt"
+        or archive.parent != version_file.parent
+    ):
+        return False
+    if not archive.is_file() or not version_file.is_file():
+        return False
+    try:
+        version = int(version_file.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return False
+    if version != 47:
+        return False
+    CONFIG["CONFIGPACK_URL"] = archive.resolve().as_uri()
+    CONFIG["CONFIGPACK_VERSION_URL"] = version_file.resolve().as_uri()
+    CONFIG["CONFIGPACK_MIRROR_URL"] = ""
+    CONFIG["CONFIGPACK_VERSION"] = version
+    return True
+
+
+LOCAL_CONFIGPACK_OVERRIDE = _apply_local_configpack_override()
+# Backward-compatible diagnostic name used by existing self-tests/tools.
+SOURCE_CONFIGPACK_OVERRIDE = LOCAL_CONFIGPACK_OVERRIDE
 
 
 # ------------------------------- ШРИФТ ОКНА -------------------------------
@@ -3814,7 +4197,7 @@ def _mirror_url_variants(url: str) -> list:
     return urls
 
 
-def _fetch_tiny_text(urls):
+def _fetch_tiny_text(urls, timeout=3):
     """Скачивает крошечный текстовый файл, пробуя список URL по очереди;
     возвращает строку или None, если не вышло нигде.
 
@@ -3823,11 +4206,13 @@ def _fetch_tiny_text(urls):
     ещё долго видели бы старый номер версии."""
     for u in urls:
         try:
-            busted = u + (("&" if "?" in u else "?") + "t="
-                          + str(int(time.time()) // 300))
+            busted = u if str(u).startswith("file:") else u + (
+                ("&" if "?" in u else "?") + "t="
+                + str(int(time.time()) // 300)
+            )
             request = urllib.request.Request(
                 busted, headers={"User-Agent": "IH-Launcher"})
-            with urllib.request.urlopen(request, timeout=10) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 raw = response.read().decode("utf-8", "replace").strip()
             if raw:
                 return raw
@@ -3836,25 +4221,156 @@ def _fetch_tiny_text(urls):
     return None
 
 
-def get_remote_modpack_version() -> int:
-    """Версия сборки модов. Если в CONFIG указана MODPACK_VERSION_URL —
-    скачивает и читает число оттуда (так можно обновлять моды без
-    пересборки .exe). Проверка идёт по нескольким источникам — домен и
-    прямой IP (см. _mirror_url_variants). Если ссылки нет или скачать не
-    удалось нигде — использует число из CONFIG."""
+_SHA256_TOKEN_RE = re.compile(
+    r"(?<![0-9a-fA-F])([0-9a-fA-F]{64})(?![0-9a-fA-F])")
+
+
+def parse_sha256_sidecar(text) -> str:
+    """Extract a lowercase SHA-256 digest from common sidecar formats.
+
+    Accepts both a bare digest and the output of sha256sum/Get-FileHash wrappers,
+    for example ``<digest>  CheckpointSetup.exe``.  An empty string means that
+    the server returned a sidecar, but it was malformed.
+    """
+    match = _SHA256_TOKEN_RE.search(str(text or ""))
+    return match.group(1).lower() if match else ""
+
+
+def calculate_file_sha256(path, chunk_size: int = 1024 * 1024) -> str:
+    """Return the lowercase SHA-256 digest of *path* without loading it whole."""
+    digest = hashlib.sha256()
+    with open(Path(path), "rb") as fh:
+        while True:
+            chunk = fh.read(chunk_size)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_file_sha256(path, expected_sha256=None) -> bool:
+    """Verify *path* against a mandatory published SHA-256 digest.
+
+    Launcher updates are executable installers, so a missing sidecar must fail
+    closed.  Older mirrors without ``.sha256`` remain visible as unavailable
+    updates instead of falling back to an unauthenticated PE/size check.
+    """
+    if expected_sha256 is None:
+        return False
+    expected = parse_sha256_sidecar(expected_sha256)
+    if not expected:
+        return False
+    try:
+        actual = calculate_file_sha256(path)
+    except (OSError, ValueError):
+        return False
+    return secrets.compare_digest(actual, expected)
+
+
+def update_sha256_sidecar_url(exe_url: str) -> str:
+    """Map ``CheckpointSetup.exe?v=...`` to its adjacent ``.sha256`` file."""
+    parsed = urllib.parse.urlsplit(str(exe_url or ""))
+    if parsed.scheme.lower() != "https" or not parsed.netloc or not parsed.path:
+        return ""
+    return urllib.parse.urlunsplit((
+        parsed.scheme,
+        parsed.netloc,
+        parsed.path + ".sha256",
+        parsed.query,
+        "",
+    ))
+
+
+def fetch_update_sha256(exe_url: str):
+    """Return expected installer SHA-256, ``None`` if no HTTPS sidecar exists.
+
+    The empty string is intentionally distinct from ``None``: it means a
+    sidecar answered but contained invalid data, so verification must fail.
+    """
+    sidecar = update_sha256_sidecar_url(exe_url)
+    if not sidecar:
+        return None
+    # Never downgrade checksum retrieval to the historical direct HTTP mirror:
+    # whoever can alter that response could replace both the installer and its
+    # digest.  Callers may pass several independent HTTPS installer URLs to
+    # _attach_update_sha256 instead.
+    for url in (sidecar,):
+        try:
+            busted = url + ("&" if "?" in url else "?") + "t=" \
+                + str(int(time.time()) // 300)
+            request = urllib.request.Request(
+                busted, headers={"User-Agent": "IH-Launcher"})
+            with urllib.request.urlopen(request, timeout=8) as response:
+                # A checksum sidecar is tiny.  Reading one byte beyond the
+                # limit lets us reject an HTML/error document returned with 200.
+                raw = response.read(4097)
+            if len(raw) > 4096:
+                return ""
+            return parse_sha256_sidecar(raw.decode("ascii", "replace"))
+        except Exception:  # noqa: BLE001 — 404/blocked source -> next mirror
+            continue
+    return None
+
+
+def verify_update_installer(path, expected_sha256=None) -> bool:
+    """Validate installer shape and its mandatory SHA-256 sidecar."""
+    try:
+        target = Path(path)
+        with open(target, "rb") as fh:
+            head = fh.read(2)
+        if target.stat().st_size <= 3_000_000 or head != b"MZ":
+            return False
+    except OSError:
+        return False
+    return verify_file_sha256(target, expected_sha256)
+
+
+def _attach_update_sha256(info: dict, *exe_urls):
+    """Attach the checksum adjacent to the exact URL that will be downloaded.
+
+    A checksum from a GitHub asset must never validate a separately deployed
+    mirror (or vice versa): during a partial rollout their versions can differ.
+    ``exe_urls`` remains accepted for compatibility with older call sites, but
+    integrity is intentionally paired only with ``info['exe_url']``.
+    """
+    exe_url = info.get("exe_url")
+    expected = fetch_update_sha256(exe_url) if exe_url else None
+    if expected:
+        info["sha256"] = expected
+        return info
+    # Do not advertise an update that cannot be applied securely. It will
+    # appear automatically on the next poll once CI/mirror publishes .sha256.
+    return None
+
+
+def get_modpack_version_status() -> dict:
+    """Return the effective version and whether a remote source answered.
+
+    ``online=False`` is not an error when a complete local client exists; the
+    public ``get_remote_modpack_version`` wrapper intentionally retains its
+    historical integer/fallback contract.
+    """
     url = CONFIG.get("MODPACK_VERSION_URL")
     if not url:
-        return CONFIG["MODPACK_VERSION"]
+        return {"version": CONFIG["MODPACK_VERSION"], "online": None}
     raw = _fetch_tiny_text(_mirror_url_variants(url))
     if raw is not None:
         try:
-            return int(raw.split()[0])
+            return {"version": int(raw.split()[0]), "online": True}
         except Exception:
             pass  # 200-ответ с мусором (страница-заглушка) — это не версия
     # Нет интернета / файл не отвечает — не считаем это поводом
     # переустанавливать моды, просто используем то, что уже стоит.
     local = get_local_modpack_version()
-    return local if local != -1 else CONFIG["MODPACK_VERSION"]
+    return {
+        "version": local if local != -1 else CONFIG["MODPACK_VERSION"],
+        "online": False,
+    }
+
+
+def get_remote_modpack_version() -> int:
+    """Effective pack version, preserving the established offline fallback."""
+    return int(get_modpack_version_status()["version"])
 
 
 def get_local_modpack_version() -> int:
@@ -3995,6 +4511,169 @@ def download_modpack_archive(dest, progress_cb, status_cb):
                          dest, progress_cb, status_cb)
 
 
+MODPACK_MANAGED_FOLDERS = ("mods", "config", "kubejs")
+MODPACK_TRANSACTION_DIR_NAME = ".launcher_modpack_transaction"
+
+
+def _modpack_transaction_dir() -> Path:
+    return INSTANCE_DIR / MODPACK_TRANSACTION_DIR_NAME
+
+
+def _remove_path(path: Path) -> None:
+    """Remove one known transaction target without following symlinks."""
+    path = Path(path)
+    if path.is_symlink() or path.is_file():
+        path.unlink(missing_ok=True)
+    elif path.exists():
+        shutil.rmtree(path)
+
+
+def _finish_modpack_transaction(transaction: Path) -> None:
+    """Delete only the launcher's fixed transaction directory."""
+    transaction = Path(transaction)
+    try:
+        expected = _modpack_transaction_dir().resolve()
+        if transaction.resolve() != expected:
+            raise RuntimeError("unexpected modpack transaction path")
+    except OSError as exc:
+        raise RuntimeError("cannot validate modpack transaction path") from exc
+    _remove_path(transaction)
+
+
+def recover_interrupted_modpack_update(status_cb=None) -> bool:
+    """Roll back a modpack directory swap interrupted by process/OS failure.
+
+    Downloads and extraction happen in a private directory.  During the short
+    commit phase existing managed folders are moved to ``backup`` first.  If
+    the launcher died anywhere before the journal reached ``committed``, this
+    function restores those folders before another launch is attempted.
+    """
+    transaction = _modpack_transaction_dir()
+    if not transaction.exists():
+        return False
+    journal_path = transaction / "journal.json"
+    try:
+        data = json.loads(journal_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("invalid transaction journal")
+    except Exception:  # noqa: BLE001 — best-effort recovery from old/corrupt journal
+        data = {}
+
+    phase = data.get("phase")
+    roots = tuple(
+        name for name in data.get("roots", MODPACK_MANAGED_FOLDERS)
+        if name in MODPACK_MANAGED_FOLDERS
+    ) or MODPACK_MANAGED_FOLDERS
+    if phase == "committed":
+        _finish_modpack_transaction(transaction)
+        runtime_log("modpack_transaction_cleanup phase=committed")
+        return True
+
+    backup_root = transaction / "backup"
+    stage_root = transaction / "stage"
+    existed = set(data.get("existed", []))
+    restored = False
+    for name in roots:
+        target = INSTANCE_DIR / name
+        backup = backup_root / name
+        staged = stage_root / name
+        if backup.exists() or backup.is_symlink():
+            _remove_path(target)
+            os.replace(backup, target)
+            restored = True
+        elif phase == "committing" and name not in existed and not staged.exists():
+            # This root did not exist before the update and has already moved
+            # out of staging, so removing it restores the original absence.
+            _remove_path(target)
+            restored = True
+
+    _finish_modpack_transaction(transaction)
+    if status_cb and restored:
+        status_cb("Восстановлена рабочая сборка после прерванного обновления")
+    runtime_log(
+        "modpack_transaction_recovered phase=%s restored=%s", phase, restored,
+        level=logging.WARNING,
+    )
+    return True
+
+
+def _begin_modpack_transaction() -> "tuple[Path, Path]":
+    recover_interrupted_modpack_update()
+    transaction = _modpack_transaction_dir()
+    transaction.mkdir(parents=True, exist_ok=False)
+    stage_root = transaction / "stage"
+    stage_root.mkdir()
+    return transaction, stage_root
+
+
+def _commit_managed_folders(transaction: Path, roots, *, cleanup=True) -> None:
+    """Atomically swap staged managed folders, with journalled rollback."""
+    transaction = Path(transaction)
+    stage_root = transaction / "stage"
+    backup_root = transaction / "backup"
+    backup_root.mkdir(exist_ok=True)
+    clean_roots = tuple(dict.fromkeys(
+        name for name in roots if name in MODPACK_MANAGED_FOLDERS
+    ))
+    if not clean_roots:
+        raise RuntimeError("modpack transaction has no managed folders")
+    for name in clean_roots:
+        (stage_root / name).mkdir(parents=True, exist_ok=True)
+
+    existed = [name for name in clean_roots if (INSTANCE_DIR / name).exists()]
+    journal = {
+        "version": 1,
+        "phase": "prepared",
+        "roots": list(clean_roots),
+        "existed": existed,
+        "created_at": int(time.time()),
+    }
+    _atomic_write_json(transaction / "journal.json", journal)
+    journal["phase"] = "committing"
+    _atomic_write_json(transaction / "journal.json", journal)
+
+    try:
+        for name in clean_roots:
+            target = INSTANCE_DIR / name
+            backup = backup_root / name
+            staged = stage_root / name
+            if target.exists() or target.is_symlink():
+                os.replace(target, backup)
+            os.replace(staged, target)
+        journal["phase"] = "committed"
+        _atomic_write_json(transaction / "journal.json", journal)
+    except Exception:
+        recover_interrupted_modpack_update()
+        raise
+    if cleanup:
+        _finish_modpack_transaction(transaction)
+
+
+def _clone_tree_with_hardlinks(source: Path, destination: Path) -> None:
+    """Stage an existing mods tree cheaply; copy when hardlinks are unavailable."""
+    destination.mkdir(parents=True, exist_ok=True)
+    if not source.is_dir():
+        return
+    for current, dir_names, file_names in os.walk(source):
+        current_path = Path(current)
+        relative = current_path.relative_to(source)
+        out_dir = destination / relative
+        out_dir.mkdir(parents=True, exist_ok=True)
+        # A launcher-managed mods directory should not contain symlinked trees.
+        dir_names[:] = [
+            name for name in dir_names if not (current_path / name).is_symlink()
+        ]
+        for name in file_names:
+            src = current_path / name
+            dst = out_dir / name
+            if src.is_symlink():
+                continue
+            try:
+                os.link(src, dst)
+            except OSError:
+                shutil.copy2(src, dst)
+
+
 # ---------- ДЕЛЬТА-ОБНОВЛЕНИЯ СБОРКИ (1.65.0) ----------
 # Раньше ЛЮБОЕ изменение версии сборки перекачивало все ~400 МБ. Теперь
 # лаунчер сначала берёт с зеркала маленький manifest.json (список модов с
@@ -4025,8 +4704,7 @@ def _sha_index_load() -> dict:
 
 def _sha_index_save(index: dict) -> None:
     try:
-        (APP_DATA_DIR / MODS_SHA_INDEX_FILE_NAME).write_text(
-            json.dumps(index), encoding="utf-8")
+        _atomic_write_json(APP_DATA_DIR / MODS_SHA_INDEX_FILE_NAME, index)
     except Exception:  # noqa: BLE001
         pass
 
@@ -4076,29 +4754,156 @@ def _fetch_modpack_manifest():
     return None
 
 
+def _normalise_modpack_manifest(manifest) -> list:
+    """Validate and normalize the mods-only integrity manifest."""
+    if not isinstance(manifest, dict) or not manifest.get("modsOnly"):
+        return []
+    raw_files = manifest.get("files")
+    if not isinstance(raw_files, list):
+        return []
+    result = []
+    names = set()
+    for item in raw_files:
+        if not isinstance(item, dict):
+            return []
+        path = str(item.get("path", "")).replace("\\", "/")
+        name = path[5:] if path.startswith("mods/") else ""
+        sha = str(item.get("sha256", "")).lower()
+        try:
+            size = int(item.get("size", 0))
+        except (TypeError, ValueError):
+            return []
+        if (
+            not name
+            or "/" in name
+            or ".." in name
+            or not name.lower().endswith(".jar")
+            or size <= 0
+            or not re.fullmatch(r"[0-9a-f]{64}", sha)
+            or name.lower() in names
+        ):
+            return []
+        names.add(name.lower())
+        result.append({"name": name, "size": size, "sha": sha})
+    # A real pack contains hundreds of mods.  Refuse truncated/error payloads.
+    return result if len(result) >= 20 else []
+
+
+def _cache_modpack_manifest(manifest) -> None:
+    if _normalise_modpack_manifest(manifest):
+        _atomic_write_json(MODPACK_MANIFEST_CACHE_FILE, manifest)
+
+
+def _load_cached_modpack_manifest():
+    try:
+        manifest = json.loads(MODPACK_MANIFEST_CACHE_FILE.read_text(encoding="utf-8"))
+        files = _normalise_modpack_manifest(manifest)
+        if not files:
+            return None
+        local_version = get_local_modpack_version()
+        manifest_version = int(str(manifest.get("version", "")).strip())
+        if local_version >= 0 and manifest_version != local_version:
+            return None
+        return manifest
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _mod_manifest_skip_reason(name: str):
+    """Explain manifest entries intentionally absent due to player settings."""
+    lower = name.lower()
+    if any(pattern.lower() in lower for pattern in CONFIG.get("REMOVED_MODS", []) if pattern):
+        return "removed"
+    if load_settings().get("no_sodium") and any(
+            pattern in lower for pattern in _RENDER_MOD_PATTERNS):
+        return "gpu_mode"
+    selected = get_optional_mods_selection()
+    for mod in CONFIG.get("OPTIONAL_MODS", []):
+        if str(mod.get("filename", "")).lower() == lower:
+            if not selected.get(mod.get("id"), mod.get("default", True)):
+                return "optional_disabled"
+            break
+    return None
+
+
+def verify_modpack_integrity(status_cb=None, progress_cb=None, manifest=None) -> dict:
+    """Verify installed core mods from the last trusted server manifest.
+
+    The cached SHA index makes normal checks cheap: unchanged files are keyed
+    by size and mtime, while edited/replaced jars are hashed again.  Optional
+    and deliberately blocked render mods are excluded from false positives.
+    """
+    manifest = manifest or _load_cached_modpack_manifest()
+    files = _normalise_modpack_manifest(manifest)
+    if not files:
+        return {
+            "available": False,
+            "ok": True,
+            "checked": 0,
+            "missing": [],
+            "corrupt": [],
+            "skipped": [],
+        }
+    if status_cb:
+        status_cb("проверка целостности модов")
+    index = _sha_index_load()
+    missing, corrupt, skipped = [], [], []
+    total = len(files) or 1
+    for position, item in enumerate(files, start=1):
+        name = item["name"]
+        reason = _mod_manifest_skip_reason(name)
+        if reason:
+            skipped.append(name)
+        else:
+            local = INSTANCE_DIR / "mods" / name
+            if not local.is_file():
+                missing.append(name)
+            else:
+                try:
+                    wrong_size = local.stat().st_size != item["size"]
+                except OSError:
+                    wrong_size = True
+                if wrong_size or _sha256_cached(local, index) != item["sha"]:
+                    corrupt.append(name)
+        if progress_cb and (position == total or position % 5 == 0):
+            progress_cb(int(position * 100 / total))
+    _sha_index_save(index)
+    result = {
+        "available": True,
+        "ok": not missing and not corrupt,
+        "checked": len(files) - len(skipped),
+        "missing": missing,
+        "corrupt": corrupt,
+        "skipped": skipped,
+    }
+    runtime_log(
+        "modpack_verify checked=%d missing=%d corrupt=%d skipped=%d",
+        result["checked"], len(missing), len(corrupt), len(skipped),
+        level=logging.INFO if result["ok"] else logging.WARNING,
+    )
+    return result
+
+
 def install_modpack_delta(status_cb, progress_cb) -> bool:
     """Пробует обновить сборку дельтой. True — обновление применено (полная
-    установка не нужна), False — нужно идти старым полным путём."""
+    установка не нужна), False — нужно идти старым полным путём.
+
+    Existing mods are cloned into a private staging directory first.  New
+    files and deletions are applied there, then the whole directory is swapped
+    with a rollback journal.  A failed download or killed launcher therefore
+    cannot leave half of the old pack mixed with half of the new one.
+    """
+    transaction = None
     try:
+        recover_interrupted_modpack_update(status_cb)
         mods_dir = INSTANCE_DIR / "mods"
         if get_local_modpack_version() < 0 or not mods_dir.is_dir():
             return False  # первой установке — полный путь (архив частями)
         man = _fetch_modpack_manifest()
-        if not man or not man.get("modsOnly"):
+        files = _normalise_modpack_manifest(man)
+        if not files:
             return False
         remote_ver = get_remote_modpack_version()
-        files = []
-        for f in man["files"]:
-            path = str(f.get("path", ""))
-            name = path.split("/")[-1]
-            # Гигиена: только простые имена jar внутри mods/
-            if (not path.startswith("mods/") or not name.lower().endswith(".jar")
-                    or "/" in path[5:] or "\\" in name or ".." in name):
-                return False
-            files.append({"name": name, "size": int(f.get("size", 0)),
-                          "sha": str(f.get("sha256", ""))})
-        if len(files) < 20:
-            return False  # подозрительно маленький манифест — не рискуем
 
         status_cb("проверка установленных модов")
         index = _sha_index_load()
@@ -4114,12 +4919,19 @@ def install_modpack_delta(status_cb, progress_cb) -> bool:
         if total_bytes > 150 * 1024 * 1024:
             return False  # изменилось слишком много — полный путь быстрее
 
-        # Удаления: ТОЛЬКО имена из deletedFiles манифеста. Файлы игрока,
-        # которых нет в манифесте (опциональные моды и т.п.), не трогаем.
+        # Удаления: ТОЛЬКО простые jar-имена из deletedFiles манифеста.
+        deleted = []
         for path in man.get("deletedFiles", []):
-            name = str(path).split("/")[-1]
-            if name.lower().endswith(".jar") and "\\" not in name and ".." not in name:
-                (mods_dir / name).unlink(missing_ok=True)
+            clean_path = str(path).replace("\\", "/")
+            name = clean_path[5:] if clean_path.startswith("mods/") else ""
+            if (name.lower().endswith(".jar") and "/" not in name
+                    and "\\" not in name and ".." not in name):
+                deleted.append(name)
+
+        if need or deleted:
+            transaction, stage_root = _begin_modpack_transaction()
+            staged_mods = stage_root / "mods"
+            _clone_tree_with_hardlinks(mods_dir, staged_mods)
 
         if need:
             status_cb("дельта-обновление: %d файлов, %.1f МБ"
@@ -4137,7 +4949,7 @@ def install_modpack_delta(status_cb, progress_cb) -> bool:
 
             def fetch_one(f):
                 quoted = urllib.parse.quote(f["name"])
-                tmp = mods_dir / (f["name"] + ".download")
+                tmp = staged_mods / (f["name"] + ".download")
                 for _attempt in range(3):
                     tmp.unlink(missing_ok=True)
                     try:
@@ -4151,9 +4963,11 @@ def install_modpack_delta(status_cb, progress_cb) -> bool:
                         for chunk in iter(lambda: fh.read(1 << 20), b""):
                             h.update(chunk)
                     if h.hexdigest() == f["sha"]:
-                        # Файл заменяем только после успешной проверки
-                        (mods_dir / f["name"]).unlink(missing_ok=True)
-                        tmp.replace(mods_dir / f["name"])
+                        # Replace only the staged hardlink.  The live pack is
+                        # untouched until every worker has succeeded.
+                        staged_target = staged_mods / f["name"]
+                        staged_target.unlink(missing_ok=True)
+                        tmp.replace(staged_target)
                         with done_lock:
                             done[0] += 1
                             status_cb("моды: %d из %d" % (done[0], len(need)))
@@ -4165,59 +4979,122 @@ def install_modpack_delta(status_cb, progress_cb) -> bool:
             with ThreadPoolExecutor(max_workers=6) as pool:
                 results = list(pool.map(fetch_one, need))
             if not all(results):
+                recover_interrupted_modpack_update()
                 return False  # что-то не скачалось — полный путь всё починит
 
-        MODPACK_VERSION_FILE.write_text(str(remote_ver))
+        if transaction is not None:
+            for name in deleted:
+                (transaction / "stage" / "mods" / name).unlink(missing_ok=True)
+            _commit_managed_folders(transaction, ("mods",))
+            transaction = None
+
+        _cache_modpack_manifest(man)
+        _atomic_write_text(MODPACK_VERSION_FILE, str(remote_ver))
         # config/kubejs не трогали — пак настроек остаётся на месте,
         # отметку CONFIGPACK_MARKER_FILE сбрасывать не нужно.
         progress_cb(100)
         status_cb("сборка обновлена (дельта)")
         return True
-    except Exception:  # noqa: BLE001 — любой сюрприз -> полный путь
+    except Exception as exc:  # noqa: BLE001 — любой сюрприз -> полный путь
+        runtime_log(
+            "delta_update_failed: %s", exc, level=logging.WARNING,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        if transaction is not None:
+            try:
+                recover_interrupted_modpack_update()
+            except Exception as recovery_exc:  # noqa: BLE001
+                runtime_log(
+                    "delta_recovery_failed: %s", recovery_exc,
+                    level=logging.ERROR,
+                    exc_info=(type(recovery_exc), recovery_exc, recovery_exc.__traceback__),
+                )
         return False
 
 
 def install_modpack(status_cb, progress_cb) -> None:
     """Скачивает архив с модами и распаковывает поверх папки экземпляра.
     Сначала пробует лёгкое дельта-обновление (только изменённые моды по
-    manifest.json); полный путь остаётся запасным и для первой установки."""
+    manifest.json); полный путь остаётся запасным и для первой установки.
+
+    The full archive is extracted and CRC-checked away from the live instance;
+    only then are ``mods/config/kubejs`` swapped with rollback backups.
+    """
+    recover_interrupted_modpack_update(status_cb)
     if install_modpack_delta(status_cb, progress_cb):
         return
 
     zip_path = APP_DATA_DIR / "modpack_download.zip"
+    transaction = None
 
     def download_progress(pct):
         # Подпись с номером шага ставит сам progress_cb — здесь только процент.
         progress_cb(pct)
 
-    download_modpack_archive(zip_path, download_progress, status_cb)
+    try:
+        download_modpack_archive(zip_path, download_progress, status_cb)
+        transaction, stage_root = _begin_modpack_transaction()
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            members = _safe_zip_targets(zf, stage_root)
+            total = len(members) or 1
+            last_pct = -1
+            for index, member in enumerate(members, start=1):
+                zf.extract(member, stage_root)
+                pct = int(index * 100 / total)
+                if pct != last_pct:
+                    last_pct = pct
+                    progress_cb(pct)
+                    status_cb(
+                        "проверка и распаковка — %d%% (%d/%d файлов)"
+                        % (pct, index, total)
+                    )
 
-    # Чистим старые моды/конфиги, чтобы не оставалось "мусора" от старой версии.
-    # resourcepacks и shaderpacks НЕ трогаем: там лежат паки, которые игрок
-    # поставил сам через менеджеры — обновление сборки модов не должно их
-    # удалять.
-    for folder in ("mods", "config", "kubejs"):
-        target = INSTANCE_DIR / folder
-        if target.exists():
-            shutil.rmtree(target)
+        # Empty managed roots are intentional: the old implementation also
+        # removed a folder if the new archive no longer shipped it.
+        for folder in MODPACK_MANAGED_FOLDERS:
+            (stage_root / folder).mkdir(parents=True, exist_ok=True)
+        _commit_managed_folders(
+            transaction, MODPACK_MANAGED_FOLDERS, cleanup=False
+        )
 
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        members = zf.infolist()
-        total = len(members) or 1
-        last_pct = -1
-        for index, member in enumerate(members, start=1):
-            zf.extract(member, INSTANCE_DIR)
-            pct = int(index * 100 / total)
-            if pct != last_pct:
-                last_pct = pct
-                progress_cb(pct)
-                status_cb("распаковка — %d%% (%d/%d файлов)" % (pct, index, total))
-
-    zip_path.unlink(missing_ok=True)
+        # Older/custom archives may additionally contain resource packs or
+        # root files. Merge those after the critical folders are committed;
+        # user-owned directories are never removed wholesale.
+        for child in list(stage_root.iterdir()):
+            target = INSTANCE_DIR / child.name
+            if child.is_dir():
+                shutil.copytree(child, target, dirs_exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(child, target)
+        _finish_modpack_transaction(transaction)
+        transaction = None
+    except Exception as exc:
+        runtime_log(
+            "full_modpack_install_failed: %s", exc, level=logging.ERROR,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        if transaction is not None:
+            try:
+                recover_interrupted_modpack_update(status_cb)
+            except Exception as recovery_exc:  # noqa: BLE001
+                runtime_log(
+                    "full_modpack_recovery_failed: %s", recovery_exc,
+                    level=logging.CRITICAL,
+                    exc_info=(type(recovery_exc), recovery_exc,
+                              recovery_exc.__traceback__),
+                )
+        raise
+    finally:
+        zip_path.unlink(missing_ok=True)
 
     harvest_optional_mods(status_cb)
 
-    MODPACK_VERSION_FILE.write_text(str(get_remote_modpack_version()))
+    remote_version = get_remote_modpack_version()
+    manifest = _fetch_modpack_manifest()
+    if manifest and _normalise_modpack_manifest(manifest):
+        _cache_modpack_manifest(manifest)
+    _atomic_write_text(MODPACK_VERSION_FILE, str(remote_version))
 
     # Сборка только что снесла config/ и mods/ — значит, пак настроек
     # (меню, квесты, экран загрузки) тоже стёрт. Убираем его отметку, чтобы
@@ -4266,10 +5143,13 @@ def get_remote_configpack_version() -> int:
     if not url:
         return CONFIG.get("CONFIGPACK_VERSION", 0)
     candidates = [url]
-    for extra in ("https://industrialhorizon.dynmap.xyz/configpack_version.txt",
-                  "http://95.216.30.64:25980/configpack_version.txt"):
-        if extra not in candidates:
-            candidates.append(extra)
+    if not str(url).startswith("file:"):
+        for extra in (
+            "https://industrialhorizon.dynmap.xyz/configpack_version.txt",
+            "http://95.216.30.64:25980/configpack_version.txt",
+        ):
+            if extra not in candidates:
+                candidates.append(extra)
     raw = _fetch_tiny_text(candidates)
     if raw is not None:
         try:
@@ -4305,12 +5185,17 @@ def _safe_zip_targets(zf, root: Path) -> list:
     safe = []
     root = root.resolve()
     for member in zf.infolist():
-        name = member.filename
+        name = member.filename.replace("\\", "/")
+        unix_mode = (member.external_attr >> 16) & 0xFFFF
+        file_type = stat.S_IFMT(unix_mode)
+        if stat.S_ISLNK(unix_mode) or file_type not in (0, stat.S_IFREG, stat.S_IFDIR):
+            raise ValueError("Архив содержит небезопасный тип файла: %s" % name)
         if name.endswith("/"):
             continue
-        if os.path.isabs(name) or ".." in Path(name).parts or ":" in name:
+        parts = Path(name).parts
+        if os.path.isabs(name) or ".." in parts or ":" in name:
             raise ValueError("Архив настроек содержит небезопасный путь: %s" % name)
-        target = (root / name).resolve()
+        target = root.joinpath(*parts).resolve()
         if root not in target.parents:
             raise ValueError("Архив настроек пытается писать вне папки игры: %s" % name)
         safe.append(member)
@@ -4429,11 +5314,11 @@ def install_configpack(status_cb=None, progress_cb=None) -> None:
         # удаление» (отсутствующие в архиве) в verify не попадают, поэтому
         # пак больше не переустанавливается вхолостую.
         verify = [rel for rel in owns if (INSTANCE_DIR / rel).exists()]
-        CONFIGPACK_MARKER_FILE.write_text(json.dumps({
+        _atomic_write_json(CONFIGPACK_MARKER_FILE, {
             "version": get_remote_configpack_version(),
             "owns": owns,
             "verify": verify,
-        }, ensure_ascii=False, indent=2), encoding="utf-8")
+        })
 
         if status_cb:
             status_cb("Настройки сборки обновлены")
@@ -5141,15 +6026,27 @@ def ensure_pinned_server(status_cb=None) -> None:
     else:
         servers_list = []
 
+    desired_name = pinned.get("name") or CONFIG.get("DISPLAY_NAME") or "Server"
     for server in servers_list:
         if not isinstance(server, NBTCompound):
             continue
         existing_ip = (server.get_value("ip", "") or "").strip().lower()
         if existing_ip == pinned_ip.lower():
-            return  # уже в списке — ничего делать не нужно
+            # Сервер уже был добавлен старой версией лаунчера. Обновляем его
+            # видимое имя по тому же IP, не трогая остальные записи игрока.
+            existing_name = server.get_value("name", "") or ""
+            if existing_name != desired_name:
+                server.set("name", _NBT_STRING, desired_name)
+                root.set("servers", _NBT_LIST, (_NBT_COMPOUND, list(servers_list)))
+                writer = _NBTWriter()
+                writer.write_named_tag(_NBT_COMPOUND, "", root)
+                servers_path.write_bytes(bytes(writer.out))
+                if status_cb:
+                    status_cb("Сервер переименован в %s." % desired_name)
+            return
 
     new_entry = NBTCompound()
-    new_entry.set("name", _NBT_STRING, pinned.get("name") or "Server")
+    new_entry.set("name", _NBT_STRING, desired_name)
     new_entry.set("ip", _NBT_STRING, pinned_ip)
 
     updated_list = [new_entry] + list(servers_list)
@@ -5160,7 +6057,7 @@ def ensure_pinned_server(status_cb=None) -> None:
     servers_path.write_bytes(bytes(writer.out))
 
     if status_cb:
-        status_cb("Сервер %s добавлен в список серверов." % (pinned.get("name") or "Server"))
+        status_cb("Сервер %s добавлен в список серверов." % desired_name)
 
 
 def _modrinth_api_get(url: str, timeout: float = 15.0) -> object:
@@ -5435,13 +6332,16 @@ def _check_update_via_mirror():
     exe = CONFIG.get("LAUNCHER_EXE_MIRROR_URL")
     if not url or not exe:
         return None
+    if (urllib.parse.urlsplit(str(url)).scheme.lower() != "https"
+            or urllib.parse.urlsplit(str(exe)).scheme.lower() != "https"):
+        return None
     try:
         # Cloudflare кеширует ответы — добавляем анти-кеш метку (меняется раз в
         # ~5 минут), иначе после релиза игроки ещё долго видят старый номер.
-        # Пробуем домен, затем прямой IP (_mirror_url_variants): у части
-        # игроков провайдер режет домен — раньше они не видели обновлений.
+        # Для исполняемого обновления используем только HTTPS. Прямой HTTP-IP
+        # остаётся допустимым для неисполняемых файлов сборки, но не для EXE.
         raw, src = None, None
-        for u in _mirror_url_variants(url):
+        for u in (url,):
             try:
                 bust = ("&" if "?" in u else "?") + "t=" + str(int(time.time()) // 300)
                 request = urllib.request.Request(
@@ -5462,18 +6362,13 @@ def _check_update_via_mirror():
             # Тот же exe-файл на зеркале для всех версий: анти-кеш по номеру,
             # чтобы Cloudflare отдал именно свежий Launcher.exe.
             exe_src = exe
-            if src and "95.216.30.64" in src:
-                # Номер версии дошёл только через прямой IP — значит, домен у
-                # игрока закрыт, и установщик тоже качаем по IP.
-                exe_src = exe.replace("https://industrialhorizon.dynmap.xyz",
-                                      "http://95.216.30.64:25980")
             exe_url = exe_src + (("&" if "?" in exe_src else "?")
                                  + "v=" + ver.replace(".", ""))
-            return {
+            return _attach_update_sha256({
                 "version": ver,
                 "exe_url": exe_url,
                 "url": "https://github.com/%s/releases" % (CONFIG.get("GITHUB_REPO") or ""),
-            }
+            }, exe_url)
     except Exception:
         pass
     return None
@@ -5523,10 +6418,14 @@ def check_for_launcher_update():
                         rel.get("html_url") or ("https://github.com/%s/releases" % repo))
         if best:
             if best[0] > _version_tuple(CONFIG["LAUNCHER_VERSION"]):
-                # Ставим установщик с HTTPS-зеркала, если оно задано: GitHub в РФ
-                # заблокирован, и качать оттуда .exe большинство игроков не может.
-                ex = CONFIG.get("LAUNCHER_EXE_MIRROR_URL") or best[2]
-                return {"version": best[1], "exe_url": ex, "url": best[3]}
+                # The version came from this GitHub release, so keep its
+                # installer/hash paired with that exact release. The unversioned
+                # mirror is used only by _check_update_via_mirror(), where its
+                # own launcher_version.txt proves the deployment is complete.
+                ex = best[2]
+                return _attach_update_sha256(
+                    {"version": best[1], "exe_url": ex, "url": best[3]},
+                    ex)
             return None    # GitHub ответил: новее ничего нет, запаску не дёргаем
     except Exception:
         pass
@@ -5548,17 +6447,14 @@ def check_for_launcher_update():
             if best is None or vt > best[0]:
                 best = (vt, ver)
         if best and best[0] > _version_tuple(CONFIG["LAUNCHER_VERSION"]):
-            # В РФ мы попадаем сюда (GitHub API не ответил). GitHub-ссылку на .exe
-            # качать бесполезно — он заблокирован. Берём установщик с HTTPS-зеркала
-            # (порт 443). Если зеркало не задано — падаем на GitHub как раньше.
-            exe = CONFIG.get("LAUNCHER_EXE_MIRROR_URL") or (
+            release_exe = (
                 "https://github.com/%s/releases/download/v%s/CheckpointSetup.exe"
                 % (repo, best[1]))
-            return {
+            return _attach_update_sha256({
                 "version": best[1],
-                "exe_url": exe,
+                "exe_url": release_exe,
                 "url": "https://github.com/%s/releases" % repo,
-            }
+            }, release_exe)
     except Exception:
         pass
     return None
@@ -6010,6 +6906,90 @@ def fix_early_loading_provider(status_cb=None) -> None:
         pass  # не критично: мод сам предложит поправить конфиг кнопкой Yes
 
 
+def _pin_selected_loading_bar_in_config():
+    """Switch the early-loading config from its legacy random list to bar.apng.
+
+    Configpack v47 deliberately ships an image list so already installed older
+    launchers still get a random order. Launcher 1.66.2 chooses without an
+    immediate repeat, copies that APNG to bar.apng and atomically pins the
+    config to that file. Failing to pin is harmless: the mod keeps using its
+    own random list.
+    """
+    config_path = INSTANCE_DIR / "config" / "simple-custom-early-loading.json"
+    config_temp = config_path.with_name(f".{config_path.name}.{os.getpid()}.tmp")
+    try:
+        text = config_path.read_text(encoding="utf-8")
+        pattern = (
+            r'("image"\s*:\s*)\[\s*"variants/bar_\d{2}\.apng"'
+            r'(?:\s*,\s*"variants/bar_\d{2}\.apng")*\s*\]'
+        )
+        updated, replacements = re.subn(pattern, r'\1"bar.apng"', text, count=1)
+        if replacements == 0:
+            return bool(re.search(r'"image"\s*:\s*"bar\.apng"', text))
+        config_temp.write_text(updated, encoding="utf-8")
+        os.replace(config_temp, config_path)
+        return True
+    except OSError:
+        config_temp.unlink(missing_ok=True)
+        return False
+
+
+def select_loading_bar_variant(status_cb=None):
+    """Выбирает новый порядок фраз для раннего экрана перед каждым запуском.
+
+    В configpack лежат несколько заранее проверенных полноразмерных APNG. Так
+    лаунчеру не приходится перекодировать 51 кадр на компьютере игрока. Имя
+    прошлого варианта хранится в APP_DATA, а не внутри config/: обновление
+    configpack не сбрасывает историю и соседние запуски не повторяются.
+    """
+    loading_dir = INSTANCE_DIR / "config" / "simple-custom-early-loading"
+    variants_dir = loading_dir / "variants"
+    candidates = sorted(path for path in variants_dir.glob("bar_*.apng") if path.is_file())
+    if not candidates:
+        return None  # старый configpack: оставляем его обычный bar.apng
+
+    previous_name = ""
+    try:
+        state = json.loads(LOADING_VARIANT_STATE_FILE.read_text(encoding="utf-8"))
+        if isinstance(state, dict):
+            previous_name = str(state.get("last_variant", ""))
+    except (OSError, ValueError, TypeError):
+        pass
+
+    choices = [path for path in candidates if path.name != previous_name]
+    selected = secrets.choice(choices or candidates)
+    target = loading_dir / "bar.apng"
+    target_temp = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    state_temp = LOADING_VARIANT_STATE_FILE.with_name(
+        f".{LOADING_VARIANT_STATE_FILE.name}.{os.getpid()}.tmp"
+    )
+
+    try:
+        loading_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(selected, target_temp)
+        os.replace(target_temp, target)
+        _pin_selected_loading_bar_in_config()
+
+        LOADING_VARIANT_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        state_temp.write_text(
+            json.dumps({"last_variant": selected.name}, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(state_temp, LOADING_VARIANT_STATE_FILE)
+        if status_cb:
+            status_cb("Подготовлен новый порядок фраз загрузки.")
+        return selected
+    except OSError:
+        # Экран загрузки декоративный: ошибка выбора не должна блокировать
+        # запуск. В таком случае остаётся последний рабочий bar.apng.
+        for temporary in (target_temp, state_temp):
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+        return None
+
+
 def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
     """Скачивает доп. клиентские моды из CONFIG["EXTRA_CLIENT_MODS"] с
     Modrinth и кладёт в mods/. Скачивается каждый один раз в постоянный кэш
@@ -6188,7 +7168,7 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
 WINDOW_ICON_MOD_SLUG = "custom-window-title"
 
 
-SKIN_CONFIG_VERSION = 3
+SKIN_CONFIG_VERSION = 4
 
 
 def install_skin_config(status_cb=None) -> None:
@@ -6246,7 +7226,7 @@ def install_skin_config(status_cb=None) -> None:
             # кто не выбрал себе скин сам.
             # Путь полным URL, потому что Legacy игнорирует root (см. выше).
             {
-                "name": CONFIG["PACK_NAME"],
+                "name": CONFIG.get("DISPLAY_NAME") or CONFIG["PACK_NAME"],
                 "type": "Legacy",
                 "checkPNG": True,
                 "skin": root + "/skins/{USERNAME}.png",
@@ -6368,8 +7348,11 @@ def render_player_head(username: str, size: int = 44):
     """
     if not (_PIL_OK and username):
         return None
-    path = get_localskin_dir() / "skins" / (username.strip() + ".png")
-    if not path.exists():
+    username = username.strip()
+    local_path = get_localskin_dir() / "skins" / (username + ".png")
+    bundled_path = resource_path("skins/%s.png" % username)
+    path = local_path if local_path.is_file() else bundled_path
+    if not path.is_file():
         return None
     try:
         skin = Image.open(path).convert("RGBA")
@@ -6520,7 +7503,9 @@ def install_game_window_icon(status_cb=None) -> None:
         # запуске — но мы можем и создать/дополнить его заранее, до этого)
         config_path = config_dir / "customwindowtitle-client.toml"
         icon_line = "icon = '%s'" % icon_rel_path
-        title_line = "title = '%s {mcversion}'" % CONFIG["PACK_NAME"]
+        title_line = "title = '%s {mcversion}'" % (
+            CONFIG.get("DISPLAY_NAME") or CONFIG["PACK_NAME"]
+        )
 
         lines = []
         icon_written = False
@@ -6704,6 +7689,40 @@ def apply_forced_options(status_cb=None) -> None:
         status_cb("интерфейс x2, ограничение FPS снято")
 
 
+def disable_fullscreen_once(status_cb=None) -> None:
+    """Start Minecraft windowed once, without overriding later user choices."""
+    marker = APP_DATA_DIR / ".fullscreen_disabled_once_v1"
+    if marker.exists():
+        return
+
+    try:
+        INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
+        options_path = INSTANCE_DIR / "options.txt"
+        changed = False
+
+        current = _read_options_txt(options_path)
+        if current.get("fullscreen") != "false":
+            current["fullscreen"] = "false"
+            _write_options_txt(options_path, current)
+            changed = True
+
+        # Low-end mode can restore this file later, so migrate an existing
+        # backup too. Do not create a backup when the mode has never been used.
+        if OPTIONS_BACKUP_FILE.exists():
+            backup = _read_options_txt(OPTIONS_BACKUP_FILE)
+            if backup.get("fullscreen") != "false":
+                backup["fullscreen"] = "false"
+                _write_options_txt(OPTIONS_BACKUP_FILE, backup)
+                changed = True
+
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("1", encoding="utf-8")
+        if changed and status_cb:
+            status_cb("Первый запуск Minecraft — в оконном режиме; F11 остаётся доступен.")
+    except Exception:
+        pass  # Non-critical: Minecraft can still be switched to windowed manually.
+
+
 def apply_low_end_mode(enabled: bool, status_cb=None) -> None:
     """Включает или выключает упрощённую графику для слабых ПК. Настройки
     "до включения" сохраняются один раз в отдельный файл — при выключении
@@ -6762,7 +7781,7 @@ def apply_low_end_mode(enabled: bool, status_cb=None) -> None:
 # и options.txt сюда специально не входят, чтобы кнопка "Починить" никогда
 # не задевала то, что жалко потерять.
 REPAIRABLE_FOLDERS = ["versions", "libraries", "assets", "mods", "config",
-                      "resourcepacks", "shaderpacks", "kubejs"]
+                      "kubejs"]
 
 # minecraft-launcher-lib сверяет sha1 у каждого файла ассетов. Если файл
 # скачался битым — оборвалась связь, вмешался антивирус, диск икнул — она
@@ -6796,7 +7815,8 @@ def repair_installation(status_cb=None, progress_cb=None) -> None:
     """Полностью удаляет файлы установки Minecraft/NeoForge/модов и сбрасывает
     все внутренние метки лаунчера, чтобы при следующем запуске всё
     поставилось заново с нуля. Миры (saves), скриншоты и настройки
-    (options.txt) не трогает."""
+    (options.txt), установленные игроком ресурспаки и шейдеры не трогает."""
+    recover_interrupted_modpack_update(status_cb)
     total = len(REPAIRABLE_FOLDERS) or 1
     for index, folder in enumerate(REPAIRABLE_FOLDERS, start=1):
         target = INSTANCE_DIR / folder
@@ -6812,6 +7832,9 @@ def repair_installation(status_cb=None, progress_cb=None) -> None:
 
     MODPACK_VERSION_FILE.unlink(missing_ok=True)
     INSTALL_MARKER_FILE.unlink(missing_ok=True)
+    CONFIGPACK_MARKER_FILE.unlink(missing_ok=True)
+    (APP_DATA_DIR / MODS_SHA_INDEX_FILE_NAME).unlink(missing_ok=True)
+    MODPACK_MANIFEST_CACHE_FILE.unlink(missing_ok=True)
 
     if status_cb:
         status_cb("Старые файлы удалены, ставлю всё заново...")
@@ -6847,7 +7870,7 @@ def _read_install_marker():
 def _write_install_marker(version_id: str) -> None:
     data = _install_signature()
     data["version_id"] = version_id
-    INSTALL_MARKER_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    _atomic_write_json(INSTALL_MARKER_FILE, data)
 
 
 def _find_bundled_java(status_cb=None):
@@ -7033,7 +8056,7 @@ def deploy_test_mods(status_cb, progress_cb) -> bool:
 
     # Помечаем, что в клиенте сейчас ТЕСТОВЫЕ моды, чтобы обычная кнопка
     # "Играть" потом переустановила настоящую сборку с сервера-хостинга.
-    MODPACK_VERSION_FILE.write_text("TEST")
+    _atomic_write_text(MODPACK_VERSION_FILE, "TEST")
     return True
 
 
@@ -7108,8 +8131,53 @@ def strip_render_mods(status_cb=None) -> None:
         status_cb("Режим старой видеокарты: убрано %d мод(ов) рендера (Sodium/Iris)." % removed)
 
 
+def _prepare_game_launch_log():
+    """Rotate the previous Java console and open a fresh diagnostic log."""
+    log_path = INSTANCE_DIR / "latest_launch.log"
+    try:
+        if log_path.is_file() and log_path.stat().st_size:
+            history = RUNTIME_LOG_DIR / "game"
+            history.mkdir(parents=True, exist_ok=True)
+            archived = history / (
+                "launch_%s_%d.log" % (time.strftime("%Y%m%d_%H%M%S"), os.getpid())
+            )
+            shutil.copy2(log_path, archived)
+            old = sorted(
+                history.glob("launch_*.log"), key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )
+            for path in old[5:]:
+                path.unlink(missing_ok=True)
+    except OSError as exc:
+        runtime_log("game_log_rotation_failed: %s", exc, level=logging.WARNING)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_file = open(log_path, "w", encoding="utf-8", errors="replace")
+    log_file.write(
+        "Industrial Horizon launcher %s\nStarted: %s\nInstance: %s\n%s\n"
+        % (
+            CONFIG.get("LAUNCHER_VERSION", "?"),
+            time.strftime("%Y-%m-%d %H:%M:%S"),
+            INSTANCE_DIR,
+            "-" * 72,
+        )
+    )
+    log_file.flush()
+    return log_path, log_file
+
+
 def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb, progress_cb, server_override=None, test_mode=False):
+    active_session = get_active_game_session()
+    if active_session:
+        raise GameAlreadyRunning(
+            "Minecraft уже запущен (процесс %s). Закройте игру перед новым запуском."
+            % active_session.get("pid", "?")
+        )
     INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
+    recover_interrupted_modpack_update(status_cb)
+    runtime_log(
+        "launch_requested user=%s memory_mb=%s low_end=%s test=%s instance=%s",
+        username, memory_mb, bool(low_end_enabled), bool(test_mode), INSTANCE_DIR,
+    )
 
     loader_name = LOADER_DISPLAY_NAMES.get(
         CONFIG["MOD_LOADER"], CONFIG["MOD_LOADER"].capitalize())
@@ -7136,11 +8204,25 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
         # mods/ пересобрана с нуля — моды из пака настроек надо вернуть.
         CONFIGPACK_MARKER_FILE.unlink(missing_ok=True)
     else:
-        if get_local_modpack_version() != get_remote_modpack_version():
+        local_pack_version = get_local_modpack_version()
+        remote_pack_version = get_remote_modpack_version()
+        if local_pack_version != remote_pack_version:
             install_modpack(pack_status, pack_progress)
         else:
-            pack_status("сборка уже актуальна")
-            pack_progress(100)
+            integrity = verify_modpack_integrity(pack_status, pack_progress)
+            if integrity.get("available") and not integrity.get("ok"):
+                pack_status(
+                    "восстановление файлов: отсутствует %d, повреждено %d"
+                    % (len(integrity["missing"]), len(integrity["corrupt"]))
+                )
+                # A same-version delta can redownload only damaged jars.  If
+                # the mirror cannot serve it, the proven full archive path is
+                # still the final fallback.
+                if not install_modpack_delta(pack_status, pack_progress):
+                    install_modpack(pack_status, pack_progress)
+            else:
+                pack_status("сборка уже актуальна")
+                pack_progress(100)
 
         remove_blocked_mods(extras_status)
         harvest_optional_mods(extras_status)
@@ -7156,6 +8238,7 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     weak_gpu = bool(load_settings().get("no_sodium"))
     apply_low_end_mode(low_end_enabled or weak_gpu, extras_status)
     apply_forced_options(extras_status)
+    disable_fullscreen_once(extras_status)
     install_extra_shaderpacks(extras_status, extras_progress)
     # Faithful 32x + апскейл модов. После шейдеров: обе загрузки некритичные,
     # но паки заметнее — их статус пусть будет последним на экране.
@@ -7197,6 +8280,7 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     # config/ целиком, а здесь конфиг уже никто не перезапишет.
     install_toast_config(configpack_status)
     fix_early_loading_provider(configpack_status)
+    select_loading_bar_variant(configpack_status)
 
     progress_cb(100)
     status_cb("Запуск игры...")
@@ -7247,14 +8331,21 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     # чёрное окно консоли — и если игрок его закроет, закроется и игра.
     # Поэтому прячем консоль явно и пишем весь вывод в лог-файл (пригодится
     # для отладки, если игра будет вылетать).
-    log_path = INSTANCE_DIR / "latest_launch.log"
-    log_file = open(log_path, "w", encoding="utf-8", errors="replace")
+    log_path, log_file = _prepare_game_launch_log()
 
     popen_kwargs = {"cwd": str(INSTANCE_DIR), "stdout": log_file, "stderr": subprocess.STDOUT}
     if sys.platform == "win32":
         popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
-    process = subprocess.Popen(command, **popen_kwargs)
+    try:
+        process = subprocess.Popen(command, **popen_kwargs)
+    except Exception:
+        log_file.close()
+        raise
+    # CreateProcess/exec has inherited/duplicated the descriptor; the launcher
+    # must not keep an extra handle open after Minecraft exits.
+    log_file.close()
+    record_game_started(process, log_path)
     status_cb("Готово! Игра запускается отдельным окном.")
     return process
 
@@ -7315,6 +8406,7 @@ class LauncherApp:
         self.server_status_label = None
         self.ram_value_label = None
         self.game_process = None
+        self._hidden_for_game = False
         # Какая категория плиток сейчас раскрыта (None — ни одна).
         self._open_category = None
 
@@ -8296,12 +9388,28 @@ class LauncherApp:
                 if latest.exists():
                     zf.write(latest, "latest.log")
                     found += 1
+                launch_log = INSTANCE_DIR / "latest_launch.log"
+                if launch_log.exists():
+                    zf.write(launch_log, "latest_launch.log")
+                    found += 1
                 crash_dir = INSTANCE_DIR / "crash-reports"
                 if crash_dir.exists():
                     crashes = sorted(crash_dir.glob("crash-*.txt"),
                                      key=lambda p: p.stat().st_mtime)
                     for p in crashes[-2:]:  # два последних краша, не всю папку
                         zf.write(p, "crash-reports/" + p.name)
+                        found += 1
+                for path in get_runtime_log_files():
+                    zf.write(path, "launcher/" + path.name)
+                    found += 1
+                game_history = RUNTIME_LOG_DIR / "game"
+                if game_history.is_dir():
+                    history = sorted(
+                        game_history.glob("launch_*.log"),
+                        key=lambda p: p.stat().st_mtime,
+                    )
+                    for path in history[-3:]:
+                        zf.write(path, "launcher/game/" + path.name)
                         found += 1
             if not found:
                 out.unlink(missing_ok=True)
@@ -9198,7 +10306,7 @@ class LauncherApp:
 
         # При закрытии окна запоминаем выбранный объём памяти.
         dialog.bind("<Destroy>", lambda e: (
-            update_settings(memory_mb=int(self.memory_var.get())),
+            update_settings(memory_mb=int(self.memory_var.get()), memory_auto=False),
             self._refresh_settings_summary()) if e.widget is dialog else None)
 
         tk.Frame(outer, bg=colors["border"], height=1).pack(fill="x", pady=(6, 14))
@@ -9640,6 +10748,14 @@ class LauncherApp:
                 "Minecraft уже открыт. Закройте игру, прежде чем запускать заново.",
             )
             return
+        active_session = get_active_game_session()
+        if active_session:
+            messagebox.showinfo(
+                "Игра уже запущена",
+                "Minecraft уже открыт (процесс %s). Закройте игру, прежде чем "
+                "запускать заново." % active_session.get("pid", "?"),
+            )
+            return
 
         self.play_button.set_enabled(False)
         self.progress_var.set(0)
@@ -9668,7 +10784,10 @@ class LauncherApp:
                     game_started = True
                     self.game_process = process
                     self.root.after(0, self._on_game_started)
-                    process.wait()  # ждём здесь, в фоновом потоке — интерфейс не подвисает
+                    try:
+                        process.wait()  # ждём здесь, в фоновом потоке — интерфейс не подвисает
+                    finally:
+                        record_game_finished(process)
                     # Обычный выход из Minecraft даёт код 0. Ненулевой код —
                     # это вылет («запустился и закрылся»). Ловим его, чтобы
                     # лаунчер сам предложил собрать логи и подсказал про режим
@@ -9772,6 +10891,9 @@ class LauncherApp:
     def _on_game_started(self) -> None:
         self.set_status("Игра запущена! Лаунчер откроется снова, когда вы закроете Minecraft.")
         self._rp_update("В игре", "Industrial Horizon", reset_time=True)
+        if not bool(load_settings().get("minimize_on_launch", True)):
+            self._hidden_for_game = False
+            return
         # Сворачиваем в панель задач, а НЕ прячем полностью (withdraw):
         # раньше окно исчезало отовсюду и вернуть его было нечем — со стороны
         # это и выглядело как "процесс есть, окна нет".
@@ -9793,12 +10915,15 @@ class LauncherApp:
             return
         try:
             self.root.withdraw()
+            self._hidden_for_game = True
         except tk.TclError:
             pass
 
     def _on_game_ended(self, game_started: bool) -> None:
         self.play_button.set_enabled(True)
-        self.show_window()
+        if self._hidden_for_game:
+            self.show_window()
+            self._hidden_for_game = False
         self._rp_update("В лаунчере", "В меню", reset_time=True)
         if game_started:
             if getattr(self, "_last_game_crashed", False):
@@ -9837,7 +10962,8 @@ class LauncherApp:
 
         memory_mb = int(self.memory_var.get())
         low_end_enabled = self.low_end_var.get()
-        update_settings(username=username, memory_mb=memory_mb, low_end_mode=low_end_enabled)
+        update_settings(username=username, memory_mb=memory_mb, memory_auto=False,
+                        low_end_mode=low_end_enabled)
 
         self._run_in_background(
             lambda: launch_game(username, memory_mb, low_end_enabled, self.set_status, self.set_progress)
@@ -9856,7 +10982,8 @@ class LauncherApp:
 
         memory_mb = int(self.memory_var.get())
         low_end_enabled = self.low_end_var.get()
-        update_settings(username=username, memory_mb=memory_mb, low_end_mode=low_end_enabled)
+        update_settings(username=username, memory_mb=memory_mb, memory_auto=False,
+                        low_end_mode=low_end_enabled)
 
         self._run_in_background(
             lambda: launch_game(
@@ -10194,7 +11321,8 @@ class LauncherApp:
         outer.pack(fill="both", expand=True, padx=16, pady=16)
 
         tk.Label(
-            outer, text="Новости %s" % CONFIG["PACK_NAME"], font=(UI_FONT, 14, "bold"),
+            outer, text="Новости %s" % (CONFIG.get("DISPLAY_NAME") or CONFIG["PACK_NAME"]),
+            font=(UI_FONT, 14, "bold"),
             bg=colors["bg_panel"], fg=colors["fg"],
         ).pack(anchor="w")
         subtitle = tk.Label(outer, text="Загружаю…", font=(UI_FONT, 9),
@@ -10297,7 +11425,8 @@ class LauncherApp:
             bg=colors["bg_panel"], fg=colors["fg"],
         ).pack(anchor="w")
         tk.Label(
-            outer, text="%s launcher" % CONFIG["PACK_NAME"], font=(UI_FONT, 9),
+            outer, text="%s launcher" % (CONFIG.get("DISPLAY_NAME") or CONFIG["PACK_NAME"]),
+            font=(UI_FONT, 9),
             bg=colors["bg_panel"], fg=colors["fg_muted"],
         ).pack(anchor="w", pady=(2, 12))
 
@@ -10381,7 +11510,8 @@ class LauncherApp:
 
         memory_mb = int(self.memory_var.get())
         low_end_enabled = self.low_end_var.get()
-        update_settings(username=username, memory_mb=memory_mb, low_end_mode=low_end_enabled)
+        update_settings(username=username, memory_mb=memory_mb, memory_auto=False,
+                        low_end_mode=low_end_enabled)
 
         def work():
             repair_installation(self.set_status, self.set_progress)
@@ -10528,24 +11658,21 @@ class LauncherApp:
                         "⬇  Скачивание обновления %s… %d%%"
                         % (info.get("version", "?"), pct)))
 
+                # Executable updates are accepted only from HTTPS and only
+                # with the adjacent SHA-256 sidecar published by CI.
+                if urllib.parse.urlsplit(str(exe_url)).scheme.lower() != "https":
+                    raise RuntimeError("небезопасный источник обновления")
+                expected_sha256 = (info.get("sha256") if "sha256" in info
+                                   else fetch_update_sha256(exe_url))
+                if not expected_sha256:
+                    raise RuntimeError("контрольная сумма обновления недоступна")
                 download_file(exe_url, new_exe, prog)
-                # Проверяем, что скачался целый .exe (заголовок PE "MZ" и вменяемый
-                # размер), а не обрывок или HTML-страница ошибки. Иначе НЕ трогаем
-                # рабочий файл — так не окажемся с битым лаунчером, который не
-                # может загрузить python-DLL.
-                ok = False
-                try:
-                    with open(new_exe, "rb") as fh:
-                        head = fh.read(2)
-                    ok = (new_exe.stat().st_size > 3_000_000 and head == b"MZ")
-                except Exception:
-                    ok = False
-                if not ok:
+                if not verify_update_installer(new_exe, expected_sha256):
                     try:
                         new_exe.unlink()
                     except Exception:
                         pass
-                    raise RuntimeError("скачанный файл повреждён")
+                    raise RuntimeError("контрольная сумма обновления не совпала")
 
                 # Обновление НЕ применяем сразу — иначе лаунчер закрылся бы и
                 # перезапустился посреди работы. Запоминаем скачанный установщик
@@ -10665,6 +11792,8 @@ def main():
     # раньше падало с ошибкой python-DLL. Ничего не рисуем и сразу выходим.
     if "--selftest" in sys.argv:
         return
+
+    install_runtime_exception_hooks()
 
     if not acquire_single_instance_lock():
         # Лаунчер уже открыт: мы попросили его показать окно и просто уходим.

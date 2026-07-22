@@ -1,0 +1,100 @@
+/* Predrelease interaction states layered over the approved compact layout. */
+.play:after{display:none}
+.play-progress{
+  position:absolute;
+  z-index:2;
+  left:0;
+  bottom:0;
+  width:var(--play-progress,0%);
+  height:3px;
+  border-radius:0 3px 3px 0;
+  background:linear-gradient(90deg,#7568d7,#a39af1);
+  box-shadow:0 0 14px rgba(132,119,225,.45);
+  transition:width .24s ease,background .16s ease;
+  pointer-events:none;
+}
+.play[data-client-mode="running"] .play-progress{background:#4bc47d}
+.play[data-progress-known="false"][data-client-mode="checking"] .play-progress,
+.play[data-progress-known="false"][data-client-mode="preparing"] .play-progress,
+.play[data-progress-known="false"][data-client-mode="repairing"] .play-progress{
+  width:34%;
+  animation:release-progress-indeterminate 1.05s ease-in-out infinite;
+}
+@keyframes release-progress-indeterminate{
+  0%{left:-34%;opacity:.45}
+  45%{opacity:1}
+  100%{left:100%;opacity:.55}
+}
+.play[aria-disabled="true"]{opacity:1}
+.play[data-client-mode="preparing"],
+.play[data-client-mode="repairing"]{
+  border-color:rgba(108,139,205,.58);
+  box-shadow:0 12px 32px rgba(35,56,96,.24);
+}
+.play[data-client-mode="offline"]{
+  border-color:rgba(87,151,184,.5);
+  background:linear-gradient(90deg,rgba(20,40,51,.98),rgba(13,27,35,.97));
+}
+.play[data-client-mode="offline"] .play-icon{
+  background:linear-gradient(145deg,#447f99,#29536a);
+}
+.client-state.preparing,
+.client-state.repairing{color:#8ca9d8!important}
+.client-state.preparing i,
+.client-state.repairing i{
+  background:#7194d1;
+  box-shadow:0 0 0 3px rgba(113,148,209,.12);
+  animation:server-pulse 1.2s ease-in-out infinite;
+}
+.client-state.offline{color:#79b1c8!important}
+.client-state.offline i{
+  background:#5aa2bf;
+  box-shadow:0 0 0 3px rgba(90,162,191,.12);
+}
+.client-state.error{color:#d98b96!important}
+.client-state.error i{
+  background:#d26473;
+  box-shadow:0 0 0 3px rgba(210,100,115,.11);
+}
+.client-state.warning{color:#c7a95a!important}
+.client-state.warning i{
+  background:#d4a83f;
+  box-shadow:0 0 0 3px rgba(212,168,63,.1);
+}
+.client-state>span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.toast{
+  bottom:118px;
+  max-width:min(440px,calc(100vw - 32px));
+  white-space:normal;
+}
+.toast[data-kind="success"]{border-color:rgba(49,209,124,.4);color:#d9f8e8}
+.toast[data-kind="error"]{border-color:rgba(210,100,115,.5);color:#ffdce2}
+.dialog-backdrop.show .dialog-view.active{animation:release-dialog-in .18s cubic-bezier(.2,.72,.25,1)}
+@keyframes release-dialog-in{
+  from{opacity:0;transform:translateY(8px) scale(.988)}
+  to{opacity:1;transform:none}
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible{
+  outline:0;
+  box-shadow:0 0 0 2px rgba(126,116,204,.52)!important;
+}
+.dialog-action,.catalog-action,.client-toggle,.catalog-category,.dialog-tab{
+  transition:background .15s ease,border-color .15s ease,color .15s ease,transform .12s ease,filter .15s ease;
+}
+.dialog-action:active,.catalog-action:active,.client-toggle:active,.catalog-category:active,.dialog-tab:active{
+  transform:scale(.975);
+}
+.repair-confirm-dialog{width:min(520px,calc(100% - 40px))}
+.repair-confirm-body{padding:24px;display:grid;grid-template-columns:54px minmax(0,1fr);align-items:start;gap:16px}
+.repair-confirm-icon{width:54px;height:54px;border:1px solid rgba(154,140,255,.28);border-radius:15px;background:linear-gradient(145deg,rgba(117,103,255,.2),rgba(117,103,255,.08));display:grid;place-items:center;color:#9a8cff}
+.repair-confirm-icon svg{width:27px;height:27px;stroke:currentColor}
+.repair-confirm-body b{display:block;margin-top:2px;color:#f4f6fa;font-size:15px;line-height:1.35}
+.repair-confirm-body p{margin:8px 0 0;color:#8f9aad;font-size:12px;line-height:1.55}
+@media(prefers-reduced-motion:reduce){
+  .dialog-backdrop.show .dialog-view.active{animation:none}
+  .play-progress{transition:none}
+  .play[data-progress-known="false"] .play-progress{animation:none;left:0;width:34%;opacity:.8}
+  .client-state.preparing i,.client-state.repairing i{animation:none}
+}
