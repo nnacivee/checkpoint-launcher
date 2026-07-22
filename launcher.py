@@ -403,7 +403,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.7",
+    "LAUNCHER_VERSION": "1.66.8",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -415,6 +415,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.8",
+            "date": "23 июля 2026",
+            "changes": [
+                "Sodium обновлён до 0.8.12 — обязательное требование новой "
+                "графики сервера (Sable 2.0, Veil, Iris 1.8.14). Лаунчер сам "
+                "заменит старую версию и вернёт вход в игру.",
+            ],
+        },
         {
             "version": "1.66.7",
             "date": "22 июля 2026",
@@ -456,7 +465,7 @@ CONFIG = {
             "changes": [
                 "Исправлен вылет Minecraft при запуске после отключения режима "
                 "«без Sodium»: лаунчер теперь всегда восстанавливает совместимую "
-                "версию Sodium 0.6.13, необходимую Iris и динамическому свету.",
+                "версию Sodium 0.8.12, необходимую Iris и динамическому свету.",
             ],
         },
         {
@@ -2261,25 +2270,25 @@ CONFIG = {
         # действий не нужно. Sodium Dynamic Lights от него НЕ зависит
         # (проверено по neoforge.mods.toml), так что динамический свет
         # остаётся.
-        # Sodium — обязательная основа Iris 1.8.12 и Sodium Dynamic Lights.
+        # Sodium — обязательная основа Iris 1.8.14-beta.1 и Sodium Dynamic Lights.
         # Раньше он приезжал только внутри modpack.zip. Если игрок однажды
         # включал режим «без Sodium», strip_render_mods() удалял jar, а после
         # выключения режима лаунчер не возвращал его до следующей версии
         # модпака: Iris восстанавливался из опционального кэша и падал с
         # NoClassDefFoundError VertexSerializer. Теперь Sodium лежит также в
         # постоянном кэше доп. модов и копируется назад при каждом запуске.
-        # ВНИМАНИЕ (22.07.2026): пин намеренно 0.6.13 — НЕ поднимать до 0.8.x!
-        # Бэкпорт Sodium 0.8.12 удаляет класс SodiumGameOptions: Sable 1.2.2
-        # падает на старте с MixinTransformerError, а Iris 1.8.12 по Modrinth
-        # жёстко требует именно 0.6.13. Новее Sable/Iris для 1.21.1 нет
-        # (проверено 22.07.2026). Поднимать пин можно только синхронно с
-        # совместимыми Sable и Iris внутри modpack.zip.
-        {"slug": "sodium-0-6-13-mc1-21-1",
-         "url": "https://cdn.modrinth.com/data/AANobbMI/versions/Pb3OXVqC/sodium-neoforge-0.6.13%2Bmc1.21.1.jar",
-         "filename": "sodium-neoforge-0.6.13+mc1.21.1.jar",
+        # ВНИМАНИЕ (23.07.2026): пин ДОЛЖЕН быть 0.8.12+ — новый стек сервера
+        # требует его жёстко: Sable 2.0.3/Veil 4.1.4 объявляют несовместимость
+        # с sodium <0.8.12-alpha.2, Reese's Sodium Options 2.2.3 требует
+        # [0.8.12,). Ночной откат на 0.6.13 (коммит 77902d4) ломал запуск
+        # клиента после доставки Sable 2.0.3 — не повторять. Понижать пин
+        # можно только вместе с откатом Sable/Veil/Iris/Reese's на старый стек.
+        {"slug": "sodium-0-8-12-mc1-21-1",
+         "url": "https://cdn.modrinth.com/data/AANobbMI/versions/S3DUMfBo/sodium-neoforge-0.8.12%2Bmc1.21.1.jar",
+         "filename": "sodium-neoforge-0.8.12+mc1.21.1.jar",
          "required": True,
-         "replaces": ["sodium-neoforge-0.8.12+mc1.21.1.jar"],
-         "label": "Sodium 0.6.13 (основа графики и шейдеров)"},
+         "replaces": ["sodium-neoforge-0.6.13+mc1.21.1.jar"],
+         "label": "Sodium 0.8.12 (основа графики и шейдеров)"},
         {"slug": "sodium-dynamic-lights",
          "mirror": True,
          "url": "https://cdn.modrinth.com/data/PxQSWIcD/versions/XI0WLXdn/sodiumdynamiclights-neoforge-1.0.10-1.21.1.jar",
