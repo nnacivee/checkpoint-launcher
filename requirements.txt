@@ -1,4 +1,4 @@
-minecraft-launcher-lib>=8.0
-pillow>=10.0
-pywebview>=5.0
-pypresence>=4.3
+minecraft-launcher-lib==8.0
+pillow==12.3.0
+pywebview==6.2.1
+pypresence==4.6.2

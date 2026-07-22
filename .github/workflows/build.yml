@@ -7,9 +7,13 @@ on:
       - "launcher.py"
       - "webui.py"
       - "ui/**"
+      - "tests/**"
       - "tg_notify.py"
       - "requirements.txt"
+      - "requirements-build.txt"
       - "installer.iss"
+      - "make_version_info.py"
+      - "test_update_integrity.py"
       - "icon.ico"
       - "window_icon.png"
       - "background.png"
@@ -17,6 +21,7 @@ on:
       - "mods_ru.json"
       - "icons/**"
       - "fonts/**"
+      - "skins/nnacivee.png"
       - ".github/workflows/build.yml"
   workflow_dispatch: {}
 
@@ -30,6 +35,8 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -40,11 +47,16 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
-          pip install pyinstaller
+          pip install -r requirements-build.txt
 
       - name: Check launcher.py and webui.py compile
         run: python -m py_compile launcher.py webui.py
+
+      - name: Test update integrity helpers
+        run: python -m unittest -v test_update_integrity.py
+
+      - name: Run web launcher smoke tests
+        run: python -m unittest discover -s tests -v
 
       - name: Read version from launcher.py
         id: version
@@ -55,6 +67,14 @@ jobs:
           echo "Detected version: $version"
           echo "version=$version" >> $env:GITHUB_OUTPUT
 
+      - name: Generate Windows version metadata
+        shell: pwsh
+        run: |
+          python make_version_info.py "${{ steps.version.outputs.version }}" version_info.txt
+          if (-not (Test-Path "version_info.txt")) {
+            throw "version_info.txt was not generated"
+          }
+
       # --onedir, а НЕ --onefile. Один .exe распаковывал себя в Temp при каждом
       # запуске, и это регулярно падало с "Failed to load Python DLL
       # python312.dll" (антивирус/среда не успевали загрузить DLL из Temp).
@@ -64,6 +84,7 @@ jobs:
         shell: pwsh
         run: |
           $args = @("--onedir", "--noconsole", "--name", "Launcher")
+          $args += "--version-file=version_info.txt"
           if (Test-Path "icon.ico") {
             $args += "--icon=icon.ico"
             $args += "--add-data=icon.ico;."
@@ -86,14 +107,44 @@ jobs:
           if (Test-Path "fonts") {
             $args += "--add-data=fonts;fonts"
           }
-          # Точка входа — launcher.py (проверенный tkinter-интерфейс). Веб-версия
-          # (webui.py, ui/) остаётся в репозитории, но в сборку не идёт: у части
-          # игроков новое окно открывалось криво/висело, поэтому вернулись на старое.
+          # Аватар в center-control-layouts.html ссылается на
+          # ../skins/nnacivee.png, то есть на соседнюю к ui/ папку.
+          if (-not (Test-Path "skins\nnacivee.png")) {
+            throw "skins/nnacivee.png is required by the web launcher"
+          }
+          $args += "--add-data=skins\nnacivee.png;skins"
+          # Точка входа — webui.py. Всю ui/ везём как data-ресурс:
+          # L.resource_path() найдёт её в PyInstaller _MEIPASS. webui.py сам
+          # откатывается на L.main() (старый tkinter), если WebView2/
+          # pywebview не поднялись, поэтому fallback остаётся в том же exe.
+          if (-not (Test-Path "ui\center-control-layouts.html")) {
+            throw "ui/center-control-layouts.html is required for the web launcher"
+          }
+          # Не пакуем старые дизайн-макеты и PNG-превью. В релиз входят только
+          # production entry points и ассеты, которые использует актуальный UI.
+          $uiStage = Join-Path $env:RUNNER_TEMP "industrial-horizon-ui"
+          New-Item -ItemType Directory -Force -Path $uiStage | Out-Null
+          Copy-Item "ui\center-control-layouts.html" $uiStage -Force
+          Copy-Item "ui\index.html" $uiStage -Force
+          $assetStage = Join-Path $uiStage "assets"
+          New-Item -ItemType Directory -Force -Path $assetStage | Out-Null
+          foreach ($asset in @("i18n.js", "hero-bg-v6.jpg",
+                               "industrial-horizon-icon-source.png",
+                               "release-polish.css")) {
+            Copy-Item (Join-Path "ui\assets" $asset) $assetStage -Force
+          }
+          Copy-Item "ui\assets\flags" (Join-Path $assetStage "flags") -Recurse -Force
+          Copy-Item "ui\assets\modrinth" (Join-Path $assetStage "modrinth") -Recurse -Force
+          $args += "--add-data=$uiStage;ui"
+          # webview импортируется лениво внутри webui.main(), а
+          # pypresence — внутри Discord Rich Presence. PyInstaller не видит
+          # ни один из этих импортов при обычном анализе.
+          $args += "--collect-all=webview"
           # pypresence импортируется лениво внутри функции (Discord Rich Presence) —
           # PyInstaller такое не видит по коду, поэтому тащим его явно, иначе у
           # собранного exe статус в Discord молча не заработает.
           $args += "--collect-all=pypresence"
-          $args += "launcher.py"
+          $args += "webui.py"
           pyinstaller @args
 
       - name: Check the app folder really built
@@ -102,6 +153,12 @@ jobs:
           if (-not (Test-Path "dist\Launcher\Launcher.exe")) {
             throw "dist\Launcher\Launcher.exe not found"
           }
+          $expectedVersion = "${{ steps.version.outputs.version }}"
+          $fileVersion = (Get-Item "dist\Launcher\Launcher.exe").VersionInfo.FileVersion
+          if ($fileVersion -notin @($expectedVersion, "$expectedVersion.0")) {
+            throw "Launcher.exe version mismatch: expected $expectedVersion, got $fileVersion"
+          }
+          echo "OK: Launcher.exe version $fileVersion"
           # DLL должна лежать рядом, а не распаковываться в Temp.
           $dll = Get-ChildItem -Path "dist\Launcher" -Recurse -Filter "python3*.dll"
           if (-not $dll) { throw "python3xx.dll is missing from the app folder" }
@@ -115,6 +172,53 @@ jobs:
           }
           $icons = Get-ChildItem -Path "dist\Launcher" -Recurse -Filter "discord_dark.png"
           if (-not $icons) { throw "icons/ are missing from the built app" }
+          $centerUi = Get-ChildItem -Path "dist\Launcher" -Recurse -File `
+            -Filter "center-control-layouts.html" | Select-Object -First 1
+          if (-not $centerUi) { throw "ui/center-control-layouts.html is missing from the built app" }
+          $uiRoot = $centerUi.Directory.FullName
+          foreach ($rel in @("index.html", "assets\i18n.js", "assets\flags\ru.svg",
+                             "assets\flags\ua.svg", "assets\flags\gb.svg",
+                             "assets\hero-bg-v6.jpg", "assets\industrial-horizon-icon-source.png",
+                             "assets\modrinth\create.webp", "assets\release-polish.css")) {
+            $path = Join-Path $uiRoot $rel
+            if (-not (Test-Path $path)) { throw "ui/$rel is missing from the built app" }
+            echo "OK: ui/$rel"
+          }
+          $productionAssets = @(
+            Get-Item "ui\assets\i18n.js", "ui\assets\hero-bg-v6.jpg",
+                     "ui\assets\industrial-horizon-icon-source.png",
+                     "ui\assets\release-polish.css"
+            Get-ChildItem "ui\assets\flags", "ui\assets\modrinth" -Recurse -File
+          )
+          $productionAssets | ForEach-Object {
+            $relative = [IO.Path]::GetRelativePath((Resolve-Path "ui").Path, $_.FullName)
+            $built = Join-Path $uiRoot $relative
+            if (-not (Test-Path -LiteralPath $built)) {
+              throw "ui/$relative is missing from the built app"
+            }
+          }
+          $skin = Get-ChildItem -Path "dist\Launcher" -Recurse -File `
+            -Filter "nnacivee.png" | Where-Object { $_.Directory.Name -eq "skins" } |
+            Select-Object -First 1
+          if (-not $skin) { throw "skins/nnacivee.png is missing from the built app" }
+          echo "OK: skins/nnacivee.png"
+          $analysis = Get-Content "build\Launcher\Analysis-00.toc" -Raw
+          if ($analysis -notmatch "webview") {
+            throw "pywebview modules are missing from PyInstaller analysis"
+          }
+          if ($analysis -notmatch "launcher") {
+            throw "launcher.py fallback is missing from PyInstaller analysis"
+          }
+          echo "OK: pywebview and tkinter fallback are present in PyInstaller analysis"
+
+      - name: Run frozen launcher self-test
+        shell: pwsh
+        run: |
+          $process = Start-Process "dist\Launcher\Launcher.exe" `
+            -ArgumentList "--selftest" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Frozen launcher self-test failed: $($process.ExitCode)"
+          }
 
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
@@ -131,8 +235,45 @@ jobs:
           }
           $size = (Get-Item "installer_out\CheckpointSetup.exe").Length / 1MB
           echo ("Installer size: {0:N1} MB" -f $size)
+          $expectedVersion = "${{ steps.version.outputs.version }}"
+          $versionInfo = (Get-Item "installer_out\CheckpointSetup.exe").VersionInfo
+          if ($versionInfo.FileVersion -notin @($expectedVersion, "$expectedVersion.0")) {
+            throw "Setup version mismatch: expected $expectedVersion, got $($versionInfo.FileVersion)"
+          }
 
-      # Файлы для зеркала: установщик + номер версии. Лаунчер игроков читает
+      - name: Smoke-test silent installation
+        shell: pwsh
+        run: |
+          $smoke = Join-Path $env:RUNNER_TEMP "IH-Smoke-${{ steps.version.outputs.version }}"
+          New-Item -ItemType Directory -Force -Path $smoke | Out-Null
+          $setup = (Resolve-Path "installer_out\CheckpointSetup.exe").Path
+          $install = Start-Process $setup -ArgumentList @(
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/NOCANCEL",
+            ('/DIR="{0}"' -f $smoke)
+          ) -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Silent setup failed: $($install.ExitCode)" }
+          $exe = Join-Path $smoke "Launcher.exe"
+          if (-not (Test-Path $exe)) { throw "Installed Launcher.exe is missing" }
+          $selftest = Start-Process $exe -ArgumentList "--selftest" -Wait -PassThru
+          if ($selftest.ExitCode -ne 0) { throw "Installed self-test failed: $($selftest.ExitCode)" }
+          $css = Join-Path $smoke "_internal\ui\assets\release-polish.css"
+          if (-not (Test-Path $css)) { throw "Installed release-polish.css is missing" }
+
+      - name: Generate installer SHA-256 sidecar
+        shell: pwsh
+        run: |
+          $installer = "installer_out\CheckpointSetup.exe"
+          $sidecar = "$installer.sha256"
+          $sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash.ToLowerInvariant()
+          "$sha256  CheckpointSetup.exe" | Out-File -FilePath $sidecar -Encoding ascii -NoNewline
+          $published = ((Get-Content -LiteralPath $sidecar -Raw).Split()[0]).ToLowerInvariant()
+          if ($published -ne $sha256 -or $published -notmatch '^[0-9a-f]{64}$') {
+            throw "invalid CheckpointSetup.exe.sha256"
+          }
+          echo "Installer SHA-256: $sha256"
+
+      # Файлы для зеркала: установщик + SHA-256 + номер версии.
+      # Лаунчер игроков читает
       # launcher_version.txt (LAUNCHER_VERSION_MIRROR_URL) и качает установщик
       # с зеркала (LAUNCHER_EXE_MIRROR_URL) — минуя заблокированный в РФ GitHub.
       - name: Prepare mirror upload folder
@@ -140,6 +281,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path deploy | Out-Null
           Copy-Item "installer_out\CheckpointSetup.exe" "deploy\CheckpointSetup.exe" -Force
+          Copy-Item "installer_out\CheckpointSetup.exe.sha256" "deploy\CheckpointSetup.exe.sha256" -Force
           "${{ steps.version.outputs.version }}" | Out-File -FilePath "deploy\launcher_version.txt" -Encoding ascii -NoNewline
           Get-ChildItem deploy
 
@@ -164,33 +306,20 @@ jobs:
             } -ErrorAction Stop | Out-Null
             $exists = "true"
           } catch {
-            $exists = "false"
+            $status = $_.Exception.Response.StatusCode.value__
+            if ($status -eq 404) { $exists = "false" } else { throw }
           }
           echo "Release $tag exists: $exists"
           echo "exists=$exists" >> $env:GITHUB_OUTPUT
-
-      - name: Create GitHub Release with the installer attached
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: v${{ steps.version.outputs.version }}
-          files: installer_out/CheckpointSetup.exe
-          generate_release_notes: false
-
-      - name: Tell Telegram about the release
-        if: steps.released.outputs.exists == 'false'
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: >
-          python tg_notify.py
-          "${{ steps.version.outputs.version }}"
-          "https://github.com/${{ github.repository }}/releases/tag/v${{ steps.version.outputs.version }}"
+          if ($exists -eq "true") {
+            throw "Release $tag already exists. Bump LAUNCHER_VERSION before rebuilding."
+          }
 
   # ------------------------------------------------------------------------
   # Заливка установщика на зеркало (Linux-джоб: SFTP-инструменты надёжно
   # работают именно на Linux). Берём собранный CheckpointSetup.exe и кладём в
-  # веб-корень зеркала обычным lftp. Пока секретов нет — шаг тихо пропускается.
+  # веб-корень зеркала обычным lftp. Production-релиз без зеркала запрещён:
+  # клиенты не должны видеть версию, для которой нет EXE и SHA-256.
   #   MIRROR_SFTP_SERVER / _PORT / _USER / _PASSWORD / MIRROR_REMOTE_DIR
   # ------------------------------------------------------------------------
   deploy-mirror:
@@ -212,12 +341,76 @@ jobs:
           DIR: ${{ secrets.MIRROR_REMOTE_DIR }}
         run: |
           if [ -z "$SRV" ] || [ -z "$USR" ] || [ -z "$PW" ]; then
-            echo "::warning::Секреты MIRROR_SFTP_* не заданы — загрузка на зеркало пропущена."
-            exit 0
+            echo "::error::Секреты MIRROR_SFTP_* не заданы — production-релиз остановлен."
+            exit 1
           fi
           sudo apt-get update -y >/dev/null && sudo apt-get install -y lftp >/dev/null
           PORT="${PRT:-2022}"
           REMOTE="${DIR:-/}"
-          echo "Заливаю CheckpointSetup.exe и launcher_version.txt на $SRV:$PORT$REMOTE"
-          lftp -c "set sftp:auto-confirm yes; set net:timeout 20; set net:max-retries 2; open -u '$USR','$PW' -p $PORT sftp://$SRV; cd '$REMOTE'; put deploy/CheckpointSetup.exe; put deploy/launcher_version.txt; bye"
+          echo "Заливаю CheckpointSetup.exe, SHA-256 и launcher_version.txt на $SRV:$PORT$REMOTE"
+          # Номер версии — последним: клиенты не увидят новый релиз,
+          # пока его установщик и контрольная сумма не доехали до зеркала.
+          lftp -c "set sftp:auto-confirm yes; set net:timeout 20; set net:max-retries 2; open -u '$USR','$PW' -p $PORT sftp://$SRV; cd '$REMOTE'; put deploy/CheckpointSetup.exe; put deploy/CheckpointSetup.exe.sha256; put deploy/launcher_version.txt; bye"
           echo "Готово: зеркало обновлено."
+
+      - name: Verify the public mirror byte-for-byte
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          BASE="https://industrialhorizon.dynmap.xyz"
+          EXPECTED="$(awk '{print tolower($1)}' deploy/CheckpointSetup.exe.sha256)"
+          CACHE="$(date +%s)"
+          REMOTE_VERSION="$(curl --fail --silent --show-error --retry 4 \
+            "$BASE/launcher_version.txt?t=$CACHE" | tr -d '\r\n ')"
+          if [ "$REMOTE_VERSION" != "$VERSION" ]; then
+            echo "::error::Mirror version mismatch: expected $VERSION, got $REMOTE_VERSION"
+            exit 1
+          fi
+          curl --fail --location --silent --show-error --retry 4 \
+            "$BASE/CheckpointSetup.exe?v=${VERSION//./}-$CACHE" \
+            --output /tmp/CheckpointSetup.exe
+          REMOTE_SHA="$(curl --fail --silent --show-error --retry 4 \
+            "$BASE/CheckpointSetup.exe.sha256?v=${VERSION//./}-$CACHE" | \
+            awk '{print tolower($1)}')"
+          ACTUAL="$(sha256sum /tmp/CheckpointSetup.exe | awk '{print tolower($1)}')"
+          if [ "$REMOTE_SHA" != "$EXPECTED" ] || [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::Public mirror SHA-256 mismatch"
+            exit 1
+          fi
+          echo "Public mirror verified: $VERSION / $EXPECTED"
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [build, deploy-mirror]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download verified release files
+        uses: actions/download-artifact@v4
+        with:
+          name: mirror-files
+          path: deploy
+
+      - name: Create GitHub Release with the verified installer
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.build.outputs.version }}
+          name: v${{ needs.build.outputs.version }}
+          files: |
+            deploy/CheckpointSetup.exe
+            deploy/CheckpointSetup.exe.sha256
+          generate_release_notes: false
+
+      - name: Tell Telegram about the release
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: >
+          python tg_notify.py
+          "${{ needs.build.outputs.version }}"
+          "https://github.com/${{ github.repository }}/releases/tag/v${{ needs.build.outputs.version }}"

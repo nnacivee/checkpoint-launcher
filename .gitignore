@@ -5,7 +5,18 @@ __pycache__/
 # Локальные артефакты сборки PyInstaller.
 build/
 dist/
+build-test-*/
+dist-test-*/
 *.spec
+version_info.txt
 
 # Служебное превью дизайна — не для репозитория.
 _preview.png
+ui/*-preview.png
+
+# Локальные дизайн-эксперименты; production UI — center-control-layouts.html.
+ui/test-screen*.html
+ui/style-directions*.html
+ui/button-layouts.html
+ui/compact-layout-variants.html
+preview_server.py

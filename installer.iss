@@ -19,19 +19,21 @@
   #define MyAppVersion "0.0.0"
 #endif
 
-#define MyAppName "Checkpoint"
+#define MyAppInternalName "Checkpoint"
+#define MyAppDisplayName "Industrial Horizon"
 #define MyAppExeName "Launcher.exe"
 
 [Setup]
 AppId={{8E4B1F2A-6C3D-4A7E-9B15-2D8F0A3C7E51}
-AppName={#MyAppName}
+AppName={#MyAppDisplayName}
 AppVersion={#MyAppVersion}
 AppPublisher=Industrial Horizon
 ; Метаданные САМОГО установщика (CheckpointSetup.exe). Без них у файла пустые
 ; свойства (издатель/описание/версия) — а для неподписанного .exe это один из
 ; поводов для McAfee/Defender считать его подозрительным. Заполняем, чтобы
-; ложных срабатываний было меньше. AppId, AppName и DefaultDirName НЕ трогаем:
-; их смена завела бы вторую копию установки и сломала обновление поверх.
+; ложных срабатываний было меньше. AppId и DefaultDirName НЕ трогаем: их
+; смена завела бы вторую копию установки и сломала обновление поверх. AppName
+; теперь является только видимой маркой Industrial Horizon.
 VersionInfoVersion={#MyAppVersion}
 VersionInfoCompany=Industrial Horizon
 VersionInfoDescription=Industrial Horizon Launcher Setup
@@ -39,8 +41,8 @@ VersionInfoProductName=Industrial Horizon Launcher
 VersionInfoProductVersion={#MyAppVersion}
 VersionInfoOriginalFileName=CheckpointSetup.exe
 VersionInfoCopyright=(c) Industrial Horizon
-DefaultDirName={localappdata}\{#MyAppName}
-DefaultGroupName={#MyAppName}
+DefaultDirName={localappdata}\{#MyAppInternalName}
+DefaultGroupName={#MyAppDisplayName}
 DisableProgramGroupPage=yes
 DisableDirPage=yes
 DisableReadyPage=yes
@@ -49,7 +51,7 @@ OutputDir=installer_out
 OutputBaseFilename=CheckpointSetup
 SetupIconFile=icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
-UninstallDisplayName={#MyAppName}
+UninstallDisplayName={#MyAppDisplayName}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -64,10 +66,20 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 [Files]
 Source: "dist\Launcher\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
+[InstallDelete]
+; onedir обновляется целиком. Удаляем старый runtime перед копированием, чтобы
+; устаревшие DLL/модули из предыдущей версии не оставались в _internal.
+Type: filesandordirs; Name: "{app}\_internal"
+; После обновления не оставляем рядом старые ярлыки Checkpoint. Сама папка
+; установки и AppId сохраняются, поэтому пользовательские данные не теряются.
+Type: files; Name: "{userdesktop}\Checkpoint.lnk"
+Type: files; Name: "{userprograms}\Checkpoint\Checkpoint.lnk"
+Type: files; Name: "{userprograms}\Checkpoint\Удалить Checkpoint.lnk"
+
 [Icons]
-Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\Удалить {#MyAppName}"; Filename: "{uninstallexe}"
+Name: "{userdesktop}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\Удалить {#MyAppDisplayName}"; Filename: "{uninstallexe}"
 
 [Run]
 ; skipifsilent — намеренно: при ТИХОМ обновлении лаунчер НЕ открывается заново.
@@ -75,5 +87,5 @@ Name: "{group}\Удалить {#MyAppName}"; Filename: "{uninstallexe}"
 ; on_close в launcher.py), поэтому перезапускать его не нужно и не нужно, чтобы
 ; он выскакивал обратно. При обычной установке мастером (не тихой) галочка
 ; «Запустить» остаётся, как и раньше.
-Filename: "{app}\{#MyAppExeName}"; Description: "Запустить {#MyAppName}"; \
+Filename: "{app}\{#MyAppExeName}"; Description: "Запустить {#MyAppDisplayName}"; \
     Flags: nowait postinstall skipifsilent
