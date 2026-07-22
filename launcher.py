@@ -456,7 +456,7 @@ CONFIG = {
             "changes": [
                 "Исправлен вылет Minecraft при запуске после отключения режима "
                 "«без Sodium»: лаунчер теперь всегда восстанавливает совместимую "
-                "версию Sodium 0.8.12, необходимую Iris и динамическому свету.",
+                "версию Sodium 0.6.13, необходимую Iris и динамическому свету.",
             ],
         },
         {
@@ -2261,19 +2261,25 @@ CONFIG = {
         # действий не нужно. Sodium Dynamic Lights от него НЕ зависит
         # (проверено по neoforge.mods.toml), так что динамический свет
         # остаётся.
-        # Sodium — обязательная основа Iris 1.8.14 и Sodium Dynamic Lights.
+        # Sodium — обязательная основа Iris 1.8.12 и Sodium Dynamic Lights.
         # Раньше он приезжал только внутри modpack.zip. Если игрок однажды
         # включал режим «без Sodium», strip_render_mods() удалял jar, а после
         # выключения режима лаунчер не возвращал его до следующей версии
         # модпака: Iris восстанавливался из опционального кэша и падал с
         # NoClassDefFoundError VertexSerializer. Теперь Sodium лежит также в
         # постоянном кэше доп. модов и копируется назад при каждом запуске.
-        {"slug": "sodium-0-8-12-mc1-21-1",
-         "url": "https://cdn.modrinth.com/data/AANobbMI/versions/S3DUMfBo/sodium-neoforge-0.8.12%2Bmc1.21.1.jar",
-         "filename": "sodium-neoforge-0.8.12+mc1.21.1.jar",
+        # ВНИМАНИЕ (22.07.2026): пин намеренно 0.6.13 — НЕ поднимать до 0.8.x!
+        # Бэкпорт Sodium 0.8.12 удаляет класс SodiumGameOptions: Sable 1.2.2
+        # падает на старте с MixinTransformerError, а Iris 1.8.12 по Modrinth
+        # жёстко требует именно 0.6.13. Новее Sable/Iris для 1.21.1 нет
+        # (проверено 22.07.2026). Поднимать пин можно только синхронно с
+        # совместимыми Sable и Iris внутри modpack.zip.
+        {"slug": "sodium-0-6-13-mc1-21-1",
+         "url": "https://cdn.modrinth.com/data/AANobbMI/versions/Pb3OXVqC/sodium-neoforge-0.6.13%2Bmc1.21.1.jar",
+         "filename": "sodium-neoforge-0.6.13+mc1.21.1.jar",
          "required": True,
-         "replaces": ["sodium-neoforge-0.6.13+mc1.21.1.jar"],
-         "label": "Sodium 0.8.12 (основа графики и шейдеров)"},
+         "replaces": ["sodium-neoforge-0.8.12+mc1.21.1.jar"],
+         "label": "Sodium 0.6.13 (основа графики и шейдеров)"},
         {"slug": "sodium-dynamic-lights",
          "mirror": True,
          "url": "https://cdn.modrinth.com/data/PxQSWIcD/versions/XI0WLXdn/sodiumdynamiclights-neoforge-1.0.10-1.21.1.jar",
