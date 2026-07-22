@@ -154,7 +154,7 @@ jobs:
             throw "dist\Launcher\Launcher.exe not found"
           }
           $expectedVersion = "${{ steps.version.outputs.version }}"
-          $fileVersion = (Get-Item "dist\Launcher\Launcher.exe").VersionInfo.FileVersion
+          $fileVersion = ((Get-Item "dist\Launcher\Launcher.exe").VersionInfo.FileVersion -replace '[\s\x00]+$', '')
           if ($fileVersion -notin @($expectedVersion, "$expectedVersion.0")) {
             throw "Launcher.exe version mismatch: expected $expectedVersion, got $fileVersion"
           }
@@ -237,8 +237,9 @@ jobs:
           echo ("Installer size: {0:N1} MB" -f $size)
           $expectedVersion = "${{ steps.version.outputs.version }}"
           $versionInfo = (Get-Item "installer_out\CheckpointSetup.exe").VersionInfo
-          if ($versionInfo.FileVersion -notin @($expectedVersion, "$expectedVersion.0")) {
-            throw "Setup version mismatch: expected $expectedVersion, got $($versionInfo.FileVersion)"
+          $setupVersion = ($versionInfo.FileVersion -replace '[\s\x00]+$', '')
+          if ($setupVersion -notin @($expectedVersion, "$expectedVersion.0")) {
+            throw "Setup version mismatch: expected $expectedVersion, got '$setupVersion'"
           }
 
       - name: Smoke-test silent installation
