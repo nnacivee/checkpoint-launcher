@@ -431,6 +431,9 @@ CONFIG = {
                 "x2, оконный режим (без полного экрана при запуске), без "
                 "стартового экрана «диктор/язык». Настройки, которые вы уже "
                 "выбрали сами, не меняются.",
+                "Поддержка геймпада и сенсорного управления "
+                "(MidnightControls): можно играть контроллером вместо "
+                "клавиатуры и мыши — включается в игровых настройках.",
             ],
         },
         {
@@ -2023,6 +2026,15 @@ CONFIG = {
          "url": "https://cdn.modrinth.com/data/l92I91s6/versions/Jgsz0FC1/Ping%20in%20Tablist-neoforge-1.21.1-1.1.0.jar",
          "filename": "PingInTablist-neoforge-1.21.1-1.1.0.jar",
          "label": "Ping in Tablist (пинг числом в списке игроков)"},
+        # Поддержка геймпада и сенсора (просьба владельца): играть
+        # контроллером/пальцами вместо клавиатуры-мыши. Client-only,
+        # сервер о нём не знает. GPL, прямая ссылка на CDN Modrinth,
+        # версия под NeoForge 1.21.1 прибита; настраивается в игре.
+        {"slug": "midnightcontrols",
+         "mirror": True,
+         "url": "https://cdn.modrinth.com/data/bXX9h73M/versions/oz41N6Dp/midnightcontrols-neoforge-1.10.0.1.jar",
+         "filename": "midnightcontrols-neoforge-1.10.0.1.jar",
+         "label": "MidnightControls (геймпад и сенсорное управление)"},
         # Пакет «Атмосфера» (пункт 49): чисто клиентское.
         {"slug": "creativecore",
          "mirror": True,
