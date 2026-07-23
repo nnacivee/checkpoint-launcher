@@ -403,7 +403,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.10",
+    "LAUNCHER_VERSION": "1.66.11",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -415,6 +415,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.11",
+            "date": "23 июля 2026",
+            "changes": [
+                "Убран мод Chat Heads: он дублировал ник поверх серверного "
+                "формата чата. Лаунчер сам удалит его из установленной "
+                "сборки при запуске — делать ничего не нужно.",
+            ],
+        },
         {
             "version": "1.66.10",
             "date": "23 июля 2026",
@@ -1949,10 +1958,6 @@ CONFIG = {
          "mirror": True,
          "url": "https://cdn.modrinth.com/data/LQ3K71Q1/versions/T238FZpQ/dynamic-fps-3.11.4%2Bminecraft-1.21.0-neoforge.jar",
          "filename": "dynamic-fps-3.11.4+minecraft-1.21.0-neoforge.jar", "label": "Dynamic FPS (экономия ресурсов в фоне)"},
-        {"slug": "chat-heads",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/Wb5oqrBJ/versions/tTKkTWZ7/chat_heads-0.15.2-neoforge-1.21.jar",
-         "filename": "chat_heads-0.15.2-neoforge-1.21.jar", "label": "Chat Heads (лицо игрока в чате)"},
         # Тройка анимаций (решение владельца 18.07). Все — client-only,
         # сервер о них не знает. EMF+ETF — «движки», без которых ресурспак
         # Fresh Animations (кнопка в «Текстурах») просто не применяется.
@@ -2328,6 +2333,11 @@ CONFIG = {
     # был второй такой же ключ — Python молча брал только этот, нижний, а
     # записи верхнего терялись. "xaeroworldmap" переехал сюда оттуда.
     "REMOVED_MODS": [
+        # Убран владельцем 23.07: Chat Heads дублировал ник поверх серверного
+        # формата чата (ih_chat_format). Был в EXTRA_CLIENT_MODS — запись
+        # убрана этим же релизом (slug-чистка вычистит кэш), а эта строка
+        # добивает копии, приехавшие с modpack.zip.
+        "chat_heads",
         # Удалён владельцем 22.07: мод добавлял кнопку «P» в главное меню и
         # требовал одинаковую установку на клиенте и сервере. Запись нужна,
         # чтобы вычистить jar, уже приехавший игрокам со старым modpack.zip.
