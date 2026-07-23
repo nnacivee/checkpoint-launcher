@@ -403,7 +403,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.11",
+    "LAUNCHER_VERSION": "1.66.12",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -415,6 +415,24 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.12",
+            "date": "23 июля 2026",
+            "changes": [
+                "Личные настройки больше не пропадают: лаунчер хранит "
+                "резервную копию биндов (options.txt) и списка серверов вне "
+                "папки игры и сам возвращает их после любой переустановки — "
+                "даже если папку удалили вручную.",
+                "Круговое меню — на клавише G: у новых установок бинд "
+                "ставится сам, а моды, занимавшие G (например «группа» "
+                "голосового чата), с неё снимаются, пока G назначена на "
+                "меню. Свой осознанный бинд меню не трогается.",
+                "Новая установка сразу настроена: русский язык, интерфейс "
+                "x2, оконный режим (без полного экрана при запуске), без "
+                "стартового экрана «диктор/язык». Настройки, которые вы уже "
+                "выбрали сами, не меняются.",
+            ],
+        },
         {
             "version": "1.66.11",
             "date": "23 июля 2026",
@@ -5050,6 +5068,7 @@ def install_modpack(status_cb, progress_cb) -> None:
     only then are ``mods/config/kubejs`` swapped with rollback backups.
     """
     recover_interrupted_modpack_update(status_cb)
+    backup_player_settings()
     if install_modpack_delta(status_cb, progress_cb):
         return
 
@@ -7840,6 +7859,122 @@ def find_corrupted_file(error) -> "Path | None":
     return path if path.is_file() else None
 
 
+# ------------------- ЛИЧНЫЕ НАСТРОЙКИ ИГРОКА: БЭКАП/ВОЗВРАТ -------------------
+# Просьба владельца (23.07): бинды и список серверов не должны пропадать ни
+# при какой переустановке — даже если игрок удалил папку экземпляра руками.
+# Лаунчер держит резервную копию ЛИЧНЫХ файлов вне папки игры (APP_DATA_DIR)
+# и возвращает их, когда файла нет на месте. Файлами паков (config/ и т.п.)
+# управляют modpack/configpack — их сюда не включать.
+PLAYER_SETTINGS_FILES = ("options.txt", "servers.dat", "servers.dat_old")
+PLAYER_SETTINGS_BACKUP_DIR = APP_DATA_DIR / "player_settings_backup"
+
+
+def backup_player_settings() -> None:
+    """Обновляет резервные копии личных файлов. Дёшево; зовётся при каждом
+    запуске игры и перед переустановками. Пустые файлы не бэкапим, чтобы
+    свежесозданный options.txt не затёр полноценную копию."""
+    try:
+        PLAYER_SETTINGS_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        for name in PLAYER_SETTINGS_FILES:
+            src = INSTANCE_DIR / name
+            if src.is_file() and src.stat().st_size > 0:
+                shutil.copy2(src, PLAYER_SETTINGS_BACKUP_DIR / name)
+    except Exception as exc:  # noqa: BLE001
+        runtime_log("player_settings_backup_failed: %s", exc,
+                    level=logging.WARNING)
+
+
+def restore_player_settings() -> None:
+    """Возвращает личные файлы из резервной копии, если их нет на месте
+    (после чистой установки или удаления папки руками). Существующий файл
+    никогда не перезаписывает: свежие правки игрока важнее бэкапа."""
+    try:
+        for name in PLAYER_SETTINGS_FILES:
+            dst = INSTANCE_DIR / name
+            src = PLAYER_SETTINGS_BACKUP_DIR / name
+            if not dst.exists() and src.is_file() and src.stat().st_size > 0:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+                runtime_log("player_settings_restored: %s", name)
+    except Exception as exc:  # noqa: BLE001
+        runtime_log("player_settings_restore_failed: %s", exc,
+                    level=logging.WARNING)
+
+
+# Клавиши по умолчанию для новых установок. Меняем ТОЛЬКО если игрок не
+# назначал свою: строки нет вовсе, там дефолт мода («ё»/grave) или unknown.
+# Осознанный бинд игрока не трогаем никогда.
+DEFAULT_KEYBIND_SEEDS = (
+    # Реальный id подтверждён логом fixbind 23.07 на машине владельца:
+    # key_key.ezactions.open:key.keyboard.grave.accent
+    ("key_key.ezactions.open", "key.keyboard.grave.accent", "key.keyboard.g"),
+)
+
+# Обычные опции для СВЕЖЕГО options.txt: строка добавляется только если её
+# нет вовсе. Существующее значение игрока не трогаем никогда. Просьба
+# владельца (23.07): «в априоре игра должна быть уже настроена» — русский
+# язык, интерфейс x2 и без стартового экрана «диктор/выбор языка».
+DEFAULT_OPTION_SEEDS = (
+    ("lang", "ru_ru"),
+    ("guiScale", "2"),
+    ("onboardAccessibility", "false"),
+    # Просьба владельца (23.07): не запускать игру в полноэкранном режиме.
+    ("fullscreen", "false"),
+)
+
+# Пока круговое меню реально стоит на G, другие моды с G снимаются:
+# Simple Voice Chat по умолчанию вешает на G «группу» и перехватывает
+# нажатие (экран «Join or Create Group» вместо меню). Если игрок сам
+# перенёс меню с G — ничего не трогаем.
+RADIAL_MENU_BIND = "key_key.ezactions.open"
+RADIAL_MENU_KEY = "key.keyboard.g"
+
+
+def seed_default_keybinds() -> None:
+    path = INSTANCE_DIR / "options.txt"
+    try:
+        lines = []
+        if path.is_file():
+            # utf-8-sig заодно лечит BOM: 23.07 пересохранённый «виндовым»
+            # UTF-8 options.txt игра сочла битым и сбросила все настройки.
+            lines = path.read_text(
+                encoding="utf-8-sig", errors="replace").splitlines()
+        changed = False
+        for prefix, mod_default, wanted in DEFAULT_KEYBIND_SEEDS:
+            hit = None
+            for i, line in enumerate(lines):
+                if line.startswith(prefix + ":"):
+                    hit = i
+                    break
+            if hit is None:
+                lines.append("%s:%s" % (prefix, wanted))
+                changed = True
+            elif lines[hit].split(":", 1)[1] in (mod_default,
+                                                 "key.keyboard.unknown"):
+                lines[hit] = "%s:%s" % (prefix, wanted)
+                changed = True
+        for option, value in DEFAULT_OPTION_SEEDS:
+            if not any(line.startswith(option + ":") for line in lines):
+                lines.append("%s:%s" % (option, value))
+                changed = True
+        if ("%s:%s" % (RADIAL_MENU_BIND, RADIAL_MENU_KEY)) in lines:
+            for i, line in enumerate(lines):
+                if (line.startswith("key_")
+                        and line.endswith(":" + RADIAL_MENU_KEY)
+                        and not line.startswith(RADIAL_MENU_BIND + ":")):
+                    lines[i] = (line.split(":", 1)[0]
+                                + ":key.keyboard.unknown")
+                    runtime_log("radial_key_conflict_unbound: %s",
+                                line.split(":", 1)[0])
+                    changed = True
+        if changed:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(chr(10).join(lines) + chr(10), encoding="utf-8")
+            runtime_log("default_keybinds_seeded")
+    except Exception as exc:  # noqa: BLE001
+        runtime_log("keybind_seed_failed: %s", exc, level=logging.WARNING)
+
+
 def repair_installation(status_cb=None, progress_cb=None) -> None:
     """Полностью удаляет файлы установки Minecraft/NeoForge/модов и сбрасывает
     все внутренние метки лаунчера, чтобы при следующем запуске всё
@@ -8203,6 +8338,11 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
         )
     INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
     recover_interrupted_modpack_update(status_cb)
+    # Личные настройки: вернуть из бэкапа (если папку переустановили/снесли),
+    # затем засеять дефолтные бинды новичку, затем обновить бэкап.
+    restore_player_settings()
+    seed_default_keybinds()
+    backup_player_settings()
     runtime_log(
         "launch_requested user=%s memory_mb=%s low_end=%s test=%s instance=%s",
         username, memory_mb, bool(low_end_enabled), bool(test_mode), INSTANCE_DIR,
