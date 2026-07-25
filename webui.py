@@ -23,6 +23,8 @@ from pathlib import Path
 
 import launcher as L
 
+_TELEMETRY_THREAD_CLASS = threading.Thread
+
 # pywebview импортируется ВНУТРИ main() (в try), а не здесь: если на ПК нет
 # WebView2/pythonnet, импорт упадёт — и мы должны откатиться на старый лаунчер,
 # а не уронить exe на старте.
@@ -253,6 +255,14 @@ class Api:
         self._hidden_for_game = False
         self._catalog_jobs = set()
         self._pack_icon_cache = {}  # slug -> icon_url с Modrinth
+        # pywebview evaluate_js is not thread-safe on every Windows backend.
+        # Launch progress, server polling and catalog jobs can otherwise enter it
+        # concurrently and make the primary WebUI appear frozen.
+        self._js_lock = threading.RLock()
+        self._launch_telemetry_condition = threading.Condition()
+        self._launch_telemetry_events = []
+        self._launch_telemetry_thread = None
+        self._launch_telemetry_stopping = False
 
     def _pack_icons(self, slugs):
         """Иконки паков/шейдеров с Modrinth ПАЧКОЙ (один запрос), с кэшем.
@@ -298,22 +308,18 @@ class Api:
     # --- отправка данных обратно в страницу ---
     def _js(self, code: str) -> None:
         try:
-            if self._window is not None:
-                self._window.evaluate_js(code)
+            with self._js_lock:
+                if self._window is not None:
+                    self._window.evaluate_js(code)
         except Exception:  # noqa: BLE001
             pass
 
     def _toast(self, text, kind="ok") -> None:
         self._js("window.toast && window.toast(%s, %s)" % (_q(str(text)), _q(kind)))
 
-    def _launch_telemetry(self, state, text="", progress=None, phase=None) -> None:
-        """Send structured launch state, falling back for older bundled pages."""
-        payload = {"state": str(state), "text": str(text or "")}
-        if progress is not None:
-            payload["progress"] = max(0, min(100, int(progress)))
-        if phase:
-            payload["phase"] = str(phase)
-        self._js(
+    @staticmethod
+    def _launch_telemetry_js(payload) -> str:
+        return (
             "(function(p){if(typeof window.onLaunchTelemetry==='function'){"
             "window.onLaunchTelemetry(p)}else{"
             "window.onLaunchState&&window.onLaunchState(p.state,p.text);"
@@ -321,12 +327,9 @@ class Api:
             "window.onProgress(p.progress,p.text)}})(%s)" % _q(payload)
         )
 
-    def _repair_state(self, state, text="", progress=None) -> None:
-        """Publish an explicit maintenance terminal state with legacy fallback."""
-        payload = {"state": str(state), "text": str(text or "")}
-        if progress is not None:
-            payload["progress"] = max(0, min(100, int(progress)))
-        self._js(
+    @staticmethod
+    def _repair_telemetry_js(payload) -> str:
+        return (
             "(function(p){if(typeof window.onRepairState==='function'){"
             "window.onRepairState(p)}else if(p.state==='progress'){"
             "window.onProgress&&window.onProgress(p.progress??-1,p.text)"
@@ -336,6 +339,103 @@ class Api:
             "}else if(p.state==='error'){"
             "window.onLaunchState&&window.onLaunchState('error',p.text);"
             "window.onProgress&&window.onProgress(0,'')}}})(%s)" % _q(payload)
+        )
+
+    def _launch_telemetry_dispatch_loop(self) -> None:
+        """Serialize WebView calls without stalling a download callback."""
+        while True:
+            with self._launch_telemetry_condition:
+                while (
+                    not self._launch_telemetry_events
+                    and not self._launch_telemetry_stopping
+                ):
+                    # Release quiet Api instances instead of retaining one
+                    # dispatcher thread for their entire lifetime.
+                    self._launch_telemetry_condition.wait(timeout=2.0)
+                    if (
+                        not self._launch_telemetry_events
+                        and not self._launch_telemetry_stopping
+                    ):
+                        self._launch_telemetry_thread = None
+                        return
+                if (
+                    self._launch_telemetry_stopping
+                    and not self._launch_telemetry_events
+                ):
+                    self._launch_telemetry_thread = None
+                    return
+                kind, payload, _terminal = self._launch_telemetry_events.pop(0)
+            # evaluate_js may itself wait on WebView2. Only this dispatcher is
+            # delayed; the network/install worker that produced the event is not.
+            renderer = (
+                self._repair_telemetry_js
+                if kind == "repair" else self._launch_telemetry_js
+            )
+            self._js(renderer(payload))
+
+    def _enqueue_telemetry(self, kind, payload, terminal) -> None:
+        with self._launch_telemetry_condition:
+            if self._launch_telemetry_stopping:
+                return
+            # Progress/status callbacks can arrive hundreds of times per second.
+            # Preserve only their newest snapshot. Terminal states are barriers:
+            # they are always appended and can never be replaced by progress.
+            if (
+                not terminal
+                and self._launch_telemetry_events
+                and self._launch_telemetry_events[-1][0] == kind
+                and not self._launch_telemetry_events[-1][2]
+            ):
+                self._launch_telemetry_events[-1] = (kind, payload, False)
+            else:
+                self._launch_telemetry_events.append(
+                    (kind, payload, terminal)
+                )
+            thread = self._launch_telemetry_thread
+            if thread is None or not thread.is_alive():
+                thread = _TELEMETRY_THREAD_CLASS(
+                    target=self._launch_telemetry_dispatch_loop,
+                    name="IH-WebView-Telemetry",
+                    daemon=True,
+                )
+                self._launch_telemetry_thread = thread
+                thread.start()
+            self._launch_telemetry_condition.notify()
+
+    def _enqueue_launch_telemetry(self, payload) -> None:
+        self._enqueue_telemetry(
+            "launch", payload, payload.get("state") != "busy"
+        )
+
+    def _shutdown_telemetry_dispatcher(self, timeout=1.0) -> None:
+        """Flush queued terminal state and stop the optional consumer cleanly."""
+        with self._launch_telemetry_condition:
+            self._launch_telemetry_stopping = True
+            thread = self._launch_telemetry_thread
+            self._launch_telemetry_condition.notify_all()
+        if (
+            thread is not None
+            and thread is not threading.current_thread()
+            and thread.is_alive()
+        ):
+            thread.join(timeout=max(0.0, float(timeout)))
+
+    def _launch_telemetry(self, state, text="", progress=None, phase=None) -> None:
+        """Queue structured launch state, falling back for older bundled pages."""
+        payload = {"state": str(state), "text": str(text or "")}
+        if progress is not None:
+            payload["progress"] = max(0, min(100, int(progress)))
+        if phase:
+            payload["phase"] = str(phase)
+        self._enqueue_launch_telemetry(payload)
+
+    def _repair_state(self, state, text="", progress=None) -> None:
+        """Publish an explicit maintenance terminal state with legacy fallback."""
+        payload = {"state": str(state), "text": str(text or "")}
+        if progress is not None:
+            payload["progress"] = max(0, min(100, int(progress)))
+        self._enqueue_telemetry(
+            "repair", payload, payload.get("state") != "progress"
         )
 
     def _catalog_install_state(
@@ -763,8 +863,38 @@ class Api:
         def worker():
             proc = None
             restore_window = False
+            terminal_state = "idle"
+            terminal_text = "Готово к запуску"
+            terminal_phase = "exited"
             try:
-                proc = L.launch_game(nick, mem, low, status_cb, progress_cb)
+                try:
+                    proc = L.launch_game(nick, mem, low, status_cb, progress_cb)
+                except Exception as first:  # noqa: BLE001
+                    # Match the reliable tkinter path: a checksum failure often
+                    # means exactly one interrupted asset/library download.  It
+                    # is safe to delete only the path validated by launcher.py,
+                    # then retry the complete launch exactly once.
+                    bad = L.find_corrupted_file(first)
+                    if bad is None:
+                        raise
+                    repair_text = (
+                        "Файл повреждён, скачиваю заново: %s" % bad.name
+                    )
+                    telemetry["text"] = repair_text
+                    telemetry["phase"] = "repairing"
+                    self._launch_telemetry(
+                        "busy", repair_text, phase="repairing"
+                    )
+                    try:
+                        bad.unlink()
+                    except OSError:
+                        raise first
+                    L.runtime_log(
+                        "web_launch_checksum_recovery: removed %s", bad
+                    )
+                    proc = L.launch_game(
+                        nick, mem, low, status_cb, progress_cb
+                    )
                 self._launch_telemetry(
                     "busy", "Игра запущена", phase="running"
                 )
@@ -777,16 +907,13 @@ class Api:
                         L.record_game_finished(proc)
                 rc = getattr(proc, "returncode", 0) or 0
                 if rc:
-                    self._launch_telemetry(
-                        "error", "Игра закрылась с ошибкой", phase="exited"
-                    )
-                else:
-                    self._launch_telemetry(
-                        "idle", "Готово к запуску", phase="exited"
-                    )
+                    terminal_state = "error"
+                    terminal_text = "Игра закрылась с ошибкой"
             except Exception as exc:  # noqa: BLE001
                 restore_window = True
-                self._launch_telemetry("error", str(exc), phase="failed")
+                terminal_state = "error"
+                terminal_text = str(exc)
+                terminal_phase = "failed"
                 L.runtime_log(
                     "web_launch_failed: %s", exc, level=40,
                     exc_info=(type(exc), exc, exc.__traceback__),
@@ -794,7 +921,12 @@ class Api:
             finally:
                 if restore_window:
                     self._restore_launcher_after_game()
+                # Clear the backend guard before publishing a terminal state:
+                # the JS handler unlocks the Play button immediately.
                 self._launching = False
+                self._launch_telemetry(
+                    terminal_state, terminal_text, phase=terminal_phase
+                )
 
         self._launch_telemetry("busy", "Подготовка клиента", 0, phase="queued")
         threading.Thread(target=worker, daemon=True).start()
@@ -1450,6 +1582,7 @@ class Api:
 
     def close(self):
         try:
+            self._shutdown_telemetry_dispatcher()
             _release_single_instance_lock()
             self._window.destroy()
         except Exception:  # noqa: BLE001
@@ -1473,6 +1606,7 @@ def main():
     except Exception:  # noqa: BLE001
         pass
 
+    api = None
     try:
         import webview  # pywebview — может отсутствовать/не завестись без WebView2
         api = Api()
@@ -1546,6 +1680,7 @@ def main():
                 screen=startup_screen,
             )
         )
+        api._shutdown_telemetry_dispatcher()
         _release_single_instance_lock()
     except Exception as exc:  # noqa: BLE001
         # Новый интерфейс не поднялся (чаще всего — на ПК нет среды WebView2).
@@ -1564,6 +1699,8 @@ def main():
         # The web window already owns the single-instance socket.  Release it
         # before delegating to launcher.main(), which acquires the same lock for
         # the proven Tkinter fallback.
+        if api is not None:
+            api._shutdown_telemetry_dispatcher()
         _release_single_instance_lock()
         L.main()
 

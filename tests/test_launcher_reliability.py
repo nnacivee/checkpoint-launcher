@@ -346,6 +346,10 @@ class LauncherReliabilityTests(unittest.TestCase):
                 (instance / launcher.MODPACK_TRANSACTION_DIR_NAME).exists()
             )
             self.assertFalse((root / "escape.txt").exists())
+            self.assertTrue(
+                (app_data / "modpack_download.zip").exists(),
+                "a downloaded archive must survive a failed install for retry",
+            )
 
 
 class WebUiReliabilityTests(unittest.TestCase):
@@ -437,12 +441,16 @@ class WebUiReliabilityTests(unittest.TestCase):
         messages = []
         api._js = messages.append
         with (
+            mock.patch.object(
+                webui.L, "get_active_game_session", return_value=None
+            ),
             mock.patch.object(webui.L, "repair_installation"),
             mock.patch.object(
                 webui.threading, "Thread", side_effect=self._immediate_thread
             ),
         ):
             result = api.repair()
+            api._shutdown_telemetry_dispatcher()
 
         payload = "\n".join(messages)
         self.assertEqual(result, {"ok": True, "started": True})
@@ -458,6 +466,7 @@ class WebUiReliabilityTests(unittest.TestCase):
             mock.patch.object(webui.L, "repair_installation") as repair,
         ):
             result = api.repair()
+        api._shutdown_telemetry_dispatcher()
         self.assertFalse(result["ok"])
         self.assertIn("Закройте Minecraft", result["error"])
         repair.assert_not_called()

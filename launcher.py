@@ -398,7 +398,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.15",
+    "LAUNCHER_VERSION": "1.66.16",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -410,6 +410,20 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.16",
+            "date": "26 июля 2026",
+            "changes": [
+                "Установка больше не замирает на 94%: лаунчер показывает "
+                "реальный текущий этап и живой прогресс каждого файла.",
+                "Оборванные загрузки продолжаются с сохранённого места, а "
+                "уже скачанный архив повторно из сети не загружается.",
+                "Обновления применяются безопасно: краткая блокировка "
+                "антивирусом повторяется, при сбое остаётся предыдущая "
+                "рабочая сборка, а дубли и повреждённые моды проверяются "
+                "перед запуском игры.",
+            ],
+        },
         {
             "version": "1.66.15",
             "date": "26 июля 2026",
@@ -1972,7 +1986,10 @@ CONFIG = {
     # Apache/MPL/BSD/CC); ARR и tr7zw-Protective — нельзя, они качаются с
     # официальных источников. Файлы заливает владелец через панель
     # (files → bluemap/web/mods, имена должны совпадать с "filename").
-    "MOD_MIRROR_BASE": "http://95.216.30.64:25980/mods/",
+    # Отдельные разрешённые к распространению моды идут с Bunny. Старое
+    # HTTP-зеркало BlueMap не сообщало размер и ломало Range: обрезанный JAR
+    # мог закрепиться в кэше и ронять игру.
+    "MOD_MIRROR_BASE": "https://industrialhorizon.b-cdn.net/stable/mods/",
 
     # ------------------- ДОП. КЛИЕНТСКИЕ МОДЫ (АВТО-СКАЧИВАНИЕ) -------------
     # Качественные ЧИСТО КЛИЕНТСКИЕ моды, которые лаунчер сам скачивает с
@@ -4106,82 +4123,350 @@ def offline_uuid(username: str) -> str:
     return str(uuid.uuid3(uuid.NAMESPACE_OID, "OfflinePlayer:%s" % username))
 
 
-def _download_parallel(url: str, dest: Path, progress_cb=None,
-                       connections: int = 4, min_size: int = 8 << 20) -> bool:
-    """Качает файл в несколько потоков: каждый берёт свой кусок по HTTP Range.
-    На обычном домашнем интернете это заметно быстрее, чем один поток, — именно
-    так работают менеджеры загрузок.
+_CONTENT_RANGE_RE = re.compile(
+    r"^\s*bytes\s+(\d+)-(\d+)/(\d+|\*)\s*$", re.IGNORECASE)
 
-    Возвращает True при успехе. Если сервер не умеет отдавать куски, файл
-    маленький или что-то оборвалось — возвращает False, и вызывающий код
-    спокойно качает обычным способом (с докачкой)."""
-    part = dest.with_name(dest.name + ".part")
+
+def _parse_content_range(value):
+    match = _CONTENT_RANGE_RE.match(str(value or ""))
+    if not match:
+        return None
+    total = None if match.group(3) == "*" else int(match.group(3))
+    return int(match.group(1)), int(match.group(2)), total
+
+
+def _progress_reporter(progress_cb):
+    """Return a cheap, thread-safe percent reporter.
+
+    WebView calls are much slower than network reads.  The old downloader
+    invoked the UI after every 64 KiB from four worker threads (thousands of
+    synchronous JS calls for one modpack).  Report each integer percent once
+    and never move the bar backwards.
+    """
+    state = {"last": -1}
+    lock = threading.Lock()
+
+    def report(done, total):
+        if not progress_cb or not total:
+            return
+        pct = min(100, max(0, int(done * 100 / total)))
+        with lock:
+            if pct <= state["last"]:
+                return
+            state["last"] = pct
+        progress_cb(pct)
+
+    return report
+
+
+def _parallel_state_dir(dest: Path) -> Path:
+    return dest.with_name(dest.name + ".parts")
+
+
+def _clear_parallel_state(dest: Path, *, strict: bool = False) -> bool:
+    state_dir = _parallel_state_dir(Path(dest))
     try:
-        head = urllib.request.Request(url, method="HEAD",
-                                      headers={"User-Agent": "CheckpointLauncher"})
-        with urllib.request.urlopen(head, timeout=20) as response:
-            size = int(response.headers.get("Content-Length") or 0)
-            ranges_ok = "bytes" in (response.headers.get("Accept-Ranges") or "").lower()
-    except Exception:
-        return False
-    if not size or size < min_size or not ranges_ok:
+        if state_dir.exists():
+            shutil.rmtree(state_dir)
+        return True
+    except OSError as exc:
+        if strict:
+            raise
+        runtime_log(
+            "download_partial_cleanup_failed path=%s error=%s",
+            state_dir, exc, level=logging.WARNING,
+        )
         return False
 
+
+def _replace_path_with_retry(source: Path, target: Path, *,
+                             retries: int = 5, delay: float = 0.35) -> None:
+    """Commit a prepared file/directory despite a short Defender file lock."""
+    last_error = None
+    for attempt in range(1, max(1, int(retries)) + 1):
+        try:
+            os.replace(source, target)
+            return
+        except OSError as exc:
+            last_error = exc
+            if attempt < retries:
+                time.sleep(min(2.0, delay * attempt))
+    raise last_error
+
+
+def _download_deadline_seconds(size: int = 0) -> float:
+    """Bound one source attempt while still allowing genuinely slow links."""
+    if size:
+        # Real players can receive the pack at only 70–100 KiB/s.  The former
+        # 30-minute cap killed a healthy 233-MiB transfer around 94%.  Allow
+        # down to ~32 KiB/s plus handshake/retry headroom, while retaining a
+        # finite four-hour ceiling for a genuinely stuck source.
+        return max(600.0, min(14400.0, float(size) / (32 * 1024) + 300.0))
+    return 1800.0
+
+
+def _check_download_deadline(deadline_at: float) -> None:
+    if time.monotonic() > deadline_at:
+        raise TimeoutError("истекло время ожидания загрузки")
+
+
+def _completed_part_is_verified(part: Path, expected_size=0,
+                                expected_sha256=None) -> bool:
+    """Return True only for a complete payload safe to commit without I/O."""
+    digest = parse_sha256_sidecar(expected_sha256)
+    if not digest:
+        return False
     try:
-        with open(part, "wb") as fh:
-            fh.truncate(size)  # резервируем место, чтобы потоки писали каждый в своё
+        return (
+            Path(part).is_file()
+            and (
+                not expected_size
+                or Path(part).stat().st_size == int(expected_size)
+            )
+            and verify_file_sha256(part, digest)
+        )
     except OSError:
         return False
 
+
+def _download_parallel(url: str, dest: Path, progress_cb=None,
+                       connections: int = 4, min_size: int = 8 << 20,
+                       expected_size: int = 0, expected_sha256=None,
+                       deadline_seconds=None) -> bool:
+    """Download a large immutable file using independently resumable ranges.
+
+    Each range has its own small ``.part`` file.  Unlike the previous sparse
+    preallocated file this survives a launcher restart without pretending
+    missing ranges are already present.  Every response must be an exact 206
+    with a matching Content-Range; a server that ignores Range is rejected and
+    the caller falls back to the safe sequential downloader.
+
+    ``False`` means Range is unsupported/inapplicable.  Transient worker
+    failures are converted into the longest valid sequential prefix so the
+    normal downloader can continue instead of starting from zero.
+    """
+    dest = Path(dest)
+    serial_part = dest.with_name(dest.name + ".part")
+    if serial_part.exists():
+        return False  # never destroy a resumable sequential download
+
+    try:
+        head = urllib.request.Request(
+            url, method="HEAD", headers={"User-Agent": "IH-Launcher"})
+        with urllib.request.urlopen(head, timeout=20) as response:
+            size = int(response.headers.get("Content-Length") or 0)
+            ranges_ok = (
+                "bytes" in (response.headers.get("Accept-Ranges") or "").lower()
+            )
+            validator = (
+                response.headers.get("ETag")
+                or response.headers.get("Last-Modified")
+                or ""
+            )
+    except Exception:
+        return False
+    if expected_size and size and size != int(expected_size):
+        raise IOError(
+            "источник отдал неверный размер: %d вместо %d"
+            % (size, int(expected_size))
+        )
+    size = int(expected_size or size)
+    if not size or size < min_size or not ranges_ok:
+        return False
+
+    connections = max(1, min(int(connections or 1), 8))
     step = size // connections
-    bounds = [(i * step, size - 1 if i == connections - 1 else (i + 1) * step - 1)
-              for i in range(connections)]
-    state = {"done": 0, "failed": False}
+    bounds = [
+        (i * step, size - 1 if i == connections - 1 else (i + 1) * step - 1)
+        for i in range(connections)
+    ]
+    state_dir = _parallel_state_dir(dest)
+    meta = {
+        "version": 1,
+        "url": str(url),
+        "size": size,
+        "validator": validator,
+        "connections": connections,
+        "bounds": [list(bound) for bound in bounds],
+        "sha256": parse_sha256_sidecar(expected_sha256),
+    }
+    meta_path = state_dir / "meta.json"
+    try:
+        old_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        old_meta = None
+    if old_meta != meta:
+        _clear_parallel_state(dest, strict=True)
+    state_dir.mkdir(parents=True, exist_ok=True)
+    _atomic_write_json(meta_path, meta)
+
+    chunk_paths = [
+        state_dir / ("chunk-%02d.part" % index)
+        for index in range(connections)
+    ]
+    for chunk_path, (start, end) in zip(chunk_paths, bounds):
+        need = end - start + 1
+        if chunk_path.exists() and chunk_path.stat().st_size > need:
+            chunk_path.unlink()
+
     lock = threading.Lock()
+    report = _progress_reporter(progress_cb)
+    state = {
+        "done": sum(
+            min(path.stat().st_size, end - start + 1)
+            if path.exists() else 0
+            for path, (start, end) in zip(chunk_paths, bounds)
+        ),
+        "errors": [],
+        "range_invalid": False,
+    }
+    report(state["done"], size)
+    deadline_at = time.monotonic() + float(
+        deadline_seconds
+        if deadline_seconds is not None
+        else _download_deadline_seconds(size)
+    )
 
-    def worker(start, end):
-        try:
+    def worker(index, start, end):
+        chunk_path = chunk_paths[index]
+        need = end - start + 1
+        for attempt in range(1, 4):
+            _check_download_deadline(deadline_at)
+            have = chunk_path.stat().st_size if chunk_path.exists() else 0
+            if have == need:
+                return
+            request_start = start + have
             request = urllib.request.Request(url, headers={
-                "User-Agent": "CheckpointLauncher", "Range": "bytes=%d-%d" % (start, end)})
-            # Свой файловый дескриптор на поток: общий seek() был бы гонкой.
-            with urllib.request.urlopen(request, timeout=30) as response, open(part, "r+b") as fh:
-                fh.seek(start)
-                got = 0
-                need = end - start + 1
-                while got < need:
-                    data = response.read(65536)
-                    if not data:
-                        break
-                    fh.write(data)
-                    got += len(data)
+                "User-Agent": "IH-Launcher",
+                "Range": "bytes=%d-%d" % (request_start, end),
+            })
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    status = getattr(response, "status", response.getcode())
+                    content_range = _parse_content_range(
+                        response.headers.get("Content-Range"))
+                    expected_range = (request_start, end, size)
+                    if status != 206 or content_range != expected_range:
+                        with lock:
+                            state["range_invalid"] = True
+                        return
+                    response_validator = (
+                        response.headers.get("ETag")
+                        or response.headers.get("Last-Modified")
+                        or ""
+                    )
+                    if validator and response_validator and response_validator != validator:
+                        raise IOError("файл изменился во время скачивания")
+                    remaining = need - have
+                    length = response.headers.get("Content-Length")
+                    if length and int(length) != remaining:
+                        raise IOError("неверная длина HTTP Range")
+                    with open(chunk_path, "ab") as fh:
+                        while have < need:
+                            _check_download_deadline(deadline_at)
+                            data = response.read(min(256 * 1024, need - have))
+                            if not data:
+                                break
+                            fh.write(data)
+                            have += len(data)
+                            with lock:
+                                state["done"] += len(data)
+                                current = state["done"]
+                            report(current, size)
+                    if have != need:
+                        raise IOError(
+                            "связь оборвалась: сегмент %d из %d байт"
+                            % (have, need)
+                        )
+                    return
+            except urllib.error.HTTPError as exc:
+                if exc.code in (400, 401, 403, 404, 405, 410, 416):
                     with lock:
-                        state["done"] += len(data)
-                        if progress_cb:
-                            progress_cb(min(100, int(state["done"] * 100 / size)))
-                if got != need:
-                    state["failed"] = True
-        except Exception:
-            state["failed"] = True
+                        state["range_invalid"] = True
+                    return
+                if attempt == 3:
+                    with lock:
+                        state["errors"].append(exc)
+                    return
+            except Exception as exc:  # noqa: BLE001 — network failures vary
+                if attempt == 3:
+                    with lock:
+                        state["errors"].append(exc)
+                    return
+            time.sleep(attempt)
 
-    threads = [threading.Thread(target=worker, args=b, daemon=True) for b in bounds]
+    threads = [
+        threading.Thread(
+            target=worker, args=(index, start, end), daemon=True,
+            name="IH-download-%d" % index,
+        )
+        for index, (start, end) in enumerate(bounds)
+    ]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
 
-    if state["failed"] or not part.exists() or part.stat().st_size != size:
-        # Недокачанную заготовку убираем: иначе обычная докачка приняла бы её
-        # за уже скачанный кусок и продолжила с неверного места.
-        part.unlink(missing_ok=True)
+    complete = all(
+        path.exists() and path.stat().st_size == end - start + 1
+        for path, (start, end) in zip(chunk_paths, bounds)
+    )
+    if not complete:
+        # Preserve the longest contiguous prefix for the sequential fallback.
+        serial_temp = serial_part.with_name(serial_part.name + ".tmp")
+        serial_temp.unlink(missing_ok=True)
+        with open(serial_temp, "wb") as out:
+            for path, (start, end) in zip(chunk_paths, bounds):
+                if not path.exists():
+                    break
+                need = end - start + 1
+                with open(path, "rb") as source:
+                    shutil.copyfileobj(source, out, length=1024 * 1024)
+                if path.stat().st_size != need:
+                    break
+        if serial_temp.stat().st_size:
+            os.replace(serial_temp, serial_part)
+        else:
+            serial_temp.unlink(missing_ok=True)
+        # Keep exact validated chunks until the sequential fallback succeeds.
+        # If that fallback is interrupted too, the next click resumes from its
+        # .part; if no serial prefix exists, the same URL can resume chunks.
         return False
 
-    dest.unlink(missing_ok=True)
-    part.replace(dest)
-    return True
+    assemble = dest.with_name(dest.name + ".assemble")
+    assemble.unlink(missing_ok=True)
+    try:
+        with open(assemble, "wb") as out:
+            for path in chunk_paths:
+                with open(path, "rb") as source:
+                    shutil.copyfileobj(source, out, length=1024 * 1024)
+        if assemble.stat().st_size != size:
+            raise IOError("неверный итоговый размер файла")
+        expected_digest = parse_sha256_sidecar(expected_sha256)
+        if expected_digest and not verify_file_sha256(assemble, expected_digest):
+            raise IOError("контрольная сумма скачанного файла не совпала")
+        try:
+            _replace_path_with_retry(assemble, dest)
+        except OSError:
+            # Preserve the already SHA-verified payload for the next click;
+            # do not turn a momentary antivirus lock into a full redownload.
+            try:
+                _replace_path_with_retry(assemble, serial_part, retries=2)
+            except OSError:
+                pass
+            raise
+        report(size, size)
+        _clear_parallel_state(dest)
+        return True
+    except Exception:
+        assemble.unlink(missing_ok=True)
+        raise
 
 
 def download_file(url: str, dest: Path, progress_cb=None, retries: int = 5,
-                  allow_resume: bool = True, expected_size: int = 0) -> None:
+                  allow_resume: bool = True, expected_size: int = 0,
+                  expected_sha256=None, status_cb=None,
+                  deadline_seconds=None) -> None:
     """Качает файл с повторами.
 
     allow_resume=True (по умолчанию): при обрыве продолжает с места остановки
@@ -4196,53 +4481,224 @@ def download_file(url: str, dest: Path, progress_cb=None, retries: int = 5,
     expected_size: ожидаемый размер файла. Нужен, когда сервер не шлёт
     Content-Length (BlueMap так и делает) — иначе обрыв не отличить от конца
     файла и обрезанный кусок молча считался бы целым."""
+    dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
+    expected_digest = parse_sha256_sidecar(expected_sha256)
+    report = _progress_reporter(progress_cb)
+    part = dest.with_name(dest.name + ".part")
+
+    # The network transfer may already be complete while Defender briefly
+    # blocked only the final rename. Commit verified data before any HEAD/GET.
+    if _completed_part_is_verified(part, expected_size, expected_digest):
+        _replace_path_with_retry(part, dest)
+        _clear_parallel_state(dest)
+        report(dest.stat().st_size, expected_size or dest.stat().st_size)
+        return
 
     # Параллельная докачка тоже опирается на Range — при выключенной докачке
     # (сломанный Range у BlueMap) её не трогаем.
-    if allow_resume and _download_parallel(url, dest, progress_cb):
+    if allow_resume and _download_parallel(
+        url, dest, progress_cb, expected_size=expected_size,
+        expected_sha256=expected_digest,
+        deadline_seconds=deadline_seconds,
+    ):
         return
 
-    part = dest.with_name(dest.name + ".part")
     last_error = None
+    deadline_at = (
+        time.monotonic() + float(deadline_seconds)
+        if deadline_seconds is not None
+        else (
+            time.monotonic() + _download_deadline_seconds(expected_size)
+            if expected_size else None
+        )
+    )
 
     for attempt in range(1, retries + 1):
         if not allow_resume:
             part.unlink(missing_ok=True)  # всегда с нуля
         have = part.stat().st_size if part.exists() else 0
+        if expected_size and have > expected_size:
+            part.unlink(missing_ok=True)
+            have = 0
         request = urllib.request.Request(url, headers={"User-Agent": "CheckpointLauncher"})
         if have and allow_resume:
             request.add_header("Range", "bytes=%d-" % have)
         try:
+            if deadline_at is not None:
+                _check_download_deadline(deadline_at)
             with urllib.request.urlopen(request, timeout=30) as response:
+                status = getattr(response, "status", response.getcode())
+                content_range = _parse_content_range(
+                    response.headers.get("Content-Range"))
+                if status is None and str(url).lower().startswith("file:"):
+                    # urllib's local FileHandler has no HTTP status, but it is
+                    # still a complete response used by the opt-in dev pack.
+                    status = 200
+                raw_length = response.headers.get("Content-Length")
+                try:
+                    content_length = (
+                        int(raw_length) if raw_length is not None else None
+                    )
+                except (TypeError, ValueError):
+                    raise IOError("источник вернул неверный Content-Length")
+                if content_length is not None and content_length < 0:
+                    raise IOError("источник вернул неверный Content-Length")
+
                 # Сервер мог проигнорировать Range (ответил 200 вместо 206) —
                 # тогда начинаем файл с нуля, иначе получим мешанину.
-                if have and getattr(response, "status", 200) != 206:
-                    have = 0
-                    part.unlink(missing_ok=True)
-                length = response.headers.get("Content-Length")
-                total = (int(length) + have) if length else expected_size
+                if have:
+                    if status == 206:
+                        range_start = range_end = range_total = None
+                        if content_range:
+                            range_start, range_end, range_total = content_range
+                        known_total = range_total or (
+                            int(expected_size) if expected_size else None
+                        )
+                        range_span = (
+                            range_end - range_start + 1
+                            if range_start is not None
+                            else 0
+                        )
+                        if (
+                            not content_range
+                            or range_start != have
+                            or range_span <= 0
+                            or (known_total is not None
+                                and range_end != known_total - 1)
+                            or (range_total is not None
+                                and range_end >= range_total)
+                            or (
+                                expected_size
+                                and range_total not in (None, expected_size)
+                            )
+                            or (content_length is not None
+                                and content_length != range_span)
+                        ):
+                            part.unlink(missing_ok=True)
+                            have = 0
+                            raise IOError("сервер вернул неверный диапазон докачки")
+                        response_expected = range_span
+                        total = known_total
+                    elif status == 200:
+                        # Сервер проигнорировал Range: безопасно начинаем с
+                        # нуля, а не дописываем полный ответ к старому хвосту.
+                        have = 0
+                        part.unlink(missing_ok=True)
+                        response_expected = (
+                            content_length
+                            if content_length is not None
+                            else (int(expected_size) if expected_size else None)
+                        )
+                        total = response_expected
+                    else:
+                        part.unlink(missing_ok=True)
+                        have = 0
+                        raise IOError(
+                            "источник вернул неожиданный HTTP-статус %s"
+                            % status
+                        )
+                else:
+                    # Без Range-запроса принимаем только полный ответ. 206
+                    # здесь означает, что CDN самовольно отдал лишь кусок.
+                    if status != 200:
+                        part.unlink(missing_ok=True)
+                        raise IOError(
+                            "источник вернул частичный ответ без запроса Range"
+                        )
+                    response_expected = (
+                        content_length
+                        if content_length is not None
+                        else (int(expected_size) if expected_size else None)
+                    )
+                    total = response_expected
+
+                if expected_size and total and total != expected_size:
+                    raise IOError(
+                        "источник отдал неверный размер: %d вместо %d"
+                        % (total, expected_size)
+                    )
+                if deadline_at is None:
+                    deadline_at = time.monotonic() + _download_deadline_seconds(
+                        total or 0
+                    )
+                response_received = 0
                 with open(part, "ab" if have else "wb") as fh:
                     while True:
-                        chunk = response.read(65536)
+                        _check_download_deadline(deadline_at)
+                        chunk = response.read(256 * 1024)
                         if not chunk:
                             break
                         fh.write(chunk)
+                        response_received += len(chunk)
                         have += len(chunk)
-                        if progress_cb and total:
-                            progress_cb(min(100, int(have * 100 / total)))
+                        report(have, total)
+                if (
+                    response_expected is not None
+                    and response_received != response_expected
+                ):
+                    # A short body is a normal connection break: bytes already
+                    # written are a valid prefix for the next Range request.
+                    # An oversized body violates the promised range and cannot
+                    # be resumed safely.
+                    if response_received > response_expected:
+                        part.unlink(missing_ok=True)
+                    raise IOError(
+                        "связь оборвалась: получено %d из %d байт ответа"
+                        % (response_received, response_expected)
+                    )
                 # ВАЖНО: при обрыве связи read() возвращает пустоту — так же,
                 # как при нормальном конце файла. Без этой проверки обрезанный
                 # архив молча считался бы скачанным целиком.
-                if total and have < total:
-                    raise IOError("связь оборвалась: получено %d из %d байт" % (have, total))
-            dest.unlink(missing_ok=True)
-            part.replace(dest)
+                if total and have != total:
+                    raise IOError(
+                        "связь оборвалась: получено %d из %d байт"
+                        % (have, total)
+                    )
+                if not total and not expected_digest:
+                    raise IOError(
+                        "источник не сообщил размер файла; безопасная "
+                        "проверка загрузки невозможна"
+                    )
+            if expected_digest and not verify_file_sha256(part, expected_digest):
+                part.unlink(missing_ok=True)
+                raise IOError("контрольная сумма скачанного файла не совпала")
+            try:
+                _replace_path_with_retry(part, dest)
+            except OSError as exc:
+                # Файл уже полностью проверен. Если антивирус держит целевой
+                # путь дольше внутренних повторов rename, сохраняем .part и
+                # выходим без ещё одного сетевого запроса.
+                last_error = exc
+                break
+            _clear_parallel_state(dest)
+            report(expected_size or dest.stat().st_size,
+                   expected_size or dest.stat().st_size)
             return
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code == 416 and part.exists():
+                part.unlink(missing_ok=True)
+            # Permanent errors should switch source immediately instead of
+            # waiting through five identical retries.
+            if exc.code in (400, 401, 403, 404, 405, 410):
+                break
+            if attempt < retries:
+                if status_cb:
+                    status_cb(
+                        "связь прервалась — продолжаю загрузку "
+                        "(попытка %d/%d)" % (attempt + 1, retries)
+                    )
+                time.sleep(min(8, 2 * attempt))
         except Exception as exc:  # noqa: BLE001 — сеть падает по-разному
             last_error = exc
             if attempt < retries:
-                time.sleep(2 * attempt)
+                if status_cb:
+                    status_cb(
+                        "связь прервалась — продолжаю загрузку "
+                        "(попытка %d/%d)" % (attempt + 1, retries)
+                    )
+                time.sleep(min(8, 2 * attempt))
 
     raise RuntimeError(
         "Обрыв связи при скачивании — не удалось за %d попыток.\n\n"
@@ -4251,7 +4707,8 @@ def download_file(url: str, dest: Path, progress_cb=None, retries: int = 5,
 
 
 def download_with_mirror(primary_url: str, mirror_url: str, dest: Path,
-                         progress_cb=None, status_cb=None) -> None:
+                         progress_cb=None, status_cb=None, expected_size: int = 0,
+                         expected_sha256=None) -> None:
     """Качает файл, пробуя сначала зеркало на игровом сервере, потом основной
     источник.
 
@@ -4264,8 +4721,9 @@ def download_with_mirror(primary_url: str, mirror_url: str, dest: Path,
 
     Тот же порядок уже работает для отдельных модов (см. install_extra_client_mods).
 
-    Между источниками удаляем .part: докачивать хвост одного файла из другого
-    источника нельзя — если версии разойдутся, получится битый архив."""
+    При обязательной контрольной сумме недокачанные байты сохраняются между
+    совместимыми источниками и перезапусками. Смешанный или устаревший файл всё
+    равно никогда не будет применён: итоговая SHA-256 остаётся обязательной."""
     part = dest.with_name(dest.name + ".part")
     sources = []
     if mirror_url:
@@ -4285,15 +4743,50 @@ def download_with_mirror(primary_url: str, mirror_url: str, dest: Path,
     sources.append((primary_url, 3))
 
     last_error = None
+    source_count = len(sources)
+
+    def _source_progress(index, pct):
+        if not progress_cb:
+            return
+        if source_count <= 1:
+            progress_cb(pct)
+            return
+        # Keep the overall bar monotonic when switching sources. The primary
+        # gets most of the visual range; fallbacks continue through the tail
+        # instead of resetting to 0% behind a frozen 94% label.
+        if index == 0:
+            start, end = 0, 85
+        else:
+            tail_count = source_count - 1
+            start = 85 + int((index - 1) * 15 / tail_count)
+            end = 85 + int(index * 15 / tail_count)
+        progress_cb(start + int((end - start) * int(pct or 0) / 100))
+
     for index, (url, retries) in enumerate(sources):
         try:
-            download_file(url, dest, progress_cb, retries=retries)
+            download_file(
+                url, dest,
+                (lambda pct, _index=index: _source_progress(_index, pct)),
+                retries=retries,
+                expected_size=expected_size,
+                expected_sha256=expected_sha256,
+                status_cb=status_cb,
+            )
+            if progress_cb:
+                progress_cb(100)
             return
         except Exception as exc:  # noqa: BLE001 — сеть падает по-разному
             last_error = exc
-            part.unlink(missing_ok=True)
+            # A mandatory checksum makes a partial payload safe to retain:
+            # only the final matching file can ever replace the destination.
+            preserve_resume = bool(parse_sha256_sidecar(expected_sha256))
+            if not preserve_resume:
+                part.unlink(missing_ok=True)
+                _clear_parallel_state(dest)
             if index + 1 < len(sources) and status_cb:
-                status_cb("источник недоступен — пробую запасной")
+                status_cb(
+                    "основной источник прервался — продолжаю через запасной"
+                )
     raise last_error
 
 
@@ -4386,6 +4879,55 @@ def verify_file_sha256(path, expected_sha256=None) -> bool:
     except (OSError, ValueError):
         return False
     return secrets.compare_digest(actual, expected)
+
+
+def _adjacent_sidecar_url(artifact_url: str) -> str:
+    parsed = urllib.parse.urlsplit(str(artifact_url or ""))
+    if not parsed.scheme or not parsed.path:
+        return ""
+    return urllib.parse.urlunsplit((
+        parsed.scheme,
+        parsed.netloc,
+        parsed.path + ".sha256",
+        parsed.query,
+        parsed.fragment,
+    ))
+
+
+def fetch_artifact_sha256(primary_url: str, mirror_url: str = "") -> str:
+    """Fetch the checksum paired with the exact downloadable artifact.
+
+    Bunny publishes ``*.sha256`` before the version marker.  Requiring that
+    sidecar prevents a cached/partial ZIP from being labelled as the new
+    version merely because it is syntactically a valid archive.
+    """
+    candidates = []
+    for artifact_url in (mirror_url, primary_url):
+        sidecar = _adjacent_sidecar_url(artifact_url)
+        if sidecar and sidecar not in candidates:
+            candidates.append(sidecar)
+    raw = _fetch_tiny_text(candidates)
+    digest = parse_sha256_sidecar(raw)
+    if digest:
+        return digest
+
+    # Developer-only local configpack candidates are not public artifacts and
+    # historically had no sidecar.  Hash the exact local file instead.
+    for artifact_url in (mirror_url, primary_url):
+        parsed = urllib.parse.urlsplit(str(artifact_url or ""))
+        if parsed.scheme.lower() != "file":
+            continue
+        local_path = urllib.request.url2pathname(parsed.path)
+        if re.match(r"^[/\\][A-Za-z]:", local_path):
+            local_path = local_path[1:]
+        try:
+            return calculate_file_sha256(local_path)
+        except OSError:
+            continue
+    raise RuntimeError(
+        "Не удалось получить контрольную сумму файла. "
+        "Установка остановлена, чтобы не записать повреждённую сборку."
+    )
 
 
 def update_sha256_sidecar_url(exe_url: str) -> str:
@@ -4513,19 +5055,26 @@ def get_local_modpack_version() -> int:
 
 
 def _download_first(urls, dest, progress_cb=None, retries=5,
-                    allow_resume=True, expected_size=0):
-    """Пробует список URL по очереди; первый успешный — победа. Между источниками
-    удаляет .part: докачивать хвост одного файла из другого источника нельзя."""
+                    allow_resume=True, expected_size=0, expected_sha256=None,
+                    status_cb=None):
+    """Пробует источники по очереди, сохраняя привязанную к SHA докачку."""
     part = dest.with_name(dest.name + ".part")
     last = None
     for u in urls:
         try:
             download_file(u, dest, progress_cb, retries=retries,
-                          allow_resume=allow_resume, expected_size=expected_size)
+                          allow_resume=allow_resume, expected_size=expected_size,
+                          expected_sha256=expected_sha256,
+                          status_cb=status_cb)
             return
         except Exception as e:  # noqa: BLE001
             last = e
-            part.unlink(missing_ok=True)
+            preserve_resume = (
+                allow_resume and bool(parse_sha256_sidecar(expected_sha256))
+            )
+            if not preserve_resume:
+                part.unlink(missing_ok=True)
+                _clear_parallel_state(dest)
     raise RuntimeError("не удалось скачать %s: %s" % (dest.name, last))
 
 
@@ -4538,7 +5087,18 @@ def download_modpack_archive(dest, progress_cb, status_cb):
     Мелкие части качаются целиком; если оборвётся — повторяется ОДНА часть, а не
     весь архив. Число частей берётся из manifest-файла modpack.parts.txt рядом с
     архивом на зеркале. Части склеиваются побайтово обратно в исходный zip."""
+    dest = Path(dest)
     mirror = CONFIG.get("MODPACK_MIRROR_URL") or ""
+    expected_digest = fetch_artifact_sha256(CONFIG["MODPACK_URL"], mirror)
+    # A previous run may have downloaded and verified the whole archive, then
+    # failed later during extraction/commit.  Reuse that payload instead of
+    # making the player download hundreds of megabytes again.
+    if dest.is_file() and verify_file_sha256(dest, expected_digest):
+        status_cb("архив сборки уже скачан — продолжаю установку")
+        progress_cb(100)
+        return
+    if dest.exists():
+        dest.unlink(missing_ok=True)
     if "/" in mirror:
         root = mirror.rsplit("/", 1)[0]
         dom_root = None
@@ -4631,14 +5191,21 @@ def download_modpack_archive(dest, progress_cb, status_cb):
                 raise RuntimeError(
                     "Сборка модпака собралась повреждённой. Нажмите «Играть» ещё раз — "
                     "перекачаются только сбойные части.")
+            if not verify_file_sha256(assemble, expected_digest):
+                assemble.unlink(missing_ok=True)
+                raise RuntimeError(
+                    "Контрольная сумма сборки не совпала. "
+                    "Повреждённые части будут скачаны заново."
+                )
             dest.unlink(missing_ok=True)
-            assemble.replace(dest)
+            _replace_path_with_retry(assemble, dest)
             return
 
     # Частей нет — как раньше, цельным файлом (зеркало -> домен -> GitHub).
     status_cb("скачивание")
     download_with_mirror(CONFIG["MODPACK_URL"], CONFIG.get("MODPACK_MIRROR_URL"),
-                         dest, progress_cb, status_cb)
+                         dest, progress_cb, status_cb,
+                         expected_sha256=expected_digest)
 
 
 MODPACK_MANAGED_FOLDERS = ("mods", "config", "kubejs")
@@ -4709,7 +5276,7 @@ def recover_interrupted_modpack_update(status_cb=None) -> bool:
         staged = stage_root / name
         if backup.exists() or backup.is_symlink():
             _remove_path(target)
-            os.replace(backup, target)
+            _replace_path_with_retry(backup, target)
             restored = True
         elif phase == "committing" and name not in existed and not staged.exists():
             # This root did not exist before the update and has already moved
@@ -4768,8 +5335,8 @@ def _commit_managed_folders(transaction: Path, roots, *, cleanup=True) -> None:
             backup = backup_root / name
             staged = stage_root / name
             if target.exists() or target.is_symlink():
-                os.replace(target, backup)
-            os.replace(staged, target)
+                _replace_path_with_retry(target, backup)
+            _replace_path_with_retry(staged, target)
         journal["phase"] = "committed"
         _atomic_write_json(transaction / "journal.json", journal)
     except Exception:
@@ -5094,6 +5661,25 @@ def install_modpack_delta(status_cb, progress_cb) -> bool:
                     "http://95.216.30.64:25980",
                     "https://industrialhorizon.dynmap.xyz") + "/files/mods/")
 
+            # One fast preflight avoids retrying every missing JAR when a new
+            # CDN has the archive/manifest but its per-file tree has not been
+            # published yet.  In that case go straight to the proven full ZIP.
+            sample_url = roots[0] + urllib.parse.quote(need[0]["name"])
+            try:
+                request = urllib.request.Request(
+                    sample_url, method="HEAD",
+                    headers={"User-Agent": "IH-Launcher"})
+                with urllib.request.urlopen(request, timeout=8) as response:
+                    sample_size = int(
+                        response.headers.get("Content-Length") or 0)
+                if sample_size and sample_size != need[0]["size"]:
+                    return False
+            except Exception:
+                if transaction is not None:
+                    recover_interrupted_modpack_update()
+                    transaction = None
+                return False
+
             from concurrent.futures import ThreadPoolExecutor
             done_lock = threading.Lock()
             done = [0]
@@ -5102,18 +5688,15 @@ def install_modpack_delta(status_cb, progress_cb) -> bool:
                 quoted = urllib.parse.quote(f["name"])
                 tmp = staged_mods / (f["name"] + ".download")
                 for _attempt in range(3):
-                    tmp.unlink(missing_ok=True)
                     try:
                         _download_first([r + quoted for r in roots], tmp,
-                                        retries=2, allow_resume=False,
-                                        expected_size=f["size"])
+                                        retries=2, allow_resume=True,
+                                        expected_size=f["size"],
+                                        expected_sha256=f["sha"],
+                                        status_cb=status_cb)
                     except Exception:  # noqa: BLE001
                         continue
-                    h = hashlib.sha256()
-                    with open(tmp, "rb") as fh:
-                        for chunk in iter(lambda: fh.read(1 << 20), b""):
-                            h.update(chunk)
-                    if h.hexdigest() == f["sha"]:
+                    if verify_file_sha256(tmp, f["sha"]):
                         # Replace only the staged hardlink.  The live pack is
                         # untouched until every worker has succeeded.
                         staged_target = staged_mods / f["name"]
@@ -5125,6 +5708,7 @@ def install_modpack_delta(status_cb, progress_cb) -> bool:
                             progress_cb(int(done[0] * 100 / len(need)))
                         return True
                 tmp.unlink(missing_ok=True)
+                _clear_parallel_state(tmp)
                 return False
 
             with ThreadPoolExecutor(max_workers=6) as pool:
@@ -5176,12 +5760,24 @@ def install_modpack(status_cb, progress_cb) -> None:
     if install_modpack_delta(status_cb, progress_cb):
         return
 
+    remote_version = get_remote_modpack_version()
+    manifest = _fetch_modpack_manifest()
+    manifest_files = _normalise_modpack_manifest(manifest)
+    try:
+        manifest_version = int(manifest.get("version")) if manifest else -1
+    except (TypeError, ValueError):
+        manifest_version = -1
+    if not manifest_files or manifest_version != remote_version:
+        raise RuntimeError(
+            "Манифест сборки ещё не синхронизирован с архивом. "
+            "Попробуйте снова через минуту."
+        )
+
     zip_path = APP_DATA_DIR / "modpack_download.zip"
     transaction = None
 
     def download_progress(pct):
-        # Подпись с номером шага ставит сам progress_cb — здесь только процент.
-        progress_cb(pct)
+        progress_cb(int(min(100, max(0, pct)) * 70 / 100))
 
     try:
         download_modpack_archive(zip_path, download_progress, status_cb)
@@ -5195,11 +5791,39 @@ def install_modpack(status_cb, progress_cb) -> None:
                 pct = int(index * 100 / total)
                 if pct != last_pct:
                     last_pct = pct
-                    progress_cb(pct)
+                    progress_cb(70 + int(pct * 20 / 100))
                     status_cb(
                         "проверка и распаковка — %d%% (%d/%d файлов)"
                         % (pct, index, total)
                     )
+
+        # Bind the extracted archive to the same manifest/version that caused
+        # this update.  A valid but stale cached ZIP must never receive the new
+        # marker merely because its CRC happens to be correct.
+        status_cb("проверка контрольных сумм модов")
+        staged_mods = stage_root / "mods"
+        expected_names = {item["name"].lower() for item in manifest_files}
+        actual_names = {
+            path.name.lower() for path in staged_mods.glob("*.jar")
+            if path.is_file()
+        }
+        if actual_names != expected_names:
+            raise RuntimeError(
+                "Архив и манифест сборки содержат разный набор модов"
+            )
+        for position, item in enumerate(manifest_files, start=1):
+            candidate = staged_mods / item["name"]
+            if (
+                not candidate.is_file()
+                or candidate.stat().st_size != item["size"]
+                or calculate_file_sha256(candidate) != item["sha"]
+            ):
+                raise RuntimeError(
+                    "Мод повреждён в архиве: %s" % item["name"]
+                )
+            if position == len(manifest_files) or position % 5 == 0:
+                progress_cb(
+                    90 + int(position * 10 / len(manifest_files)))
 
         # Empty managed roots are intentional: the old implementation also
         # removed a folder if the new archive no longer shipped it.
@@ -5237,15 +5861,14 @@ def install_modpack(status_cb, progress_cb) -> None:
                               recovery_exc.__traceback__),
                 )
         raise
-    finally:
-        zip_path.unlink(missing_ok=True)
+    # The archive is removed only after the live client was swapped
+    # successfully.  On extraction/antivirus failure it remains available for
+    # a retry without another full download.
+    zip_path.unlink(missing_ok=True)
 
     harvest_optional_mods(status_cb)
 
-    remote_version = get_remote_modpack_version()
-    manifest = _fetch_modpack_manifest()
-    if manifest and _normalise_modpack_manifest(manifest):
-        _cache_modpack_manifest(manifest)
+    _cache_modpack_manifest(manifest)
     _atomic_write_text(MODPACK_VERSION_FILE, str(remote_version))
 
     # Сборка только что снесла config/ и mods/ — значит, пак настроек
@@ -5353,6 +5976,155 @@ def _safe_zip_targets(zf, root: Path) -> list:
     return safe
 
 
+CONFIGPACK_TRANSACTION_DIR_NAME = ".launcher_configpack_transaction"
+
+
+def _configpack_transaction_dir() -> Path:
+    return INSTANCE_DIR / CONFIGPACK_TRANSACTION_DIR_NAME
+
+
+def _normalise_configpack_paths(paths) -> list:
+    result = []
+    for raw in paths:
+        raw_value = str(raw or "").replace("\\", "/")
+        if (
+            os.path.isabs(raw_value)
+            or raw_value.startswith("/")
+            or raw_value.startswith("//")
+            or re.match(r"^[A-Za-z]:", raw_value)
+        ):
+            raise ValueError("Небезопасный путь в configpack.json: %s" % raw)
+        value = raw_value.strip("/")
+        parts = Path(value).parts
+        if (
+            not value
+            or ".." in parts
+            or "." in parts
+            or ":" in value
+        ):
+            raise ValueError("Небезопасный путь в configpack.json: %s" % raw)
+        value = "/".join(parts)
+        if value not in result:
+            result.append(value)
+    # Atomic path swaps are unambiguous only when one owned path is not inside
+    # another.  Current packs deliberately use disjoint files/directories.
+    for index, parent in enumerate(result):
+        for child in result[index + 1:]:
+            if child.startswith(parent + "/") or parent.startswith(child + "/"):
+                raise ValueError(
+                    "Пересекающиеся пути в configpack.json: %s, %s"
+                    % (parent, child)
+                )
+    return result
+
+
+def _finish_configpack_transaction(transaction: Path) -> None:
+    transaction = Path(transaction)
+    if transaction.resolve() != _configpack_transaction_dir().resolve():
+        raise RuntimeError("unexpected configpack transaction path")
+    _remove_path(transaction)
+
+
+def recover_interrupted_configpack_update(status_cb=None) -> bool:
+    """Restore the previous configpack after a killed launcher/Windows crash."""
+    transaction = _configpack_transaction_dir()
+    if not transaction.exists():
+        return False
+    journal_path = transaction / "journal.json"
+    if not journal_path.exists():
+        # Extraction had not reached the commit phase; live files are intact.
+        _finish_configpack_transaction(transaction)
+        return True
+    try:
+        journal = json.loads(journal_path.read_text(encoding="utf-8"))
+        phase = journal.get("phase")
+        targets = _normalise_configpack_paths(journal.get("targets", []))
+        existed = set(journal.get("existed", []))
+        if not targets or phase not in ("prepared", "committing", "committed"):
+            raise ValueError("invalid configpack journal")
+    except Exception as exc:
+        raise RuntimeError(
+            "Не удалось безопасно восстановить прерванное обновление настроек"
+        ) from exc
+
+    if phase == "committed":
+        _finish_configpack_transaction(transaction)
+        return True
+
+    backup_root = transaction / "backup"
+    stage_root = transaction / "stage"
+    restored = False
+    for rel in targets:
+        target = INSTANCE_DIR / rel
+        backup = backup_root / rel
+        staged = stage_root / rel
+        if backup.exists() or backup.is_symlink():
+            _remove_path(target)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            _replace_path_with_retry(backup, target)
+            restored = True
+        elif phase == "committing" and rel not in existed and not staged.exists():
+            _remove_path(target)
+            restored = True
+
+    _finish_configpack_transaction(transaction)
+    if status_cb and restored:
+        status_cb("Восстановлены прежние настройки после прерванного обновления")
+    runtime_log(
+        "configpack_transaction_recovered phase=%s restored=%s",
+        phase, restored, level=logging.WARNING,
+    )
+    return True
+
+
+def _begin_configpack_transaction() -> "tuple[Path, Path]":
+    recover_interrupted_configpack_update()
+    transaction = _configpack_transaction_dir()
+    transaction.mkdir(parents=True, exist_ok=False)
+    stage_root = transaction / "stage"
+    stage_root.mkdir()
+    return transaction, stage_root
+
+
+def _commit_configpack_paths(transaction: Path, paths) -> None:
+    transaction = Path(transaction)
+    stage_root = transaction / "stage"
+    backup_root = transaction / "backup"
+    backup_root.mkdir(exist_ok=True)
+    targets = _normalise_configpack_paths(paths)
+    existed = [
+        rel for rel in targets
+        if (INSTANCE_DIR / rel).exists() or (INSTANCE_DIR / rel).is_symlink()
+    ]
+    journal = {
+        "version": 1,
+        "phase": "prepared",
+        "targets": targets,
+        "existed": existed,
+        "created_at": int(time.time()),
+    }
+    _atomic_write_json(transaction / "journal.json", journal)
+    journal["phase"] = "committing"
+    _atomic_write_json(transaction / "journal.json", journal)
+    try:
+        for rel in targets:
+            target = INSTANCE_DIR / rel
+            backup = backup_root / rel
+            staged = stage_root / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists() or target.is_symlink():
+                _replace_path_with_retry(target, backup)
+            if staged.exists() or staged.is_symlink():
+                _replace_path_with_retry(staged, target)
+        journal["phase"] = "committed"
+        _atomic_write_json(transaction / "journal.json", journal)
+    except Exception:
+        recover_interrupted_configpack_update()
+        raise
+    _finish_configpack_transaction(transaction)
+
+
 def configpack_needs_install() -> bool:
     """Ставить ли пак настроек. Да, если версия разошлась ИЛИ если файлы,
     которые он приносит, кто-то стёр (например, переустановка сборки)."""
@@ -5403,17 +6175,13 @@ def install_ultimine_sticky(status_cb=None) -> None:
 
 
 def install_configpack(status_cb=None, progress_cb=None) -> None:
-    """Ставит поверх игры маленький архив с настройками сборки.
+    """Install the settings pack through a journalled all-or-nothing swap.
 
-    Внутри архива обязателен configpack.json:
-        {"version": 1, "owns": ["config/fancymenu", "mods/fancymenu_...jar"]}
-    "owns" — то, что пак считает своим: эти пути стираются перед распаковкой
-    (иначе файл, убранный из пака, остался бы у игрока навсегда) и по ним же
-    потом проверяется, цел ли пак. Всё, чего в "owns" нет, не трогается —
-    поэтому options.txt, миры и чужие настройки в безопасности.
-
-    Некритично: при любой ошибке просто пропускаем — игра запустится, просто
-    с ванильным меню."""
+    The archive is SHA-checked, CRC-checked and fully extracted into a private
+    staging tree before any live path is touched.  A killed process or an
+    antivirus lock restores the previous complete pack on the next launch.
+    """
+    recover_interrupted_configpack_update(status_cb)
     if not configpack_needs_install():
         if status_cb:
             status_cb("настройки сборки уже актуальны")
@@ -5422,64 +6190,116 @@ def install_configpack(status_cb=None, progress_cb=None) -> None:
         return
 
     zip_path = APP_DATA_DIR / "configpack_download.zip"
+    previous_marker = _read_configpack_marker()
+    previous_verify = previous_marker.get("verify", previous_marker.get("owns", []))
+    had_working_pack = bool(previous_marker) and all(
+        (INSTANCE_DIR / rel).exists() for rel in previous_verify
+    )
+    transaction = None
+    success = False
     try:
+        remote_version = get_remote_configpack_version()
+        expected_digest = fetch_artifact_sha256(
+            CONFIG["CONFIGPACK_URL"],
+            CONFIG.get("CONFIGPACK_MIRROR_URL") or "",
+        )
         if status_cb:
             status_cb("Скачиваю настройки сборки (меню, квесты, экран загрузки)...")
-        download_with_mirror(CONFIG["CONFIGPACK_URL"],
-                             CONFIG.get("CONFIGPACK_MIRROR_URL"),
-                             zip_path, progress_cb, status_cb)
+        if not (
+            zip_path.is_file()
+            and verify_file_sha256(zip_path, expected_digest)
+        ):
+            zip_path.unlink(missing_ok=True)
+            download_with_mirror(
+                CONFIG["CONFIGPACK_URL"],
+                CONFIG.get("CONFIGPACK_MIRROR_URL"),
+                zip_path,
+                _progress_slice(progress_cb, 0, 70) if progress_cb else None,
+                status_cb,
+                expected_sha256=expected_digest,
+            )
 
+        transaction, stage_root = _begin_configpack_transaction()
         with zipfile.ZipFile(zip_path, "r") as zf:
             try:
                 manifest = json.loads(zf.read("configpack.json").decode("utf-8"))
             except KeyError:
                 raise ValueError("В архиве настроек нет configpack.json")
+            try:
+                embedded_version = int(manifest.get("version"))
+            except (TypeError, ValueError):
+                embedded_version = -1
+            if embedded_version != remote_version:
+                raise ValueError(
+                    "Версия архива настроек не совпадает с опубликованной"
+                )
+            owns = _normalise_configpack_paths(manifest.get("owns", []))
+            if not owns:
+                raise ValueError("В configpack.json нет списка owns")
 
-            owns = [str(p) for p in manifest.get("owns", []) if p]
-            for rel in owns:
-                if os.path.isabs(rel) or ".." in Path(rel).parts:
-                    raise ValueError("Небезопасный путь в configpack.json: %s" % rel)
-
-            members = _safe_zip_targets(zf, INSTANCE_DIR)
-
-            # Сносим то, что пак считает своим — иначе файлы, убранные из
-            # новой версии пака, остались бы лежать и продолжали работать.
-            for rel in owns:
-                target = INSTANCE_DIR / rel
-                if target.is_dir():
-                    shutil.rmtree(target, ignore_errors=True)
-                elif target.exists():
-                    target.unlink(missing_ok=True)
-
+            members = _safe_zip_targets(zf, stage_root)
+            payload_names = [
+                member.filename.replace("\\", "/").strip("/")
+                for member in members
+                if member.filename != "configpack.json"
+            ]
+            for name in payload_names:
+                if not any(name == rel or name.startswith(rel + "/") for rel in owns):
+                    raise ValueError(
+                        "Файл архива не объявлен в owns: %s" % name
+                    )
+            bad_member = zf.testzip()
+            if bad_member:
+                raise ValueError("Повреждён файл настроек: %s" % bad_member)
             total = len(members) or 1
             for index, member in enumerate(members, start=1):
                 if member.filename == "configpack.json":
                     continue
-                zf.extract(member, INSTANCE_DIR)
+                zf.extract(member, stage_root)
                 if progress_cb:
-                    progress_cb(int(index * 100 / total))
+                    progress_cb(70 + int(index * 25 / total))
 
-        # owns — всё, что пак «считает своим» (по нему чистим старое перед
-        # распаковкой). verify — только то, что реально легло на диск сейчас;
-        # по нему проверяем целостность на будущих запусках. Пути «только на
-        # удаление» (отсутствующие в архиве) в verify не попадают, поэтому
-        # пак больше не переустанавливается вхолостую.
-        verify = [rel for rel in owns if (INSTANCE_DIR / rel).exists()]
-        _atomic_write_json(CONFIGPACK_MARKER_FILE, {
-            "version": get_remote_configpack_version(),
+        # The marker participates in the same transaction.  A crash can never
+        # leave old files carrying the new version number (or vice versa).
+        verify = [rel for rel in owns if (stage_root / rel).exists()]
+        _atomic_write_json(stage_root / ".configpack.json", {
+            "version": remote_version,
             "owns": owns,
             "verify": verify,
+            "archive_sha256": expected_digest,
         })
+        if progress_cb:
+            progress_cb(95)
+        _commit_configpack_paths(
+            transaction, owns + [".configpack.json"])
+        transaction = None
+        success = True
 
         if status_cb:
             status_cb("Настройки сборки обновлены")
     except Exception as exc:
-        # Меню — это украшение. Из-за него нельзя не пустить человека в игру.
-        if status_cb:
-            status_cb("Настройки сборки поставить не вышло (%s) — играем дальше" % exc)
+        runtime_log(
+            "configpack_install_failed: %s", exc, level=logging.ERROR,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        if transaction is not None:
+            recover_interrupted_configpack_update(status_cb)
+            transaction = None
+        if had_working_pack:
+            if status_cb:
+                status_cb(
+                    "Не удалось обновить настройки — оставлена предыдущая "
+                    "рабочая версия"
+                )
+        else:
+            raise RuntimeError(
+                "Не удалось полностью установить настройки сборки. "
+                "Нажмите «Играть» ещё раз — загрузка продолжится."
+            ) from exc
     finally:
-        zip_path.unlink(missing_ok=True)
-        if progress_cb:
+        if success:
+            zip_path.unlink(missing_ok=True)
+        if progress_cb and (success or had_working_pack):
             progress_cb(100)
 
 
@@ -6611,7 +7431,9 @@ def check_for_launcher_update():
     return None
 
 
-def _find_modrinth_download(slug: str, mc_version: str, loaders: list, prefer_keyword: str = None):
+def _find_modrinth_download(
+        slug: str, mc_version: str, loaders: list,
+        prefer_keyword: str = None, include_metadata: bool = False):
     """Спрашивает у Modrinth (открытое API, без ключей) актуальный файл под
     нужную версию Minecraft для одного из указанных загрузчиков. Возвращает
     (имя_файла, прямая_ссылка) или (None, None), если ничего не нашлось."""
@@ -6645,7 +7467,7 @@ def _find_modrinth_download(slug: str, mc_version: str, loaders: list, prefer_ke
                 break
 
     if not versions:
-        return None, None
+        return (None, None, {}) if include_metadata else (None, None)
 
     chosen = None
     if prefer_keyword:
@@ -6666,10 +7488,93 @@ def _find_modrinth_download(slug: str, mc_version: str, loaders: list, prefer_ke
         version = versions[0]  # первая в списке — самая свежая подходящая
         files = version.get("files") or []
         if not files:
-            return None, None
+            return (None, None, {}) if include_metadata else (None, None)
         chosen = next((f for f in files if f.get("primary")), files[0])
 
-    return chosen.get("filename"), chosen.get("url")
+    result = (chosen.get("filename"), chosen.get("url"))
+    if not include_metadata:
+        return result
+    return result + (_normalise_modrinth_file_metadata(chosen),)
+
+
+def _normalise_modrinth_file_metadata(file_info: dict) -> dict:
+    hashes = {}
+    for algorithm, length in (("sha512", 128), ("sha1", 40)):
+        value = str(
+            ((file_info or {}).get("hashes") or {}).get(algorithm) or ""
+        ).lower()
+        if len(value) == length and re.fullmatch(r"[0-9a-f]+", value):
+            hashes[algorithm] = value
+    try:
+        size = max(0, int((file_info or {}).get("size") or 0))
+    except (TypeError, ValueError):
+        size = 0
+    return {"size": size, "hashes": hashes, "source": "modrinth"}
+
+
+def _modrinth_metadata_for_direct_url(url: str, filename: str) -> dict:
+    """Resolve integrity for one pinned cdn.modrinth.com version URL.
+
+    Production entries intentionally pin exact URLs to avoid two broad search
+    requests per mod.  Querying the exact version only when the official
+    fallback is actually needed preserves that speed while still enforcing
+    Modrinth's SHA-512/SHA-1.
+    """
+    parsed = urllib.parse.urlsplit(str(url or ""))
+    if parsed.netloc.lower() != "cdn.modrinth.com":
+        return {}
+    parts = [urllib.parse.unquote(part) for part in parsed.path.split("/") if part]
+    try:
+        version_index = parts.index("versions")
+        version_id = parts[version_index + 1]
+    except (ValueError, IndexError):
+        return {}
+    try:
+        version = _modrinth_api_get(
+            "https://api.modrinth.com/v2/version/%s"
+            % urllib.parse.quote(version_id),
+            timeout=8,
+        )
+    except Exception:
+        return {}
+    wanted = urllib.parse.unquote(str(filename or ""))
+    chosen = next(
+        (
+            item for item in (version or {}).get("files", [])
+            if urllib.parse.unquote(str(item.get("filename") or "")) == wanted
+        ),
+        None,
+    )
+    if not chosen:
+        return {}
+    metadata = _normalise_modrinth_file_metadata(chosen)
+    return metadata if metadata.get("hashes") else {}
+
+
+def _verify_modrinth_hashes(path: Path, hashes: dict) -> bool:
+    """Verify every digest published for one exact Modrinth file."""
+    expected = {}
+    for algorithm, length in (("sha512", 128), ("sha1", 40)):
+        value = str((hashes or {}).get(algorithm) or "").lower()
+        if len(value) == length and re.fullmatch(r"[0-9a-f]+", value):
+            expected[algorithm] = value
+    if not expected:
+        return False
+    digests = {name: hashlib.new(name) for name in expected}
+    try:
+        with open(Path(path), "rb") as source:
+            while True:
+                chunk = source.read(1024 * 1024)
+                if not chunk:
+                    break
+                for digest in digests.values():
+                    digest.update(chunk)
+    except OSError:
+        return False
+    return all(
+        secrets.compare_digest(digests[name].hexdigest(), value)
+        for name, value in expected.items()
+    )
 
 
 def install_extra_shaderpacks(status_cb=None, progress_cb=None) -> None:
@@ -7141,6 +8046,42 @@ def select_loading_bar_variant(status_cb=None):
         return None
 
 
+def _jar_cache_record(path: Path) -> dict:
+    return {
+        "size": path.stat().st_size,
+        "sha256": calculate_file_sha256(path),
+    }
+
+
+def _valid_cached_jar(path: Path, record=None) -> bool:
+    try:
+        if not path.is_file() or path.stat().st_size < 1024:
+            return False
+        if not zipfile.is_zipfile(path):
+            return False
+        if record:
+            if int(record.get("size", 0)) != path.stat().st_size:
+                return False
+            expected = parse_sha256_sidecar(record.get("sha256"))
+            if expected and not verify_file_sha256(path, expected):
+                return False
+        return True
+    except (OSError, ValueError, TypeError, zipfile.BadZipFile):
+        return False
+
+
+def _atomic_copy_file(source: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(
+        ".%s.%d.%d.tmp" % (target.name, os.getpid(), threading.get_ident())
+    )
+    try:
+        shutil.copy2(source, temporary)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
     """Скачивает доп. клиентские моды из CONFIG["EXTRA_CLIENT_MODS"] с
     Modrinth и кладёт в mods/. Скачивается каждый один раз в постоянный кэш
@@ -7163,12 +8104,21 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
     cache = APP_DATA_DIR / "extra_client_mods_cache"
     cache.mkdir(parents=True, exist_ok=True)
     marker = cache / ".installed.json"
+    integrity_marker = cache / ".integrity.json"
     installed = {}
+    integrity = {}
     if marker.exists():
         try:
             installed = json.loads(marker.read_text(encoding="utf-8"))
         except Exception:
             installed = {}
+    if integrity_marker.exists():
+        try:
+            integrity = json.loads(integrity_marker.read_text(encoding="utf-8"))
+            if not isinstance(integrity, dict):
+                integrity = {}
+        except Exception:
+            integrity = {}
 
     changed = False
     missing_required = []
@@ -7190,77 +8140,211 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
         if have and expected and have != expected:
             pending.append(entry)
             continue
-        if have and (cache / have).exists():
-            continue  # уже скачан в кэш
+        if have and _valid_cached_jar(cache / have, integrity.get(have)):
+            if have not in integrity:
+                integrity[have] = _jar_cache_record(cache / have)
+                changed = True
+            continue  # уже скачан и проверен в кэше
+        if have:
+            (cache / have).unlink(missing_ok=True)
+            installed.pop(slug, None)
+            changed = True
+        # Процесс могли закрыть после скачивания, но до записи маркера.
+        # Подхватываем уже готовый валидный JAR вместо повторной загрузки.
+        if expected and _valid_cached_jar(cache / expected, integrity.get(expected)):
+            installed[slug] = expected
+            if expected not in integrity:
+                integrity[expected] = _jar_cache_record(cache / expected)
+            changed = True
+            continue
         pending.append(entry)
 
+    progress_lock = threading.Lock()
+    progress_by_slug = {
+        str(entry.get("slug")): 0 for entry in pending if entry.get("slug")
+    }
+    completed_slugs = set()
+    progress_state = {"last": -1}
+
+    def _report_pending_progress(slug, pct, completed=False):
+        """Publish one monotonic aggregate while parallel files are in flight."""
+        if not progress_by_slug:
+            return
+        try:
+            value = max(0, min(100, int(pct)))
+        except (TypeError, ValueError):
+            return
+        key = str(slug)
+        with progress_lock:
+            progress_by_slug[key] = max(progress_by_slug.get(key, 0), value)
+            if completed:
+                completed_slugs.add(key)
+                progress_by_slug[key] = 100
+            overall = int(
+                sum(progress_by_slug.values()) / len(progress_by_slug)
+            )
+            if overall <= progress_state["last"]:
+                return
+            progress_state["last"] = overall
+            if status_cb:
+                try:
+                    status_cb(
+                        "Моды и дополнения: %d%% · готово %d из %d"
+                        % (overall, len(completed_slugs),
+                           len(progress_by_slug))
+                    )
+                except Exception:
+                    pass
+            if progress_cb:
+                try:
+                    progress_cb(overall)
+                except Exception:
+                    pass
+
     def _fetch_one(entry):
-        """Качает один мод. Возвращает (slug, filename|None, required, label).
+        """Качает один мод. Возвращает данные + локальную запись целостности.
         Общий словарь installed не трогает — результат мёржит главный поток,
         чтобы не ловить гонки."""
         slug = entry.get("slug")
         label = entry.get("label", slug)
         required = bool(entry.get("required"))
         try:
+            modrinth_metadata = {}
             # Прямая ссылка (наш GitHub-релиз или CDN) — так доставляются моды,
             # которых нет на Modrinth. Дешевле, чем перезаливать modpack.zip.
             if entry.get("url"):
                 filename = entry.get("filename") or entry["url"].rsplit("/", 1)[-1]
                 url = entry["url"]
             else:
-                filename, url = _find_modrinth_download(
-                    slug, CONFIG["MC_VERSION"], [CONFIG["MOD_LOADER"]]
+                filename, url, modrinth_metadata = _find_modrinth_download(
+                    slug, CONFIG["MC_VERSION"], [CONFIG["MOD_LOADER"]],
+                    include_metadata=True,
                 )
             if (not filename or not url) and entry.get("fallback_url"):
                 url = entry["fallback_url"]
                 filename = entry.get("fallback_filename") or url.rsplit("/", 1)[-1]
+                modrinth_metadata = {}
             if not filename or not url:
-                if status_cb:
-                    status_cb("Мод «%s» недоступен для %s — пропускаю."
-                              % (label, CONFIG["MC_VERSION"]))
-                return (slug, None, required, label)
-            if status_cb:
-                status_cb("Скачиваю мод «%s»..." % label)
-            # Источники по порядку: зеркало на нашем игровом сервере (открыт
-            # у любого, кто может играть), затем основной CDN, затем запасной.
-            # У зеркала retries=1: нет файла (404) — сразу к официальному.
+                return (slug, None, required, label, None)
+            # Источники: Bunny (если лицензия разрешает зеркало), затем
+            # официальный CDN/запасной URL.  Старое BlueMap-зеркало исключено.
             sources = []
             if entry.get("mirror") and CONFIG.get("MOD_MIRROR_BASE"):
-                sources.append((CONFIG["MOD_MIRROR_BASE"]
-                                + urllib.parse.quote(filename), filename, 1))
-            sources.append((url, filename, 5))
+                mirror_url = (
+                    CONFIG["MOD_MIRROR_BASE"] + urllib.parse.quote(filename)
+                )
+                mirror_digest = parse_sha256_sidecar(_fetch_tiny_text(
+                    [_adjacent_sidecar_url(mirror_url)], timeout=5))
+                # Never trust a mutable mirror merely because it opens as ZIP.
+                # Bunny is eligible only when the adjacent SHA-256 is valid.
+                if mirror_digest:
+                    sources.append((
+                        mirror_url, filename, 1, mirror_digest,
+                        {}, int(modrinth_metadata.get("size", 0) or 0),
+                        False,
+                    ))
+            sources.append((
+                url, filename, 4, entry.get("sha256"),
+                modrinth_metadata.get("hashes", {}),
+                int(modrinth_metadata.get("size", 0)
+                    or entry.get("size", 0) or 0),
+                (
+                    modrinth_metadata.get("source") == "modrinth"
+                    or urllib.parse.urlsplit(url).netloc.lower()
+                    == "cdn.modrinth.com"
+                ),
+            ))
             fb = entry.get("fallback_url")
             if fb and fb != url:
-                sources.append((fb, entry.get("fallback_filename")
-                                or fb.rsplit("/", 1)[-1], 5))
+                sources.append((
+                    fb, entry.get("fallback_filename")
+                    or fb.rsplit("/", 1)[-1], 4,
+                    entry.get("fallback_sha256"), {},
+                    int(entry.get("fallback_size", 0) or 0),
+                    False,
+                ))
             last_exc = None
-            for src_url, src_name, src_retries in sources:
+            for source_index, (
+                    src_url, src_name, src_retries, src_digest,
+                    src_modrinth_hashes, src_size, src_is_modrinth
+            ) in enumerate(sources):
+                target = cache / src_name
                 try:
-                    download_file(src_url, cache / src_name, retries=src_retries)
-                    return (slug, src_name, required, label)
+                    if src_is_modrinth and not src_modrinth_hashes:
+                        exact_metadata = _modrinth_metadata_for_direct_url(
+                            src_url, src_name
+                        )
+                        src_modrinth_hashes = exact_metadata.get(
+                            "hashes", {}
+                        )
+                        src_size = int(
+                            exact_metadata.get("size", 0) or src_size or 0
+                        )
+                        if not src_modrinth_hashes:
+                            raise IOError(
+                                "Modrinth не подтвердил контрольную сумму "
+                                "точной версии файла"
+                            )
+
+                    def _file_progress(pct, _slug=slug):
+                        _report_pending_progress(_slug, pct)
+
+                    download_file(
+                        src_url, target, _file_progress,
+                        retries=src_retries,
+                        expected_size=src_size,
+                        expected_sha256=src_digest,
+                    )
+                    if (
+                        src_is_modrinth
+                        and not _verify_modrinth_hashes(
+                            target, src_modrinth_hashes
+                        )
+                    ):
+                        target.unlink(missing_ok=True)
+                        raise IOError(
+                            "хэш официального файла Modrinth не совпадает"
+                        )
+                    if not _valid_cached_jar(target):
+                        target.unlink(missing_ok=True)
+                        raise IOError("скачанный файл не является целым JAR")
+                    return (
+                        slug, src_name, required, label,
+                        _jar_cache_record(target),
+                    )
                 except Exception as exc:  # noqa: BLE001
                     last_exc = exc
+                    if source_index + 1 < len(sources):
+                        target.with_name(target.name + ".part").unlink(
+                            missing_ok=True)
+                        _clear_parallel_state(target)
             raise last_exc if last_exc else RuntimeError("нет источников")
         except Exception:
-            if status_cb:
-                if required:
-                    status_cb("Не удалось скачать мод «%s» — он обязателен." % label)
-                else:
-                    status_cb("Не удалось скачать мод «%s» — пропускаю, это не критично." % label)
-            return (slug, None, required, label)
+            return (slug, None, required, label, None)
 
     if pending:
         # 6 параллельных загрузок: больше почти не ускоряет (упираемся в
         # канал), а CDN за агрессию может резать скорость.
-        from concurrent.futures import ThreadPoolExecutor
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        if status_cb:
+            status_cb("Скачиваю недостающие моды: %d" % len(pending))
         with ThreadPoolExecutor(max_workers=6) as pool:
-            results = list(pool.map(_fetch_one, pending))
-        for slug, filename, required, label in results:
-            if filename:
-                installed[slug] = filename
-                changed = True
-            elif required:
-                missing_required.append(label)
+            futures = [pool.submit(_fetch_one, entry) for entry in pending]
+            for future in as_completed(futures):
+                slug, filename, required, label, record = future.result()
+                _report_pending_progress(slug, 100, completed=True)
+                if filename:
+                    installed[slug] = filename
+                    integrity[filename] = record
+                    changed = True
+                    # Save after every completed file: closing the launcher at
+                    # 39/40 never causes those 39 downloads to repeat.
+                    _atomic_write_json(marker, installed)
+                    _atomic_write_json(integrity_marker, integrity)
+                elif required:
+                    missing_required.append(label)
+    elif progress_cb:
+        progress_cb(100)
 
     # Мод убрали из списка — убираем и у игрока. Без этого выбывший мод
     # оставался бы в mods/ навсегда: список копируется из маркера целиком.
@@ -7269,6 +8353,7 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
     actual = {e.get("slug") for e in entries if e.get("slug")}
     for slug in [s for s in installed if s not in actual]:
         filename = installed.pop(slug)
+        integrity.pop(filename, None)
         changed = True
         for stale in (mods_dir / filename, cache / filename):
             try:
@@ -7277,14 +8362,35 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
                 pass  # файл занят игрой — удалится при следующем запуске
 
     if changed:
-        marker.write_text(json.dumps(installed), encoding="utf-8")
+        _atomic_write_json(marker, installed)
+        _atomic_write_json(integrity_marker, integrity)
 
     # Копируем всё из кэша в mods/ (быстро, из интернета уже не тянем)
     mods_dir.mkdir(parents=True, exist_ok=True)
     for slug, filename in installed.items():
         src = cache / filename
-        if src.exists() and not (mods_dir / filename).exists():
-            shutil.copy2(src, mods_dir / filename)
+        target = mods_dir / filename
+        if not _valid_cached_jar(src, integrity.get(filename)):
+            if CONFIG.get("EXTRA_CLIENT_MODS"):
+                label = next(
+                    (
+                        entry.get("label", slug)
+                        for entry in entries if entry.get("slug") == slug
+                    ),
+                    slug,
+                )
+                if next(
+                    (
+                        bool(entry.get("required"))
+                        for entry in entries if entry.get("slug") == slug
+                    ),
+                    False,
+                ) and label not in missing_required:
+                    missing_required.append(label)
+            continue
+        if not _valid_cached_jar(target, integrity.get(filename)):
+            target.unlink(missing_ok=True)
+            _atomic_copy_file(src, target)
 
     # Старые версии сносим ТОЛЬКО после того, как новая легла в mods/. Мод,
     # который обновляется поверх модпака, иначе рискует исчезнуть совсем:
@@ -7310,7 +8416,11 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
             continue
         label = entry.get("label", entry.get("slug"))
         filename = installed.get(entry.get("slug"))
-        if (not filename or not (mods_dir / filename).exists()) and label not in missing_required:
+        if (
+            not filename
+            or not _valid_cached_jar(
+                mods_dir / filename, integrity.get(filename))
+        ) and label not in missing_required:
             missing_required.append(label)
 
     # Моды, выброшенные из сборки (см. CONFIG["REMOVED_MODS"]): их принёс
@@ -7322,6 +8432,197 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
             pass  # файл занят — удалится при следующем запуске
 
     return missing_required
+
+
+def _managed_mod_filenames() -> set:
+    names = set()
+    manifest = _load_cached_modpack_manifest()
+    for item in _normalise_modpack_manifest(manifest):
+        names.add(item["name"].lower())
+    try:
+        installed = json.loads(
+            (
+                APP_DATA_DIR / "extra_client_mods_cache" / ".installed.json"
+            ).read_text(encoding="utf-8")
+        )
+        if isinstance(installed, dict):
+            names.update(
+                str(filename).lower()
+                for filename in installed.values() if filename
+            )
+    except Exception:
+        pass
+    marker = _read_configpack_marker()
+    for rel in marker.get("verify", []):
+        clean = str(rel).replace("\\", "/")
+        if clean.startswith("mods/") and clean.lower().endswith(".jar"):
+            names.add(clean[5:].lower())
+    for entry in CONFIG.get("EXTRA_CLIENT_MODS", []):
+        filename = entry.get("filename")
+        if filename:
+            names.add(str(filename).lower())
+    return names
+
+
+def _preferred_mod_filenames() -> set:
+    names = {
+        item["name"].lower()
+        for item in _normalise_modpack_manifest(
+            _load_cached_modpack_manifest())
+    }
+    names.update({
+        str(entry.get("filename")).lower()
+        for entry in CONFIG.get("EXTRA_CLIENT_MODS", [])
+        if entry.get("filename")
+    })
+    marker = _read_configpack_marker()
+    for rel in marker.get("verify", []):
+        clean = str(rel).replace("\\", "/")
+        if clean.startswith("mods/") and clean.lower().endswith(".jar"):
+            names.add(clean[5:].lower())
+    return names
+
+
+def _jar_mod_ids(path: Path) -> set:
+    ids = set()
+    try:
+        with zipfile.ZipFile(path, "r") as jar:
+            for metadata_name in (
+                "META-INF/neoforge.mods.toml",
+                "META-INF/mods.toml",
+            ):
+                try:
+                    text = jar.read(metadata_name).decode(
+                        "utf-8", errors="replace")
+                except KeyError:
+                    continue
+                # ``modId`` also appears in every ``[[dependencies.*]]``
+                # block.  A global regex therefore treats common
+                # dependencies such as minecraft/neoforge/create as hundreds
+                # of duplicate installed mods.  Parse only the top-level
+                # ``[[mods]]`` entries; keep a scoped fallback for uncommon
+                # metadata that Python's strict TOML parser cannot read.
+                try:
+                    import tomllib
+                    metadata = tomllib.loads(text)
+                    mods = metadata.get("mods", [])
+                    if isinstance(mods, list):
+                        for mod in mods:
+                            if isinstance(mod, dict) and mod.get("modId"):
+                                ids.add(str(mod["modId"]).lower())
+                except Exception:
+                    inside_mod = False
+                    for line in text.splitlines():
+                        if re.match(r"^\s*\[\[\s*mods\s*\]\]\s*$", line):
+                            inside_mod = True
+                            continue
+                        if re.match(r"^\s*\[\[", line):
+                            inside_mod = False
+                            continue
+                        if not inside_mod:
+                            continue
+                        match = re.match(
+                            r'^\s*modId\s*=\s*["\']([^"\']+)["\']',
+                            line,
+                        )
+                        if match:
+                            ids.add(match.group(1).lower())
+            if not ids:
+                try:
+                    fabric = json.loads(
+                        jar.read("fabric.mod.json").decode("utf-8", "replace"))
+                    if fabric.get("id"):
+                        ids.add(str(fabric["id"]).lower())
+                except (KeyError, ValueError, TypeError):
+                    pass
+    except (OSError, zipfile.BadZipFile):
+        return set()
+    return ids
+
+
+def _quarantine_mod(path: Path, status_cb=None) -> None:
+    quarantine = APP_DATA_DIR / "quarantine_mods"
+    quarantine.mkdir(parents=True, exist_ok=True)
+    target = quarantine / path.name
+    if target.exists():
+        target = quarantine / (
+            "%s_%d%s" % (path.stem, int(time.time()), path.suffix)
+        )
+    shutil.move(str(path), str(target))
+    if status_cb:
+        status_cb("Убран конфликтующий мод: %s" % path.name)
+
+
+def validate_client_before_launch(status_cb=None, progress_cb=None) -> None:
+    """Final gate: no broken JAR, blocked file or duplicate modId may launch."""
+    mods_dir = INSTANCE_DIR / "mods"
+    jars = sorted(mods_dir.glob("*.jar")) if mods_dir.is_dir() else []
+    managed = _managed_mod_filenames()
+    preferred = _preferred_mod_filenames()
+    obsolete = {
+        str(filename).lower()
+        for entry in CONFIG.get("EXTRA_CLIENT_MODS", [])
+        for filename in entry.get("replaces", [])
+    }
+    blocked = [
+        str(pattern).lower()
+        for pattern in CONFIG.get("REMOVED_MODS", []) if pattern
+    ]
+    if status_cb:
+        status_cb("Финальная проверка модов")
+
+    mod_ids = {}
+    total = len(jars) or 1
+    for index, jar in enumerate(jars, start=1):
+        lower_name = jar.name.lower()
+        if any(pattern in lower_name for pattern in blocked):
+            _quarantine_mod(jar, status_cb)
+            continue
+        if lower_name in obsolete:
+            _quarantine_mod(jar, status_cb)
+            continue
+        if not _valid_cached_jar(jar):
+            if lower_name in managed:
+                jar.unlink(missing_ok=True)
+                raise RuntimeError(
+                    "Повреждён обязательный мод %s. "
+                    "Нажмите «Играть» ещё раз — он докачается." % jar.name
+                )
+            _quarantine_mod(jar, status_cb)
+            continue
+        for mod_id in _jar_mod_ids(jar):
+            mod_ids.setdefault(mod_id, []).append(jar)
+        if progress_cb and (index == total or index % 5 == 0):
+            progress_cb(int(index * 100 / total))
+
+    for mod_id, paths in mod_ids.items():
+        if len(paths) < 2:
+            continue
+        preferred_paths = [
+            path for path in paths if path.name.lower() in preferred
+        ]
+        if len(preferred_paths) == 1:
+            keep = preferred_paths[0]
+            for path in paths:
+                if path != keep and path.exists():
+                    _quarantine_mod(path, status_cb)
+            continue
+        managed_paths = [
+            path for path in paths if path.name.lower() in managed
+        ]
+        if len(managed_paths) == 1:
+            keep = managed_paths[0]
+            for path in paths:
+                if path != keep and path.exists():
+                    _quarantine_mod(path, status_cb)
+            continue
+        names = ", ".join(path.name for path in paths)
+        raise RuntimeError(
+            "Найдены две версии одного мода (%s): %s. "
+            "Автоматическая проверка остановила запуск." % (mod_id, names)
+        )
+    if progress_cb:
+        progress_cb(100)
 
 
 WINDOW_ICON_MOD_SLUG = "custom-window-title"
@@ -8092,18 +9393,41 @@ def repair_installation(status_cb=None, progress_cb=None) -> None:
     поставилось заново с нуля. Миры (saves), скриншоты и настройки
     (options.txt), установленные игроком ресурспаки и шейдеры не трогает."""
     recover_interrupted_modpack_update(status_cb)
+    recover_interrupted_configpack_update(status_cb)
     total = len(REPAIRABLE_FOLDERS) or 1
     for index, folder in enumerate(REPAIRABLE_FOLDERS, start=1):
         target = INSTANCE_DIR / folder
         if target.exists():
             if status_cb:
                 status_cb("Удаляю старые файлы: %s..." % folder)
-            shutil.rmtree(target, ignore_errors=True)
+            last_error = None
+            for attempt in range(1, 5):
+                try:
+                    _remove_path(target)
+                    if target.exists():
+                        raise PermissionError(
+                            "папка осталась после удаления: %s" % target)
+                    last_error = None
+                    break
+                except OSError as exc:
+                    last_error = exc
+                    if attempt < 4:
+                        if status_cb:
+                            status_cb(
+                                "Файл занят — повтор удаления %d/4"
+                                % (attempt + 1)
+                            )
+                        time.sleep(attempt)
+            if last_error is not None:
+                raise PermissionError(
+                    "Не удалось удалить %s. Закройте игру и повторите."
+                    % target
+                ) from last_error
         if progress_cb:
             progress_cb(int(index * 100 / total))
 
     if OPTIONAL_CACHE_DIR.exists():
-        shutil.rmtree(OPTIONAL_CACHE_DIR, ignore_errors=True)
+        _remove_path(OPTIONAL_CACHE_DIR)
 
     MODPACK_VERSION_FILE.unlink(missing_ok=True)
     INSTALL_MARKER_FILE.unlink(missing_ok=True)
@@ -8195,18 +9519,45 @@ class LaunchProgress:
                 done = sum(w for _, w in self._stages[:position])
                 break
         prefix = "Шаг %d/%d · %s" % (index, len(self._stages), title)
+        state = {"last_pct": -1, "last_status": None}
+        lock = threading.Lock()
 
         def stage_status(text=""):
             text = str(text or "").strip()
-            self._status_cb("%s — %s" % (prefix, text) if text else prefix + "...")
+            rendered = (
+                "%s — %s" % (prefix, text) if text else prefix + "..."
+            )
+            with lock:
+                if rendered == state["last_status"]:
+                    return
+                state["last_status"] = rendered
+            self._status_cb(rendered)
 
         def stage_progress(pct):
             pct = min(100, max(0, int(pct or 0)))
+            with lock:
+                if pct <= state["last_pct"]:
+                    return
+                state["last_pct"] = pct
             overall = (done + weight * pct / 100.0) * 100.0 / self._total
             self._progress_cb(int(overall))
-            self._status_cb("%s — %d%%" % (prefix, pct))
+            rendered = "%s — %d%%" % (prefix, pct)
+            with lock:
+                state["last_status"] = rendered
+            self._status_cb(rendered)
 
         return stage_status, stage_progress
+
+
+def _progress_slice(progress_cb, start: int, end: int):
+    start = int(start)
+    span = max(0, int(end) - start)
+
+    def sliced(pct):
+        value = min(100, max(0, int(pct or 0)))
+        progress_cb(start + int(span * value / 100))
+
+    return sliced
 
 
 def install_minecraft_and_modloader(progress: "LaunchProgress") -> str:
@@ -8449,6 +9800,7 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
         )
     INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
     recover_interrupted_modpack_update(status_cb)
+    recover_interrupted_configpack_update(status_cb)
     # Личные настройки: вернуть из бэкапа (если папку переустановили/снесли),
     # затем засеять дефолтные бинды новичку, затем обновить бэкап.
     restore_player_settings()
@@ -8507,7 +9859,9 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
         remove_blocked_mods(extras_status)
         harvest_optional_mods(extras_status)
         restore_no_longer_optional_mods(extras_status)
-        apply_optional_mods(extras_status, extras_progress)
+        apply_optional_mods(
+            extras_status, _progress_slice(extras_progress, 0, 15))
+        extras_progress(15)
 
     ensure_pinned_server(extras_status)
     # Режим «очень старая видеокарта» (no_sodium) — это заведомо очень слабый ПК:
@@ -8519,15 +9873,21 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     apply_low_end_mode(low_end_enabled or weak_gpu, extras_status)
     apply_forced_options(extras_status)
     disable_fullscreen_once(extras_status)
-    install_extra_shaderpacks(extras_status, extras_progress)
+    install_extra_shaderpacks(
+        extras_status, _progress_slice(extras_progress, 15, 30))
+    extras_progress(30)
     # Faithful 32x + апскейл модов. После шейдеров: обе загрузки некритичные,
     # но паки заметнее — их статус пусть будет последним на экране.
-    install_auto_resource_packs(extras_status, extras_progress)
+    install_auto_resource_packs(
+        extras_status, _progress_slice(extras_progress, 30, 45))
+    extras_progress(45)
     disable_shaders_once(extras_status)
     set_russian_once(extras_status)
     fix_key_conflicts_once(extras_status)
     install_game_window_icon(extras_status)
-    missing_required = install_extra_client_mods(extras_status, extras_progress)
+    missing_required = install_extra_client_mods(
+        extras_status, _progress_slice(extras_progress, 45, 100))
+    extras_progress(100)
     install_skin_config(extras_status)
 
     # Embeddium пробовали как замену Sodium для старых видеокарт, но в ЭТОЙ
@@ -8554,13 +9914,16 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     # тест-режим пересобирает mods/ — поэтому пак настроек кладётся в самом
     # конце, когда никто уже не тронет его файлы.
     configpack_status, configpack_progress = progress.scoped("Настройки сборки")
-    install_configpack(configpack_status, configpack_progress)
+    install_configpack(
+        configpack_status, _progress_slice(configpack_progress, 0, 90))
     install_ultimine_sticky(configpack_status)
     # После configpack: install_modpack() при обновлении сборки стирает
     # config/ целиком, а здесь конфиг уже никто не перезапишет.
     install_toast_config(configpack_status)
     fix_early_loading_provider(configpack_status)
     select_loading_bar_variant(configpack_status)
+    validate_client_before_launch(
+        configpack_status, _progress_slice(configpack_progress, 90, 100))
 
     progress_cb(100)
     status_cb("Запуск игры...")

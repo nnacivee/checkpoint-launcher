@@ -1,5 +1,6 @@
 import sys
 import tempfile
+import threading
 import types
 import unittest
 from pathlib import Path
@@ -199,6 +200,9 @@ class WebUiRuntimeTests(unittest.TestCase):
 
         with (
             mock.patch.object(
+                webui.L, "get_active_game_session", return_value=None
+            ),
+            mock.patch.object(
                 webui.L, "load_settings",
                 return_value={"memory_auto": False, "memory_mb": 4096},
             ),
@@ -218,6 +222,9 @@ class WebUiRuntimeTests(unittest.TestCase):
         api = webui.Api()
         api._window = window
         with (
+            mock.patch.object(
+                webui.L, "get_active_game_session", return_value=None
+            ),
             mock.patch.object(
                 webui.L, "load_settings",
                 return_value={"memory_auto": False, "memory_mb": 4096},
@@ -245,6 +252,9 @@ class WebUiRuntimeTests(unittest.TestCase):
         api._window = window
         with (
             mock.patch.object(
+                webui.L, "get_active_game_session", return_value=None
+            ),
+            mock.patch.object(
                 webui.L, "load_settings",
                 return_value={"memory_auto": False, "memory_mb": 4096},
             ),
@@ -260,6 +270,219 @@ class WebUiRuntimeTests(unittest.TestCase):
 
         self.assertEqual(events, ["restore", "show"])
         self.assertFalse(api._launching)
+
+    def test_play_removes_one_validated_corrupt_file_and_retries_once(self):
+        process = mock.Mock(returncode=0)
+        telemetry = []
+        api = webui.Api()
+        api._launch_telemetry = lambda state, text="", progress=None, phase=None: (
+            telemetry.append((state, text, progress, phase, api._launching))
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            bad = Path(td) / "broken-library.jar"
+            bad.write_bytes(b"broken")
+            checksum_error = RuntimeError("wrong checksum")
+            with (
+                mock.patch.object(
+                    webui.L, "get_active_game_session", return_value=None
+                ),
+                mock.patch.object(
+                    webui.L, "load_settings",
+                    return_value={
+                        "memory_auto": False,
+                        "memory_mb": 4096,
+                        "minimize_on_launch": False,
+                    },
+                ),
+                mock.patch.object(webui.L, "update_settings"),
+                mock.patch.object(
+                    webui.L, "launch_game",
+                    side_effect=[checksum_error, process],
+                ) as launch,
+                mock.patch.object(
+                    webui.L, "find_corrupted_file", return_value=bad
+                ) as find_bad,
+                mock.patch.object(webui.L, "runtime_log"),
+                mock.patch.object(webui.L, "record_game_finished"),
+                mock.patch.object(
+                    webui.threading, "Thread", side_effect=self._immediate_thread
+                ),
+            ):
+                result = api.play("Player")
+
+        self.assertEqual(result, {"ok": True, "started": True})
+        self.assertEqual(launch.call_count, 2)
+        find_bad.assert_called_once_with(checksum_error)
+        self.assertFalse(bad.exists())
+        self.assertIn(
+            (
+                "busy",
+                "Файл повреждён, скачиваю заново: broken-library.jar",
+                None,
+                "repairing",
+                True,
+            ),
+            telemetry,
+        )
+        self.assertEqual(telemetry[-1][:4], (
+            "idle", "Готово к запуску", None, "exited"
+        ))
+        self.assertFalse(telemetry[-1][4])
+        self.assertFalse(api._launching)
+
+    def test_play_unrecoverable_error_unlocks_before_terminal_telemetry(self):
+        telemetry = []
+        api = webui.Api()
+        api._launch_telemetry = lambda state, text="", progress=None, phase=None: (
+            telemetry.append((state, text, phase, api._launching))
+        )
+        with (
+            mock.patch.object(
+                webui.L, "get_active_game_session", return_value=None
+            ),
+            mock.patch.object(
+                webui.L, "load_settings",
+                return_value={"memory_auto": False, "memory_mb": 4096},
+            ),
+            mock.patch.object(webui.L, "update_settings"),
+            mock.patch.object(
+                webui.L, "launch_game", side_effect=RuntimeError("boom")
+            ),
+            mock.patch.object(
+                webui.L, "find_corrupted_file", return_value=None
+            ),
+            mock.patch.object(webui.L, "runtime_log"),
+            mock.patch.object(
+                webui.threading, "Thread", side_effect=self._immediate_thread
+            ),
+        ):
+            result = api.play("Player")
+
+        self.assertEqual(result, {"ok": True, "started": True})
+        self.assertEqual(telemetry[-1], ("error", "boom", "failed", False))
+        self.assertFalse(api._launching)
+
+    def test_launch_telemetry_is_nonblocking_coalesced_and_keeps_terminal(self):
+        api = webui.Api()
+        entered = threading.Event()
+        release_webview = threading.Event()
+        producer_done = threading.Event()
+        calls = []
+
+        def evaluate_js(code):
+            calls.append(code)
+            entered.set()
+            release_webview.wait(2.0)
+
+        api._window = types.SimpleNamespace(evaluate_js=evaluate_js)
+        try:
+            api._launch_telemetry(
+                "busy", "Загрузка сборки", 1, phase="modpack"
+            )
+            self.assertTrue(entered.wait(1.0))
+
+            def produce():
+                for progress in range(2, 100):
+                    api._launch_telemetry(
+                        "busy", "Загрузка сборки", progress, phase="modpack"
+                    )
+                api._launch_telemetry(
+                    "error", "Сеть недоступна", phase="failed"
+                )
+                producer_done.set()
+
+            producer = threading.Thread(target=produce)
+            producer.start()
+            self.assertTrue(
+                producer_done.wait(0.5),
+                "network callback blocked behind evaluate_js",
+            )
+            producer.join(1.0)
+
+            release_webview.set()
+            api._shutdown_telemetry_dispatcher(timeout=2.0)
+        finally:
+            release_webview.set()
+            api._shutdown_telemetry_dispatcher(timeout=2.0)
+
+        self.assertEqual(len(calls), 3)
+        self.assertIn('"progress": 1', calls[0])
+        self.assertIn('"progress": 99', calls[1])
+        self.assertIn('"state": "error"', calls[2])
+        self.assertIn('"phase": "failed"', calls[2])
+
+    def test_repair_telemetry_cannot_block_file_worker(self):
+        api = webui.Api()
+        entered = threading.Event()
+        release_webview = threading.Event()
+        producer_done = threading.Event()
+        calls = []
+
+        def evaluate_js(code):
+            calls.append(code)
+            entered.set()
+            release_webview.wait(2.0)
+
+        api._window = types.SimpleNamespace(evaluate_js=evaluate_js)
+        try:
+            api._repair_state("progress", "Проверка файлов", 1)
+            self.assertTrue(entered.wait(1.0))
+
+            def produce():
+                for progress in range(2, 100):
+                    api._repair_state(
+                        "progress", "Проверка файлов", progress
+                    )
+                api._repair_state("complete", "Клиент восстановлен", 100)
+                producer_done.set()
+
+            producer = threading.Thread(target=produce)
+            producer.start()
+            self.assertTrue(
+                producer_done.wait(0.5),
+                "repair worker blocked behind evaluate_js",
+            )
+            producer.join(1.0)
+            release_webview.set()
+            api._shutdown_telemetry_dispatcher(timeout=2.0)
+        finally:
+            release_webview.set()
+            api._shutdown_telemetry_dispatcher(timeout=2.0)
+
+        self.assertEqual(len(calls), 3)
+        self.assertIn('"progress": 1', calls[0])
+        self.assertIn('"progress": 99', calls[1])
+        self.assertIn('"state": "complete"', calls[2])
+
+    def test_launch_telemetry_never_coalesces_terminal_states(self):
+        api = webui.Api()
+        entered = threading.Event()
+        release_webview = threading.Event()
+        calls = []
+
+        def evaluate_js(code):
+            calls.append(code)
+            entered.set()
+            release_webview.wait(2.0)
+
+        api._window = types.SimpleNamespace(evaluate_js=evaluate_js)
+        try:
+            api._launch_telemetry("busy", "Подготовка", 1, phase="queued")
+            self.assertTrue(entered.wait(1.0))
+            api._launch_telemetry("error", "Первая ошибка", phase="failed")
+            api._launch_telemetry("idle", "Готово", phase="exited")
+            release_webview.set()
+            api._shutdown_telemetry_dispatcher(timeout=2.0)
+        finally:
+            release_webview.set()
+            api._shutdown_telemetry_dispatcher(timeout=2.0)
+
+        self.assertEqual(len(calls), 3)
+        self.assertIn('"state": "error"', calls[1])
+        self.assertIn("Первая ошибка", calls[1])
+        self.assertIn('"state": "idle"', calls[2])
+        self.assertIn("Готово", calls[2])
 
     def test_release_single_instance_lock_closes_server_and_clears_owner(self):
         server = mock.Mock()
