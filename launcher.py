@@ -403,7 +403,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.13",
+    "LAUNCHER_VERSION": "1.66.14",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -415,6 +415,18 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.14",
+            "date": "25 июля 2026",
+            "changes": [
+                "Исправлены дубли модов: лаунчер оставляет только одну "
+                "совместимую версию каждой библиотеки и больше не возвращает "
+                "старые JAR после очистки.",
+                "Убраны Create: Power Loader, Diesel Generators, Winery, "
+                "Confectionery и Central Kitchen — лишние файлы удалятся "
+                "автоматически при запуске.",
+            ],
+        },
         {
             "version": "1.66.13",
             "date": "23 июля 2026",
@@ -2017,8 +2029,9 @@ CONFIG = {
         # оставляем (по умолчанию мод глушил бы и их).
         {"slug": "placebo",
          "mirror": True,
-         "url": "https://cdn.modrinth.com/data/tCkE8p2N/versions/nU7CXkMr/Placebo-1.21.1-9.9.1.jar",
-         "filename": "Placebo-1.21.1-9.9.1.jar",
+         "url": "https://cdn.modrinth.com/data/tCkE8p2N/versions/1Ypo4tf4/Placebo-1.21.1-9.9.2.jar",
+         "filename": "Placebo-1.21.1-9.9.2.jar",
+         "replaces": ["Placebo-1.21.1-9.9.1.jar"],
          "label": "Placebo (библиотека для Toast Control)"},
         {"slug": "toast-control",
          "mirror": True,
@@ -2117,15 +2130,20 @@ CONFIG = {
         # размеры сборок Modrinth и CurseForge совпадают, байты нет. Новое имя
         # означает новый .part, огрызки остаются лежать безобидным мусором.
         {"slug": "rhino-2101-2-7-85",
-         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/rhino-2101.2.7-build.85.jar",
+         "url": "https://cdn.modrinth.com/data/sk9knFPE/versions/SqkDvOLG/rhino-2101.2.8-build.91.jar",
          "mirror": True,
-         "filename": "rhino-2101.2.7-85.jar",
+         "filename": "rhino-2101.2.8-build.91.jar",
+         "replaces": [
+             "rhino-2101.2.7-85.jar",
+             "rhino-2101.2.7-build.85.jar",
+         ],
          "required": True,
          "label": "Rhino (движок скриптов)"},
         {"slug": "kubejs-2101-7-2-368",
-         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/kubejs-neoforge-2101.7.2-build.368.jar",
+         "url": "https://cdn.modrinth.com/data/umyGl7zF/versions/F2nzeC19/kubejs-neoforge-2101.7.2-build.368.jar",
          "mirror": True,
-         "filename": "kubejs-2101.7.2-368.jar",
+         "filename": "kubejs-neoforge-2101.7.2-build.368.jar",
+         "replaces": ["kubejs-2101.7.2-368.jar"],
          "required": True,
          "label": "KubeJS (эпохи и рецепты)"},
         # Единственный в списке, кому нужна пара на сервере: голос ходит между
@@ -2141,10 +2159,11 @@ CONFIG = {
         # URL собран по стандартной maven-раскладке; если он окажется битым,
         # игрок останется ровно там же, где был без запасного пути.
         {"slug": "simple-voice-chat",
-         "url": "https://cdn.modrinth.com/data/9eGKb6K1/versions/8xOu3Um5/voicechat-neoforge-1.21.1-2.6.20.jar",
-         "filename": "voicechat-neoforge-1.21.1-2.6.20.jar",
-         "fallback_url": "https://maven.maxhenkel.de/repository/public/de/maxhenkel/voicechat/voicechat-neoforge-1.21.1/2.6.20/voicechat-neoforge-1.21.1-2.6.20.jar",
-         "fallback_filename": "voicechat-neoforge-1.21.1-2.6.20.jar",
+         "url": "https://cdn.modrinth.com/data/9eGKb6K1/versions/dbzBkplC/voicechat-neoforge-1.21.1-2.6.21.jar",
+         "filename": "voicechat-neoforge-1.21.1-2.6.21.jar",
+         "fallback_url": "https://maven.maxhenkel.de/repository/public/de/maxhenkel/voicechat/voicechat-neoforge-1.21.1/2.6.21/voicechat-neoforge-1.21.1-2.6.21.jar",
+         "fallback_filename": "voicechat-neoforge-1.21.1-2.6.21.jar",
+         "replaces": ["voicechat-neoforge-1.21.1-2.6.20.jar"],
          "label": "Simple Voice Chat (голосовой чат)"},
         # Мирит JourneyMap и FTB Chunks. У обоих своя миникарта, и до этого
         # мода они рисовались друг поверх друга в правом верхнем углу.
@@ -2221,8 +2240,10 @@ CONFIG = {
          "required": True,
          "label": "Ad Astra (космос: Луна, Марс, ракеты)"},
         {"slug": "common-storage-lib-github",
-         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/common-storage-lib-neoforge-1.21.1-0.0.9.jar",
+         "url": "https://cdn.modrinth.com/data/RgLrNK7l/versions/SCkdlli6/common-storage-lib-neoforge-1.21.1-0.0.10.jar",
          "mirror": True,
+         "filename": "common-storage-lib-neoforge-1.21.1-0.0.10.jar",
+         "replaces": ["common-storage-lib-neoforge-1.21.1-0.0.9.jar"],
          "required": True,
          "label": "Common Storage Lib (библиотека Ad Astra)"},
         # Modern Industrialization 2.5.3: старая 2.5.2 сидит в modpack.zip,
@@ -2243,11 +2264,15 @@ CONFIG = {
         # этом работал. Лицензии позволяют (MIT/LGPL), а джарки взяты байт в
         # байт с сервера — клиент и сервер гарантированно совпадают.
         {"slug": "modern-industrialization-2-5-3",
-         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/Modern-Industrialization-2.5.3.jar",
+         "url": "https://cdn.modrinth.com/data/Gov5Dboq/versions/xDYiDP82/Modern-Industrialization-2.5.4.jar",
          "mirror": True,
+         "filename": "Modern-Industrialization-2.5.4.jar",
          "required": True,
-         "replaces": ["Modern-Industrialization-2.5.2.jar"],
-         "label": "Modern Industrialization 2.5.3 (обновление)"},
+         "replaces": [
+             "Modern-Industrialization-2.5.2.jar",
+             "Modern-Industrialization-2.5.3.jar",
+         ],
+         "label": "Modern Industrialization 2.5.4 (обновление)"},
         # Беспроводные терминалы AE2. ОБЕ стороны (server_side=required):
         # на сервер jar залит 16.07 — порядок «сначала сервер» соблюдён.
         # Ссылка версионная (19.5.0), не «последняя»: клиент и сервер должны
@@ -2270,9 +2295,10 @@ CONFIG = {
         # Ссылка на наш GitHub-релиз, а не на CDN Modrinth: у части игроков
         # CDN не открывается (из-за этого выпускали 1.46.0), а мод обязательный.
         {"slug": "jei-19-27-0-340",
-         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/jei-1.21.1-neoforge-19.27.0.340.jar",
+         "url": "https://cdn.modrinth.com/data/u6dRKJwZ/versions/5lWKlj9s/jei-1.21.1-neoforge-19.39.0.369.jar",
          "mirror": True,
-         "filename": "jei-1.21.1-neoforge-19.27.0.340.jar",
+         "filename": "jei-1.21.1-neoforge-19.39.0.369.jar",
+         "replaces": ["jei-1.21.1-neoforge-19.27.0.340.jar"],
          "required": True,
          "label": "JEI (движок рецептов для EMI)"},
         # AlmostUnified: сводит одинаковые предметы разных модов к одному.
@@ -2286,8 +2312,10 @@ CONFIG = {
          "required": True,
          "label": "AlmostUnified (единые слитки и пластины)"},
         {"slug": "ae2wtlib-19-5-0",
-         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/ae2wtlib-19.5.0.jar",
+         "url": "https://cdn.modrinth.com/data/pNabrMMw/versions/CxSEpEnO/ae2wtlib-19.5.1.jar",
          "mirror": True,
+         "filename": "ae2wtlib-19.5.1.jar",
+         "replaces": ["ae2wtlib-19.5.0.jar"],
          "required": True,
          "label": "Беспроводные терминалы AE2"},
         # Шесть модов ниже — по списку владельца от 17.07 (скрин чужой
@@ -2370,6 +2398,28 @@ CONFIG = {
     # был второй такой же ключ — Python молча брал только этот, нижний, а
     # записи верхнего терялись. "xaeroworldmap" переехал сюда оттуда.
     "REMOVED_MODS": [
+        # Убраны владельцем 25.07: пять аддонов Create. Короткие шаблоны
+        # чистят любую версию при обычном запуске, точные имена нужны
+        # дельта-обновлению, которое удаляет только конкретные файлы.
+        "create_winery",
+        "create_winery-2.0.2-neoforge-1.21.1.jar",
+        "create-confectionery",
+        "create-confectionery1.21.1_v1.1.3.jar",
+        "create_power_loader",
+        "create_power_loader-2.0.5-mc1.21.1.jar",
+        "create_power_loader-2.0.3-mc1.21.1.jar",
+        "createdieselgenerators",
+        "createdieselgenerators-1.21.1-1.3.14.jar",
+        "createdieselgenerators-1.21.1-1.3.11.jar",
+        "create-central-kitchen",
+        "create-central-kitchen-2.5.0.jar",
+        "create-central-kitchen-2.4.0.jar",
+        # Эти две копии не управляются EXTRA_CLIENT_MODS/replaces.
+        # Остальные старые обязательные версии удаляются только ПОСЛЕ
+        # успешного получения новых, чтобы сетевой сбой не оставил клиент
+        # вообще без обязательного мода.
+        "ih_russian-1.3.4.jar",
+        "iris-neoforge-1.8.12+mc1.21.1.jar",
         # Убран владельцем 23.07: Chat Heads дублировал ник поверх серверного
         # формата чата (ih_chat_format). Был в EXTRA_CLIENT_MODS — запись
         # убрана этим же релизом (slug-чистка вычистит кэш), а эта строка
@@ -3021,7 +3071,7 @@ CONFIG = {
             "slug": "iris",
             "category": "Графика",
             "description": "Поддержка шейдеров",
-            "filename": "iris-neoforge-1.8.12+mc1.21.1.jar",
+            "filename": "iris-neoforge-1.8.14-beta.1+mc1.21.1.jar",
             "default": True,
         },
     ],
@@ -7099,6 +7149,13 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
         if not slug:
             continue
         have = installed.get(slug)
+        expected = entry.get("filename")
+        # URL/версия записи могли измениться, а slug намеренно остаётся
+        # стабильным. Старый marker не должен навсегда закреплять прежний JAR:
+        # скачиваем новый, но старый сохраняем до успешной замены ниже.
+        if have and expected and have != expected:
+            pending.append(entry)
+            continue
         if have and (cache / have).exists():
             continue  # уже скачан в кэш
         pending.append(entry)
@@ -7206,10 +7263,11 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
         for old_name in entry.get("replaces", []):
             if old_name == new_name:
                 continue
-            try:
-                (mods_dir / old_name).unlink(missing_ok=True)
-            except OSError:
-                pass  # занят игрой — уйдёт при следующем запуске
+            for stale in (mods_dir / old_name, cache / old_name):
+                try:
+                    stale.unlink(missing_ok=True)
+                except OSError:
+                    pass  # занят игрой — уйдёт при следующем запуске
 
     # Обязательный мод мог не доехать в прошлый раз: проверяем не только
     # свежие загрузки, но и то, что реально лежит в mods/ прямо сейчас.
