@@ -266,14 +266,10 @@ CONFIG = {
     # ссылкой на скачивание), собственный сервер и т.д.
     "MODPACK_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/modpack.zip",
 
-    # Запасной источник сборки — наш игровой сервер (20.07). У части игроков
-    # провайдер режет GitHub Releases: Minecraft и NeoForge качаются нормально,
-    # а 400-мегабайтный modpack.zip рвётся на середине — «Обрыв связи при
-    # скачивании». Игровой сервер открыт у любого, кто вообще может играть
-    # (по нему уже идут мелкие моды и веб-карта), поэтому он пробуется ПЕРВЫМ,
-    # а GitHub остаётся запасным. Файл кладётся в bluemap/web/ рядом с картой.
-    # Пусто "" — механизм выключен, качаем только с GitHub.
-    "MODPACK_MIRROR_URL": "http://95.216.30.64:25980/modpack.zip",
+    # Основной источник сборки — Bunny CDN: он поддерживает быструю раздачу и
+    # докачку Range. download_with_mirror() пробует этот адрес ПЕРВЫМ, а
+    # MODPACK_URL на GitHub остаётся независимым запасным источником.
+    "MODPACK_MIRROR_URL": "https://industrialhorizon.b-cdn.net/stable/modpack.zip",
 
     # Версия сборки модов "по умолчанию" — используется, только если ниже
     # НЕ указана MODPACK_VERSION_URL. Если её увеличить, тоже нужно заново
@@ -282,7 +278,7 @@ CONFIG = {
     # Это число теперь запасное: MODPACK_VERSION_URL ниже заполнена, и версия
     # берётся из неё. Сюда лаунчер откатится, только если интернета нет —
     # и тогда он ничего переустанавливать не станет, что и правильно.
-    "MODPACK_VERSION": 4,
+    "MODPACK_VERSION": 13,
 
     # ВНИМАНИЕ: список REMOVED_MODS живёт НИЖЕ, в разделе «УДАЛЕНИЕ МОДОВ У
     # ИГРОКОВ» (ищи "REMOVED_MODS"). Здесь его больше НЕТ намеренно: до
@@ -304,11 +300,10 @@ CONFIG = {
     # modpack.zip и поправить одно число в modpack_version.txt (1 байт).
     # Ровно так же уже работает пак настроек — см. CONFIGPACK_VERSION_URL.
     #
-    # 21.07: перевели проверку версии с GitHub на зеркало. GitHub в РФ
-    # блокируется — а саму сборку мы и так качаем с зеркала. Держать номер
-    # версии там же (рядом с launcher_version.txt) надёжнее: инструмент
-    # publish_modpack.py кладёт modpack_version.txt в ту же папку, что и части.
-    "MODPACK_VERSION_URL": "https://industrialhorizon.dynmap.xyz/modpack_version.txt",
+    # Версия на Bunny публикуется ПОСЛЕДНЕЙ, только после архива, SHA и
+    # manifest.json. GitHub-маркер остаётся запасным каналом.
+    "MODPACK_VERSION_URL": "https://industrialhorizon.b-cdn.net/stable/modpack_version.txt",
+    "MODPACK_VERSION_FALLBACK_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/modpack_version.txt",
 
     # ------------------------- ПАК НАСТРОЕК -------------------------
     # Маленький архив (единицы мегабайт) с тем, что делает сборку «нашей»:
@@ -327,9 +322,8 @@ CONFIG = {
     # Внутри архива должен лежать configpack.json — см. install_configpack().
     "CONFIGPACK_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/configpack/configpack.zip",
 
-    # Зеркало пака настроек на игровом сервере — по той же причине, что и у
-    # модпака выше (GitHub у части провайдеров недоступен). Пробуется первым.
-    "CONFIGPACK_MIRROR_URL": "http://95.216.30.64:25980/configpack.zip",
+    # Bunny CDN пробуется первым, GitHub выше остаётся запасным.
+    "CONFIGPACK_MIRROR_URL": "https://industrialhorizon.b-cdn.net/stable/configpack.zip",
 
     # Запасной источник самого ЛАУНЧЕРА (20.07). Обновление качалось только с
     # GitHub, а он в РФ заблокирован — игроки вроде Dimylechka застревали на
@@ -338,14 +332,14 @@ CONFIG = {
     # CheckpointSetup.exe, а не onefile-файл: onefile распаковывал Python в Temp
     # и падал у игроков с «Failed to load Python DLL python312.dll». Сборка CI
     # кладёт свежий CheckpointSetup.exe на зеркало сама при каждом релизе.
-    "LAUNCHER_EXE_MIRROR_URL": "https://industrialhorizon.dynmap.xyz/CheckpointSetup.exe",
+    "LAUNCHER_EXE_MIRROR_URL": "https://industrialhorizon.b-cdn.net/stable/CheckpointSetup.exe",
 
     # Крошечный текстовый файл с одной строкой — номером последней версии
     # лаунчера (например "1.61.0"). Лежит рядом с Launcher.exe на зеркале.
     # Лаунчер читает его при старте и, если версия там новее текущей, показывает
     # баннер «доступна версия…». Это ОСНОВНОЙ канал обновлений в РФ: работает
     # без GitHub. При релизе: залить Launcher.exe и вписать сюда новый номер.
-    "LAUNCHER_VERSION_MIRROR_URL": "https://industrialhorizon.dynmap.xyz/launcher_version.txt",
+    "LAUNCHER_VERSION_MIRROR_URL": "https://industrialhorizon.b-cdn.net/stable/launcher_version.txt",
 
     # Новости сервера. Лаунчер тянет этот JSON с зеркала и показывает в разделе
     # «Сообщество» → «Новости». Владелец правит файл на зеркале (bluemap/web/
@@ -358,13 +352,14 @@ CONFIG = {
 
     # Версия пака настроек «по умолчанию» — используется, только если ниже
     # не указана CONFIGPACK_VERSION_URL или её не удалось скачать.
-    "CONFIGPACK_VERSION": 1,
+    "CONFIGPACK_VERSION": 48,
 
     # Текстовый файл с одним числом — версией пака настроек. Пока он указан,
     # обновление меню/квестов выглядит так: перезалить configpack.zip,
     # увеличить число здесь — и всё. Ни пересборки .exe, ни перезаливки
     # сборки модов. Оставьте "" чтобы выключить проверку через интернет.
-    "CONFIGPACK_VERSION_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/configpack/configpack_version.txt",
+    "CONFIGPACK_VERSION_URL": "https://industrialhorizon.b-cdn.net/stable/configpack_version.txt",
+    "CONFIGPACK_VERSION_FALLBACK_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/configpack/configpack_version.txt",
 
     # Сколько оперативной памяти выделять игре по умолчанию (в мегабайтах).
     # Игрок сможет изменить это значение ползунком в самом лаунчере —
@@ -403,7 +398,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.14",
+    "LAUNCHER_VERSION": "1.66.15",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -415,6 +410,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.15",
+            "date": "26 июля 2026",
+            "changes": [
+                "Сборка и пак настроек теперь загружаются через Bunny CDN: "
+                "быстрее и с поддержкой докачки; GitHub остаётся запасным.",
+                "Добавлена защита от рассинхронизации версии и манифеста: "
+                "лаунчер не применит закешированный или неполный набор модов.",
+            ],
+        },
         {
             "version": "1.66.14",
             "date": "25 июля 2026",
@@ -4469,7 +4474,16 @@ def get_modpack_version_status() -> dict:
     url = CONFIG.get("MODPACK_VERSION_URL")
     if not url:
         return {"version": CONFIG["MODPACK_VERSION"], "online": None}
-    raw = _fetch_tiny_text(_mirror_url_variants(url))
+    candidates = _mirror_url_variants(url)
+    if not str(url).startswith("file:"):
+        for extra in (
+            CONFIG.get("MODPACK_VERSION_FALLBACK_URL"),
+            "https://industrialhorizon.dynmap.xyz/modpack_version.txt",
+            "http://95.216.30.64:25980/modpack_version.txt",
+        ):
+            if extra and extra not in candidates:
+                candidates.append(extra)
+    raw = _fetch_tiny_text(candidates)
     if raw is not None:
         try:
             return {"version": int(raw.split()[0]), "online": True}
@@ -4852,9 +4866,18 @@ def _fetch_modpack_manifest():
         return None
     root = mirror.rsplit("/", 1)[0]
     roots = [root]
-    if "95.216.30.64:25980" in root:
-        roots.append(root.replace("http://95.216.30.64:25980",
-                                  "https://industrialhorizon.dynmap.xyz"))
+    if not root.startswith("file:"):
+        primary = CONFIG.get("MODPACK_URL") or ""
+        if "/" in primary:
+            primary_root = primary.rsplit("/", 1)[0]
+            if primary_root not in roots:
+                roots.append(primary_root)
+        for legacy_root in (
+            "https://industrialhorizon.dynmap.xyz",
+            "http://95.216.30.64:25980",
+        ):
+            if legacy_root not in roots:
+                roots.append(legacy_root)
     bust = "?t=" + str(int(time.time()) // 300)
     for r in roots:
         try:
@@ -5020,6 +5043,18 @@ def install_modpack_delta(status_cb, progress_cb) -> bool:
         if not files:
             return False
         remote_ver = get_remote_modpack_version()
+        try:
+            manifest_ver = int(man.get("version"))
+        except (TypeError, ValueError):
+            return False
+        if manifest_ver != remote_ver:
+            runtime_log(
+                "delta_manifest_version_mismatch manifest=%s remote=%s",
+                manifest_ver,
+                remote_ver,
+                level=logging.WARNING,
+            )
+            return False
 
         status_cb("проверка установленных модов")
         index = _sha_index_load()
@@ -5252,20 +5287,19 @@ def fetch_server_news() -> list:
 def get_remote_configpack_version() -> int:
     """То же, что get_remote_modpack_version(), но для пака настроек.
 
-    Основной адрес — GitHub (туда пак кладёт релиз), запасные — зеркало
-    (домен и прямой IP): у части игроков GitHub заблокирован, и раньше эта
-    проверка у них молча падала — обновления меню/квестов не доезжали.
-    CI копирует configpack_version.txt на зеркало вместе с самим паком."""
+    Основной адрес — Bunny CDN, затем GitHub и старые серверные зеркала.
+    Маркер версии публикуется только после проверки самого архива."""
     url = CONFIG.get("CONFIGPACK_VERSION_URL")
     if not url:
         return CONFIG.get("CONFIGPACK_VERSION", 0)
     candidates = [url]
     if not str(url).startswith("file:"):
         for extra in (
+            CONFIG.get("CONFIGPACK_VERSION_FALLBACK_URL"),
             "https://industrialhorizon.dynmap.xyz/configpack_version.txt",
             "http://95.216.30.64:25980/configpack_version.txt",
         ):
-            if extra not in candidates:
+            if extra and extra not in candidates:
                 candidates.append(extra)
     raw = _fetch_tiny_text(candidates)
     if raw is not None:

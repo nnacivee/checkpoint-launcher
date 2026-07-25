@@ -11,6 +11,96 @@ import webui
 
 
 class LauncherReliabilityTests(unittest.TestCase):
+    def test_modpack_version_prefers_bunny_then_github_fallback(self):
+        with (
+            mock.patch.dict(
+                launcher.CONFIG,
+                {
+                    "MODPACK_VERSION_URL":
+                        "https://industrialhorizon.b-cdn.net/stable/modpack_version.txt",
+                    "MODPACK_VERSION_FALLBACK_URL":
+                        "https://github.com/example/project/modpack_version.txt",
+                },
+            ),
+            mock.patch.object(
+                launcher, "_fetch_tiny_text", return_value="13"
+            ) as fetch,
+        ):
+            self.assertEqual(launcher.get_remote_modpack_version(), 13)
+
+        candidates = fetch.call_args.args[0]
+        self.assertEqual(
+            candidates[:2],
+            [
+                "https://industrialhorizon.b-cdn.net/stable/modpack_version.txt",
+                "https://github.com/example/project/modpack_version.txt",
+            ],
+        )
+
+    def test_configpack_version_prefers_bunny_then_github_fallback(self):
+        with (
+            mock.patch.dict(
+                launcher.CONFIG,
+                {
+                    "CONFIGPACK_VERSION_URL":
+                        "https://industrialhorizon.b-cdn.net/stable/configpack_version.txt",
+                    "CONFIGPACK_VERSION_FALLBACK_URL":
+                        "https://github.com/example/project/configpack_version.txt",
+                },
+            ),
+            mock.patch.object(
+                launcher, "_fetch_tiny_text", return_value="48"
+            ) as fetch,
+        ):
+            self.assertEqual(launcher.get_remote_configpack_version(), 48)
+
+        candidates = fetch.call_args.args[0]
+        self.assertEqual(
+            candidates[:2],
+            [
+                "https://industrialhorizon.b-cdn.net/stable/configpack_version.txt",
+                "https://github.com/example/project/configpack_version.txt",
+            ],
+        )
+
+    def test_delta_rejects_manifest_version_mismatch(self):
+        manifest = {
+            "version": "12",
+            "modsOnly": True,
+            "files": [{
+                "path": "mods/core.jar",
+                "size": 4,
+                "sha256": hashlib.sha256(b"core").hexdigest(),
+            }],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            instance = Path(tmp) / "instance"
+            (instance / "mods").mkdir(parents=True)
+            with (
+                mock.patch.object(launcher, "INSTANCE_DIR", instance),
+                mock.patch.object(
+                    launcher, "recover_interrupted_modpack_update"
+                ),
+                mock.patch.object(
+                    launcher, "get_local_modpack_version", return_value=12
+                ),
+                mock.patch.object(
+                    launcher, "_fetch_modpack_manifest", return_value=manifest
+                ),
+                mock.patch.object(
+                    launcher, "get_remote_modpack_version", return_value=13
+                ),
+                mock.patch.object(
+                    launcher, "_begin_modpack_transaction"
+                ) as begin_transaction,
+            ):
+                applied = launcher.install_modpack_delta(
+                    lambda _text: None, lambda _pct: None
+                )
+
+        self.assertFalse(applied)
+        begin_transaction.assert_not_called()
+
     @unittest.skipUnless(launcher._PIL_OK, "Pillow is required")
     def test_player_head_falls_back_to_bundled_nickname_skin(self):
         with tempfile.TemporaryDirectory() as tmp:
