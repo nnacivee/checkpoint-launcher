@@ -398,7 +398,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.19",
+    "LAUNCHER_VERSION": "1.66.20",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -410,6 +410,20 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.20",
+            "date": "26 июля 2026",
+            "changes": [
+                "Подготовка Minecraft и NeoForge теперь показывает реальную "
+                "текущую операцию и количество проверенных файлов, не зависая "
+                "визуально на 28% или 46%.",
+                "Во время долгой операции индикатор остаётся живым: видны "
+                "точный общий процент и прошедшее время без выдуманного роста.",
+                "Исправлен первый запуск: настройки Minecraft больше не "
+                "сбрасываются, стартовый экран доступности не возвращается, "
+                "интерфейс остаётся x2, а G открывает круговое меню.",
+            ],
+        },
         {
             "version": "1.66.19",
             "date": "26 июля 2026",
@@ -9645,7 +9659,23 @@ DEFAULT_KEYBIND_SEEDS = (
     # Реальный id подтверждён логом fixbind 23.07 на машине владельца:
     # key_key.ezactions.open:key.keyboard.grave.accent
     ("key_key.ezactions.open", "key.keyboard.grave.accent", "key.keyboard.g"),
+    # G зарезервирована за круговым меню. Эти строки нужны даже при полностью
+    # свежем options.txt: моды добавляют свои дефолты только при первом старте,
+    # то есть прежняя пост-проверка ещё не могла увидеть конфликт.
+    ("key_key.voice_chat_group", "key.keyboard.g", "key.keyboard.unknown"),
+    ("key_key.curios.open.desc", "key.keyboard.g", "key.keyboard.unknown"),
+    ("key_key.jetpack.toggle_active.description",
+     "key.keyboard.g", "key.keyboard.semicolon"),
+    ("key_key.journeymap.toggle_entity_names",
+     "key.keyboard.g", "key.keyboard.unknown"),
+    ("key_key.guideme.guide", "key.keyboard.g", "key.keyboard.unknown"),
 )
+
+# DataVersion формата options.txt для Minecraft 1.21.1. Без этой строки
+# Minecraft считает созданный лаунчером файл древним и пытается преобразовать
+# современные ``key.keyboard.*`` как числовые LWJGL-коды. В итоге загрузка всех
+# настроек падает и игра возвращает экран первого запуска и дефолтные клавиши.
+CURRENT_OPTIONS_VERSION = "3955"
 
 # Обычные опции для СВЕЖЕГО options.txt: строка добавляется только если её
 # нет вовсе. Существующее значение игрока не трогаем никогда. Просьба
@@ -9659,10 +9689,10 @@ DEFAULT_OPTION_SEEDS = (
     ("fullscreen", "false"),
 )
 
-# Пока круговое меню реально стоит на G, другие моды с G снимаются:
+# G зарезервирована за круговым меню; стандартные конфликтующие назначения
+# других модов снимаются:
 # Simple Voice Chat по умолчанию вешает на G «группу» и перехватывает
-# нажатие (экран «Join or Create Group» вместо меню). Если игрок сам
-# перенёс меню с G — ничего не трогаем.
+# нажатие (экран «Join or Create Group» вместо меню).
 RADIAL_MENU_BIND = "key_key.ezactions.open"
 RADIAL_MENU_KEY = "key.keyboard.g"
 
@@ -9677,6 +9707,31 @@ def seed_default_keybinds() -> None:
             lines = path.read_text(
                 encoding="utf-8-sig", errors="replace").splitlines()
         changed = False
+        version_lines = [
+            line for line in lines if line.startswith("version:")
+        ]
+        version_values = [
+            int(line.partition(":")[2])
+            for line in version_lines
+            if line.partition(":")[2].isdigit()
+        ]
+        version_value = max(
+            [int(CURRENT_OPTIONS_VERSION), *version_values]
+        )
+        wanted_version = "version:%d" % version_value
+        # Всегда держим одну актуальную DataVersion первой строкой. Это также
+        # лечит старую launcher-копию с version:0 и дубли после неудачного
+        # объединения options.txt.
+        if (
+            not lines
+            or lines[0] != wanted_version
+            or len(version_lines) != 1
+        ):
+            lines = [
+                line for line in lines if not line.startswith("version:")
+            ]
+            lines.insert(0, wanted_version)
+            changed = True
         for prefix, mod_default, wanted in DEFAULT_KEYBIND_SEEDS:
             hit = None
             for i, line in enumerate(lines):
@@ -9686,8 +9741,11 @@ def seed_default_keybinds() -> None:
             if hit is None:
                 lines.append("%s:%s" % (prefix, wanted))
                 changed = True
-            elif lines[hit].split(":", 1)[1] in (mod_default,
-                                                 "key.keyboard.unknown"):
+            elif (
+                lines[hit].split(":", 1)[1]
+                in (mod_default, "key.keyboard.unknown")
+                and lines[hit].split(":", 1)[1] != wanted
+            ):
                 lines[hit] = "%s:%s" % (prefix, wanted)
                 changed = True
         for option, value in DEFAULT_OPTION_SEEDS:
@@ -9739,8 +9797,7 @@ def prepare_or_repair_client(
         CONFIG["MOD_LOADER"], CONFIG["MOD_LOADER"].capitalize()
     )
     repair_progress = LaunchProgress(status, progress_out, [
-        ("Java", 8),
-        ("Minecraft", 20),
+        ("Minecraft", 28),
         (loader_name, 18),
         ("Сборка модов", 44),
         ("Настройки сборки", 10),
@@ -9769,7 +9826,7 @@ def prepare_or_repair_client(
             repair_progress, force=force
         )
     else:
-        for stage_name in ("Java", "Minecraft", loader_name):
+        for stage_name in ("Minecraft", loader_name):
             stage_status, stage_progress = repair_progress.scoped(stage_name)
             stage_status("проверено")
             stage_progress(100)
@@ -9963,7 +10020,6 @@ def install_minecraft_and_modloader(
     loader_id = CONFIG["MOD_LOADER"]
     loader_name = LOADER_DISPLAY_NAMES.get(loader_id, loader_id.capitalize())
 
-    java_status, _java_progress = progress.scoped("Java")
     mc_status, mc_progress = progress.scoped("Minecraft")
     loader_status, loader_progress = progress.scoped(loader_name)
 
@@ -9982,25 +10038,84 @@ def install_minecraft_and_modloader(
 
     _check_installation_preconditions(1024 * 1024 * 1024)
 
-    def callback_dict(stage_progress):
-        # Библиотека minecraft-launcher-lib шлёт технические сообщения вроде
-        # "Install java runtime" — они не переведены и не нужны игроку.
-        # Вместо них считаем честный процент по факту скачанных файлов
-        # (setMax/setProgress); подпись со шагом ставит сам stage_progress.
-        state = {"max": 0, "last_pct": -1}
+    def callback_dict(stage_status):
+        # minecraft-launcher-lib несколько раз начинает setMax/setProgress с
+        # нуля: отдельно для библиотек, ресурсов, Java и повторных проверок
+        # NeoForge. Поэтому это НЕ процент всего этапа. Раньше первый внутренний
+        # 100% преждевременно доводил общую полосу ровно до 28%/46%, после чего
+        # все следующие значения отбрасывались. Теперь внутренний счётчик
+        # показывается как живая операция X/Y, а этап завершается только после
+        # успешного возврата install().
+        state = {
+            "phase": "Проверка файлов",
+            "max": 0,
+            "current": 0,
+            "last_rendered": None,
+        }
+        lock = threading.Lock()
 
-        def set_status(_text):
-            pass  # технический текст библиотеки скрываем
+        def publish():
+            with lock:
+                phase = state["phase"]
+                current = state["current"]
+                total = state["max"]
+                rendered = (
+                    "%s · %d/%d" % (phase, min(current, total), total)
+                    if total > 0 else phase
+                )
+                if rendered == state["last_rendered"]:
+                    return
+                state["last_rendered"] = rendered
+            stage_status(rendered)
+
+        def set_status(text):
+            value = str(text or "").strip().lower()
+            phase = None
+            if value == "download libraries":
+                phase = "Библиотеки"
+            elif value == "download assets":
+                phase = "Ресурсы игры"
+            elif value == "install java runtime":
+                phase = "Java"
+            elif value == "running installer":
+                phase = "Установка %s" % loader_name
+            elif value.startswith("running processor"):
+                phase = "Настройка %s" % loader_name
+            elif value == "installation complete":
+                phase = "Завершение проверки"
+            elif value.startswith("download "):
+                # Не показываем технические имена отдельных файлов. Текущая
+                # понятная фаза и её счётчик при этом остаются на экране.
+                return
+            if phase:
+                with lock:
+                    state["phase"] = phase
+                    state["max"] = 0
+                    state["current"] = 0
+                    state["last_rendered"] = None
+                publish()
 
         def set_progress(value):
-            max_value = state["max"] or 1
-            pct = min(100, max(0, int(value * 100 / max_value)))
-            if pct != state["last_pct"]:
-                state["last_pct"] = pct
-                stage_progress(pct)
+            try:
+                current = max(0, int(value or 0))
+            except (TypeError, ValueError):
+                return
+            with lock:
+                state["current"] = current
+            publish()
 
         def set_max(value):
-            state["max"] = value or 1
+            try:
+                # mll 8.0 передаёт len(files)-1, а setProgress доходит до
+                # len(files). Возвращаем игроку обычный понятный X/Y.
+                total = max(0, int(value or 0) + 1)
+            except (TypeError, ValueError):
+                total = 0
+            with lock:
+                state["max"] = total
+                state["current"] = 0
+                state["last_rendered"] = None
+            publish()
 
         return {
             "setStatus": set_status,
@@ -10012,9 +10127,10 @@ def install_minecraft_and_modloader(
     _install_with_retry(
         mll.install.install_minecraft_version,
         CONFIG["MC_VERSION"], str(INSTANCE_DIR),
-        callback=callback_dict(mc_progress),
+        callback=callback_dict(mc_status),
         status_cb=mc_status,
     )
+    mc_progress(100)
 
     loader_status("подготовка")
     mod_loader = mll.mod_loader.get_mod_loader(loader_id)
@@ -10025,7 +10141,8 @@ def install_minecraft_and_modloader(
         )
 
     loader_version = CONFIG["LOADER_VERSION"] or None
-    java_path = _find_bundled_java(java_status)
+    loader_status("проверка Java")
+    java_path = _find_bundled_java(loader_status)
 
     # install() сам ставит модлоадер (и ванильную версию, если её вдруг нет)
     # и возвращает id версии, который нужно передать в get_minecraft_command.
@@ -10038,10 +10155,11 @@ def install_minecraft_and_modloader(
         CONFIG["MC_VERSION"],
         str(INSTANCE_DIR),
         loader_version=loader_version,
-        callback=callback_dict(loader_progress),
+        callback=callback_dict(loader_status),
         java=java_path,
         status_cb=loader_status,
     )
+    loader_progress(100)
     _write_install_marker(version_id)
     return version_id
 
@@ -10211,8 +10329,7 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     # Одна полоса на весь запуск: этапы идут по очереди, каждый занимает свой
     # участок шкалы. Вес — примерная доля времени этапа.
     progress = LaunchProgress(status_cb, progress_cb, [
-        ("Java", 8),
-        ("Minecraft", 20),
+        ("Minecraft", 28),
         (loader_name, 18),
         ("Сборка модов", 34),
         ("Моды и дополнения", 14),
@@ -10326,6 +10443,16 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     select_loading_bar_variant(configpack_status)
     validate_client_before_launch(
         configpack_status, _progress_slice(configpack_progress, 90, 100))
+
+    # Последний барьер перед CreateProcess. На чистой установке options.txt
+    # создаётся самим лаунчером, поэтому он обязан содержать актуальную
+    # DataVersion до того, как Minecraft запустит миграции старых клавиш.
+    # Повтор здесь также лечит старую неполную копию из player_settings_backup
+    # после переустановки, не затрагивая остальные настройки игрока.
+    apply_forced_options(configpack_status)
+    set_russian_once(configpack_status)
+    seed_default_keybinds()
+    backup_player_settings()
 
     progress_cb(100)
     status_cb("Запуск игры...")
