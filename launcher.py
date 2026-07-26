@@ -355,7 +355,7 @@ CONFIG = {
     # Запасное значение для нового чистого клиента, если все маленькие
     # version-файлы временно недоступны. Должно совпадать с подготовленным
     # локальным релизом; опубликованный Bunny-маркер всё равно главный.
-    "CONFIGPACK_VERSION": 50,
+    "CONFIGPACK_VERSION": 51,
 
     # Текстовый файл с одним числом — версией пака настроек. Пока он указан,
     # обновление меню/квестов выглядит так: перезалить configpack.zip,
@@ -401,7 +401,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.23",
+    "LAUNCHER_VERSION": "1.66.24",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -413,6 +413,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.24",
+            "date": "26 июля 2026",
+            "changes": [
+                "Настройки HUD, JourneyMap, Jade, BetterF3, Create и MI теперь сохраняются при обновлении и восстановлении клиента.",
+                "Перед восстановлением лаунчер создаёт отдельную резервную копию личных настроек и возвращает её, если операция завершилась ошибкой.",
+                "Чистая установка по-прежнему получает готовый минималистичный интерфейс, но старые настройки из архива модпака больше не подменяют актуальные.",
+                "Группа меток смерти JourneyMap теперь выключается только при первой настройке; дальнейший выбор игрока сохраняется.",
+            ],
+        },
         {
             "version": "1.66.23",
             "date": "26 июля 2026",
@@ -5343,6 +5353,26 @@ def download_modpack_archive(dest, progress_cb, status_cb):
 MODPACK_MANAGED_FOLDERS = ("mods", "config", "kubejs")
 MODPACK_TRANSACTION_DIR_NAME = ".launcher_modpack_transaction"
 
+# Pack-provided first-install defaults which become player-owned as soon as
+# they reach the live instance.  The modpack archive may contain stale copies;
+# install_modpack strips those from staging so configpack is the single source
+# for a clean install without ever overwriting an existing player's choices.
+CONFIGPACK_SEED_ONLY_FILES = {
+    "config/betterf3.toml",
+    "config/create-client.toml",
+    "config/darkmodeeverywhere-client.toml",
+    "config/inventoryhud-client.toml",
+    "config/jade/jade.json",
+    "config/jade/plugins.json",
+    "config/modern_industrialization-client.toml",
+    "config/neat-client.toml",
+    "journeymap/config/6.0/journeymap.core.config",
+    "journeymap/config/6.0/journeymap.fullmap.config",
+    "journeymap/config/6.0/journeymap.minimap.config",
+    "journeymap/config/6.0/journeymap.minimap2.config",
+    "journeymap/config/6.0/journeymap.waypoint.config",
+}
+
 
 def _modpack_roots_for_full_install(local_version: int):
     """Return roots the full archive may replace atomically.
@@ -5361,6 +5391,23 @@ def _modpack_roots_for_full_install(local_version: int):
         if local_version < 0 and not has_existing_configuration
         else ("mods",)
     )
+
+
+def _is_fresh_managed_instance() -> bool:
+    """Return True only before this launcher has installed any pack roots."""
+    return (
+        get_local_modpack_version() < 0
+        and not any(
+            (INSTANCE_DIR / folder).exists()
+            for folder in MODPACK_MANAGED_FOLDERS
+        )
+    )
+
+
+def _strip_modpack_seed_defaults(stage_root: Path) -> None:
+    """Remove configpack-owned first-install defaults from modpack staging."""
+    for rel in CONFIGPACK_SEED_ONLY_FILES:
+        _remove_path(Path(stage_root) / rel)
 
 
 def _modpack_transaction_dir() -> Path:
@@ -6131,6 +6178,12 @@ def install_modpack(
                 progress_cb(
                     90 + int(position * 10 / len(manifest_files)))
 
+        # v13 contains stale copies of several UI defaults.  Never let the
+        # modpack own them: on a clean install configpack will seed the missing
+        # files, while an existing client's values remain completely outside
+        # the full-modpack swap/merge.
+        _strip_modpack_seed_defaults(stage_root)
+
         managed_roots = _modpack_roots_for_full_install(local_version)
         # Empty managed roots are intentional on a clean install.  During a
         # repair only mods are replaced; v13's stale config/kubejs baseline is
@@ -6146,8 +6199,8 @@ def install_modpack(
         # user-owned directories are never removed wholesale.
         for child in list(stage_root.iterdir()):
             if (
-                local_version >= 0
-                and child.name in ("config", "kubejs")
+                child.name in ("config", "kubejs")
+                and child.name not in managed_roots
             ):
                 continue
             target = INSTANCE_DIR / child.name
@@ -6184,10 +6237,12 @@ def install_modpack(
     _cache_modpack_manifest(manifest)
     _atomic_write_text(MODPACK_VERSION_FILE, str(remote_version))
 
-    # Сборка только что снесла config/ и mods/ — значит, пак настроек
-    # (меню, квесты, экран загрузки) тоже стёрт. Убираем его отметку, чтобы
-    # install_configpack() ниже поставил всё заново.
-    CONFIGPACK_MARKER_FILE.unlink(missing_ok=True)
+    # A clean install swaps config/kubejs together with mods, so the old
+    # configpack marker (if any) is no longer trustworthy.  Existing-client
+    # repair swaps only mods; keep the marker there so configpack can restore
+    # just its missing immutable JARs instead of treating the client as new.
+    if "config" in managed_roots or "kubejs" in managed_roots:
+        CONFIGPACK_MARKER_FILE.unlink(missing_ok=True)
 
     progress_cb(100)
 
@@ -6447,10 +6502,14 @@ CONFIGPACK_IMMUTABLE_FILES = {
     "config/ezactions/menu.json",
     "config/simple-custom-early-loading/background.png",
 }
-
+CONFIGPACK_LAUNCHER_OWNED_FILES = {
+    "kubejs/client_scripts/ih_minimal_ui.js",
+}
 
 def _is_configpack_immutable_path(path) -> bool:
     value = str(path or "").replace("\\", "/").strip("/")
+    if value in CONFIGPACK_LAUNCHER_OWNED_FILES:
+        return False
     return (
         value in CONFIGPACK_IMMUTABLE_FILES
         or any(
@@ -6545,6 +6604,11 @@ def configpack_needs_install(remote_version=None) -> bool:
     if verify is None:
         verify = marker.get("owns", [])
     for rel in verify:
+        if (
+            rel in CONFIGPACK_SEED_ONLY_FILES
+            or rel in CONFIGPACK_LAUNCHER_OWNED_FILES
+        ):
+            continue
         if not (INSTANCE_DIR / rel).exists():
             return True
 
@@ -6556,6 +6620,8 @@ def configpack_needs_install(remote_version=None) -> bool:
         if not files:
             return True
         for item in files:
+            if item["path"] in CONFIGPACK_LAUNCHER_OWNED_FILES:
+                continue
             candidate = INSTANCE_DIR / item["path"]
             try:
                 if (
@@ -6595,7 +6661,11 @@ def install_ultimine_sticky(status_cb=None) -> None:
 
 
 def install_configpack(
-    status_cb=None, progress_cb=None, *, force_verify=False
+    status_cb=None,
+    progress_cb=None,
+    *,
+    force_verify=False,
+    seed_defaults=False,
 ) -> None:
     """Install the settings pack through a journalled all-or-nothing swap.
 
@@ -6605,6 +6675,12 @@ def install_configpack(
     """
     recover_interrupted_configpack_update(status_cb)
     previous_marker = _read_configpack_marker()
+    # A first configpack install can be retried after the modpack already
+    # committed (for example after a network failure).  In that case the
+    # in-memory fresh-install hint is gone, but the absent configpack marker
+    # still safely identifies initialization.  Any existing marker, including
+    # an older version, makes player-owned missing seeds stay missing.
+    should_seed_defaults = bool(seed_defaults or not previous_marker)
     remote_version = get_remote_configpack_version()
     local_version = previous_marker.get("version")
     if isinstance(local_version, int) and remote_version < local_version:
@@ -6634,7 +6710,16 @@ def install_configpack(
     )
 
     zip_path = APP_DATA_DIR / "configpack_download.zip"
-    previous_verify = previous_marker.get("verify", previous_marker.get("owns", []))
+    previous_verify = [
+        rel
+        for rel in previous_marker.get(
+            "verify", previous_marker.get("owns", [])
+        )
+        if (
+            rel not in CONFIGPACK_SEED_ONLY_FILES
+            and rel not in CONFIGPACK_LAUNCHER_OWNED_FILES
+        )
+    ]
     had_working_pack = bool(previous_marker) and all(
         (INSTANCE_DIR / rel).exists() for rel in previous_verify
     )
@@ -6647,6 +6732,8 @@ def install_configpack(
         # that the damaged old copy is usable.
         had_working_pack = had_working_pack and bool(previous_files)
         for item in previous_files:
+            if item["path"] in CONFIGPACK_LAUNCHER_OWNED_FILES:
+                continue
             candidate = INSTANCE_DIR / item["path"]
             try:
                 if (
@@ -6724,7 +6811,21 @@ def install_configpack(
 
         # The marker participates in the same transaction.  A crash can never
         # leave old files carrying the new version number (or vice versa).
-        verify = [rel for rel in owns if (stage_root / rel).exists()]
+        seed_only = sorted(
+            rel for rel in owns
+            if rel in CONFIGPACK_SEED_ONLY_FILES and (stage_root / rel).is_file()
+        )
+        # Seed-only files become player-owned after installation.  Do not
+        # treat later edits/deletion as configpack corruption during a normal
+        # launch, Repair or a future version.
+        verify = [
+            rel for rel in owns
+            if (
+                (stage_root / rel).exists()
+                and rel not in seed_only
+                and rel not in CONFIGPACK_LAUNCHER_OWNED_FILES
+            )
+        ]
         file_manifest = _build_configpack_file_manifest(
             stage_root, payload_names
         )
@@ -6734,18 +6835,17 @@ def install_configpack(
             "verify": verify,
             "archive_sha256": expected_digest,
             "files": file_manifest,
+            "seed_only": seed_only,
         })
         if progress_cb:
             progress_cb(95)
-        commit_targets = owns + [".configpack.json"]
-        if (
-            force_verify
-            and previous_marker.get("version") == remote_version
-        ):
-            # A same-version explicit repair must not reset settings which the
-            # game or player legitimately changes.  Replace only immutable
-            # payload files whose exact bytes differ, then migrate the marker
-            # to the verified schema.
+        same_version = previous_marker.get("version") == remote_version
+        if same_version:
+            # Both automatic integrity repair and the explicit Repair button
+            # must be selective.  A missing configpack JAR/script used to make
+            # the normal path replace every owned config file, resetting HUD,
+            # JourneyMap and key choices even though the version had not
+            # changed.
             commit_targets = []
             for item in file_manifest:
                 candidate = INSTANCE_DIR / item["path"]
@@ -6760,7 +6860,45 @@ def install_configpack(
                     healthy = False
                 if not healthy:
                     commit_targets.append(item["path"])
-            commit_targets.append(".configpack.json")
+            # Defaults are seeded only for a genuinely new client.  A missing
+            # player-owned setting on an existing client is a valid state and
+            # must not be recreated by either automatic or explicit Repair.
+            if should_seed_defaults:
+                for rel in seed_only:
+                    target = INSTANCE_DIR / rel
+                    if not target.exists() and not target.is_symlink():
+                        commit_targets.append(rel)
+            # Mutable pack files are never replaced, but a genuinely missing
+            # staged verify target must be restored or configpack_needs_install
+            # would loop forever on every launch.
+            for rel in verify:
+                target = INSTANCE_DIR / rel
+                if (
+                    rel not in commit_targets
+                    and not target.exists()
+                    and not target.is_symlink()
+                ):
+                    commit_targets.append(rel)
+        else:
+            # On a version update the pack still replaces its real managed
+            # payload.  Seed-only defaults are installed exclusively for a
+            # genuinely new client, never merely because an existing player
+            # deleted or moved one of those files.
+            commit_targets = [
+                rel for rel in owns
+                if (
+                    rel not in CONFIGPACK_LAUNCHER_OWNED_FILES
+                    and (
+                        rel not in CONFIGPACK_SEED_ONLY_FILES
+                        or (
+                            should_seed_defaults
+                            and not (INSTANCE_DIR / rel).exists()
+                            and not (INSTANCE_DIR / rel).is_symlink()
+                        )
+                    )
+                )
+            ]
+        commit_targets.append(".configpack.json")
         _commit_configpack_paths(transaction, commit_targets)
         transaction = None
         success = True
@@ -6793,6 +6931,122 @@ def install_configpack(
             success or (had_working_pack and not force_verify)
         ):
             progress_cb(100)
+
+
+MINIMAL_UI_DEFAULTS_SCRIPT = """\
+// Industrial Horizon: keep JourneyMap's Death group quiet on first setup.
+// After that first initialization, the player's own choice is never overwritten.
+
+ClientEvents.loggedIn(event => {
+  global.ih_jm_death_group_wait = 100
+  global.ih_jm_death_group_attempts = 0
+  global.ih_jm_death_group_done = false
+  global.ih_jm_death_group_marker = null
+
+  try {
+    let ihJmFilesClass = Java.loadClass('java.nio.file.Files')
+    let ihJmGameDirectory = Client.gameDirectory.toPath()
+    let ihJmMarkerPath = ihJmGameDirectory
+      .resolve('config')
+      .resolve('industrial_horizon')
+      .resolve('minimal_ui_defaults_v1.applied')
+
+    global.ih_jm_death_group_marker = ihJmMarkerPath
+    if (ihJmFilesClass.exists(ihJmMarkerPath)) {
+      global.ih_jm_death_group_done = true
+    }
+  } catch (ihJmMarkerError) {
+    // Fail closed: unavailable marker storage must never reset preferences.
+    console.warn('[Industrial Horizon] Could not read UI defaults marker: ' + ihJmMarkerError)
+    global.ih_jm_death_group_done = true
+  }
+})
+
+ClientEvents.loggedOut(event => {
+  global.ih_jm_death_group_done = true
+  global.ih_jm_death_group_marker = null
+})
+
+ClientEvents.tick(event => {
+  if (global.ih_jm_death_group_done !== false) {
+    return
+  }
+
+  if (global.ih_jm_death_group_wait > 0) {
+    global.ih_jm_death_group_wait--
+    return
+  }
+
+  try {
+    let ihJmGroupStoreClass = Java.loadClass('journeymap.common.waypoint.WaypointGroupStore')
+    let ihJmScopeClass = Java.loadClass('journeymap.common.waypoint.WaypointScope')
+    let ihJmFilesClass = Java.loadClass('java.nio.file.Files')
+    let ihJmGroupStore = ihJmGroupStoreClass.getInstance()
+    let ihJmDeathGroup = ihJmGroupStore.getNullable('journeymap_death')
+
+    if (ihJmDeathGroup == null) {
+      global.ih_jm_death_group_attempts++
+      global.ih_jm_death_group_wait = 20
+      if (global.ih_jm_death_group_attempts >= 20) {
+        global.ih_jm_death_group_done = true
+      }
+      return
+    }
+
+    let ihJmMarkerPath = global.ih_jm_death_group_marker
+    if (ihJmMarkerPath == null) {
+      global.ih_jm_death_group_done = true
+      return
+    }
+
+    if (ihJmFilesClass.exists(ihJmMarkerPath)) {
+      global.ih_jm_death_group_done = true
+      return
+    }
+
+    // Claim initialization before changing JourneyMap. A later login can
+    // therefore never overwrite a choice the player made after this point.
+    ihJmFilesClass.createDirectories(ihJmMarkerPath.getParent())
+    ihJmFilesClass.createFile(ihJmMarkerPath)
+
+    if (ihJmDeathGroup.getSettings().isEnabled()) {
+      ihJmDeathGroup.getSettings().setEnabled(false)
+      ihJmGroupStore.put(ihJmDeathGroup, ihJmScopeClass.self())
+    }
+
+    global.ih_jm_death_group_done = true
+  } catch (ihJmError) {
+    global.ih_jm_death_group_attempts++
+    global.ih_jm_death_group_wait = 20
+    if (global.ih_jm_death_group_attempts >= 20) {
+      console.warn('[Industrial Horizon] Could not apply UI defaults: ' + ihJmError)
+      global.ih_jm_death_group_done = true
+    }
+  }
+})
+"""
+
+
+def install_minimal_ui_defaults_script(status_cb=None) -> None:
+    """Install the launcher-owned one-time JourneyMap default migration."""
+    target = (
+        INSTANCE_DIR
+        / "kubejs"
+        / "client_scripts"
+        / "ih_minimal_ui.js"
+    )
+    desired = MINIMAL_UI_DEFAULTS_SCRIPT.encode("utf-8")
+    try:
+        if target.is_file() and target.read_bytes() == desired:
+            return
+        _atomic_write_text(target, MINIMAL_UI_DEFAULTS_SCRIPT)
+        if status_cb:
+            status_cb("Минималистичный интерфейс подготовлен")
+    except Exception as exc:
+        raise RuntimeError(
+            "Не удалось подготовить настройки интерфейса. "
+            "Закройте игру и повторите запуск."
+        ) from exc
 
 
 def _install_with_retry(func, *args, retries=4, delay_seconds=2, status_cb=None, **kwargs):
@@ -9769,9 +10023,33 @@ def find_corrupted_file(error) -> "Path | None":
 # при какой переустановке — даже если игрок удалил папку экземпляра руками.
 # Лаунчер держит резервную копию ЛИЧНЫХ файлов вне папки игры (APP_DATA_DIR)
 # и возвращает их, когда файла нет на месте. Файлами паков (config/ и т.п.)
-# управляют modpack/configpack — их сюда не включать.
-PLAYER_SETTINGS_FILES = ("options.txt", "servers.dat", "servers.dat_old")
+# обычно управляют modpack/configpack; ниже перечислены только те UI-файлы,
+# которые после первого запуска становятся личным выбором игрока.
+PLAYER_SETTINGS_FILES = (
+    "options.txt",
+    "servers.dat",
+    "servers.dat_old",
+    # Minimal-interface defaults become player-owned after first install.
+    # Keeping a latest copy outside the instance also protects them if the
+    # whole game directory is removed and installed again.
+    *tuple(sorted(CONFIGPACK_SEED_ONLY_FILES)),
+)
 PLAYER_SETTINGS_BACKUP_DIR = APP_DATA_DIR / "player_settings_backup"
+PLAYER_SETTINGS_SNAPSHOT_LIMIT = 5
+
+
+def _copy_file_atomic(source: Path, destination: Path) -> None:
+    """Copy one small personal file without exposing partial destination bytes."""
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(
+        ".%s.%s.tmp" % (destination.name, secrets.token_hex(4))
+    )
+    try:
+        shutil.copy2(source, temporary)
+        _replace_path_with_retry(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def backup_player_settings() -> None:
@@ -9780,30 +10058,297 @@ def backup_player_settings() -> None:
     свежесозданный options.txt не затёр полноценную копию."""
     try:
         PLAYER_SETTINGS_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-        for name in PLAYER_SETTINGS_FILES:
-            src = INSTANCE_DIR / name
-            if src.is_file() and src.stat().st_size > 0:
-                shutil.copy2(src, PLAYER_SETTINGS_BACKUP_DIR / name)
     except Exception as exc:  # noqa: BLE001
         runtime_log("player_settings_backup_failed: %s", exc,
                     level=logging.WARNING)
+        return
+    for name in PLAYER_SETTINGS_FILES:
+        try:
+            src = _checked_protected_leaf(INSTANCE_DIR, name)
+            dst = _checked_protected_leaf(
+                PLAYER_SETTINGS_BACKUP_DIR, name
+            )
+            if (
+                src.is_file()
+                and not _path_is_reparse_point(src)
+                and src.stat().st_size > 0
+                and not _path_is_reparse_point(dst)
+            ):
+                _copy_file_atomic(src, dst)
+        except Exception as exc:  # noqa: BLE001
+            runtime_log(
+                "player_settings_backup_failed file=%s error=%s",
+                name, exc, level=logging.WARNING,
+            )
 
 
 def restore_player_settings() -> None:
     """Возвращает личные файлы из резервной копии, если их нет на месте
     (после чистой установки или удаления папки руками). Существующий файл
     никогда не перезаписывает: свежие правки игрока важнее бэкапа."""
-    try:
-        for name in PLAYER_SETTINGS_FILES:
-            dst = INSTANCE_DIR / name
-            src = PLAYER_SETTINGS_BACKUP_DIR / name
-            if not dst.exists() and src.is_file() and src.stat().st_size > 0:
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dst)
+    for name in PLAYER_SETTINGS_FILES:
+        try:
+            dst = _checked_protected_leaf(INSTANCE_DIR, name)
+            src = _checked_protected_leaf(
+                PLAYER_SETTINGS_BACKUP_DIR, name
+            )
+            if (
+                not os.path.lexists(dst)
+                and src.is_file()
+                and not _path_is_reparse_point(src)
+                and src.stat().st_size > 0
+            ):
+                _copy_file_atomic(src, dst)
                 runtime_log("player_settings_restored: %s", name)
-    except Exception as exc:  # noqa: BLE001
-        runtime_log("player_settings_restore_failed: %s", exc,
-                    level=logging.WARNING)
+        except Exception as exc:  # noqa: BLE001
+            runtime_log(
+                "player_settings_restore_failed file=%s error=%s",
+                name, exc, level=logging.WARNING,
+            )
+
+
+def _player_settings_snapshot_root() -> Path:
+    """Resolve dynamically so alternate install roots/tests stay isolated."""
+    return APP_DATA_DIR / "player_settings_snapshots"
+
+
+PLAYER_SETTINGS_SNAPSHOT_KIND = "ih-player-settings-snapshot"
+PLAYER_SETTINGS_SNAPSHOT_VERSION = 2
+
+
+def _path_is_reparse_point(path: Path) -> bool:
+    """Detect symlinks and Windows junctions without following their target."""
+    path = Path(path)
+    if path.is_symlink():
+        return True
+    is_junction = getattr(path, "is_junction", None)
+    if callable(is_junction) and is_junction():
+        return True
+    if os.name == "nt" and os.path.lexists(path):
+        attributes = getattr(os.lstat(path), "st_file_attributes", 0)
+        return bool(
+            attributes
+            & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        )
+    return False
+
+
+def _checked_protected_leaf(base: Path, rel: str) -> Path:
+    """Return a protected leaf after rejecting unsafe parent components."""
+    current = Path(base)
+    parts = Path(rel).parts
+    if not parts or Path(rel).is_absolute() or ".." in parts:
+        raise ValueError("invalid protected settings path: %s" % rel)
+    for part in parts[:-1]:
+        current = current / part
+        if not os.path.lexists(current):
+            continue
+        if _path_is_reparse_point(current) or not current.is_dir():
+            raise ValueError(
+                "unsafe protected settings parent: %s" % rel
+            )
+    return current / parts[-1]
+
+
+def _managed_snapshot_sort_key(path: Path):
+    """Return a stable retention key for our v2 snapshots, else None."""
+    try:
+        manifest = json.loads(
+            (path / "manifest.json").read_text(encoding="utf-8")
+        )
+        if (
+            manifest.get("kind") != PLAYER_SETTINGS_SNAPSHOT_KIND
+            or manifest.get("version")
+            != PLAYER_SETTINGS_SNAPSHOT_VERSION
+        ):
+            return None
+        created_at_ns = manifest.get("created_at_ns")
+        if not isinstance(created_at_ns, int) or created_at_ns < 0:
+            return None
+        return created_at_ns, path.name
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+
+
+def create_player_settings_snapshot(reason="repair") -> Path:
+    """Create an atomic, durable copy before a repair mutates the client.
+
+    Only compact personal settings are copied.  JourneyMap/FTB map databases,
+    worlds, screenshots and packs are deliberately outside every repair target
+    and are not duplicated here (they can grow to many gigabytes).
+    """
+    root = _player_settings_snapshot_root()
+    root.mkdir(parents=True, exist_ok=True)
+    pending = Path(tempfile.mkdtemp(prefix=".pending-", dir=str(root)))
+    entries = {}
+    try:
+        files_root = pending / "files"
+        for rel in PLAYER_SETTINGS_FILES:
+            src = _checked_protected_leaf(INSTANCE_DIR, rel)
+            if not os.path.lexists(src):
+                entries[rel] = {"state": "absent"}
+                continue
+            if _path_is_reparse_point(src) or not src.is_file():
+                raise ValueError(
+                    "protected setting is not a regular file: %s" % rel
+                )
+            dst = files_root / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            entries[rel] = {
+                "state": "file",
+                "size": dst.stat().st_size,
+                "sha256": calculate_file_sha256(dst),
+            }
+        _atomic_write_json(pending / "manifest.json", {
+            "kind": PLAYER_SETTINGS_SNAPSHOT_KIND,
+            "version": PLAYER_SETTINGS_SNAPSHOT_VERSION,
+            "reason": str(reason),
+            "created_at_ns": time.time_ns(),
+            "entries": entries,
+        })
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        final = root / ("%s-%s-%s" % (
+            re.sub(r"[^a-z0-9_-]+", "-", str(reason).lower()).strip("-")
+            or "settings",
+            stamp,
+            secrets.token_hex(2),
+        ))
+        os.replace(pending, final)
+        pending = None
+
+        managed = []
+        for path in root.iterdir():
+            if (
+                not path.is_dir()
+                or path.name.startswith(".")
+                or path == final
+                or _path_is_reparse_point(path)
+            ):
+                continue
+            sort_key = _managed_snapshot_sort_key(path)
+            if sort_key is not None:
+                managed.append((sort_key, path))
+        managed.sort(key=lambda item: item[0], reverse=True)
+        keep = max(0, PLAYER_SETTINGS_SNAPSHOT_LIMIT - 1)
+        for _sort_key, old in managed[keep:]:
+            try:
+                _remove_path(old)
+            except OSError as exc:
+                runtime_log(
+                    "player_settings_snapshot_prune_failed path=%s error=%s",
+                    old, exc, level=logging.WARNING,
+                )
+        runtime_log(
+            "player_settings_snapshot_created path=%s files=%s",
+            final,
+            sum(
+                1 for entry in entries.values()
+                if entry.get("state") == "file"
+            ),
+        )
+        return final
+    except Exception as exc:
+        if pending is not None:
+            try:
+                _remove_path(pending)
+            except OSError:
+                pass
+        raise RuntimeError(
+            "Не удалось создать резервную копию настроек. "
+            "Восстановление клиента отменено, файлы не изменены."
+        ) from exc
+
+
+def restore_player_settings_snapshot(snapshot: Path) -> None:
+    """Roll the compact protected settings back after a failed repair."""
+    snapshot = Path(snapshot)
+    root = _player_settings_snapshot_root().resolve()
+    try:
+        if (
+            _path_is_reparse_point(snapshot)
+            or snapshot.resolve().parent != root
+        ):
+            raise ValueError("unexpected player settings snapshot path")
+        manifest_path = snapshot / "manifest.json"
+        if _path_is_reparse_point(manifest_path):
+            raise ValueError("unsafe player settings snapshot manifest")
+        manifest = json.loads(
+            manifest_path.read_text(encoding="utf-8")
+        )
+        if (
+            manifest.get("kind") != PLAYER_SETTINGS_SNAPSHOT_KIND
+            or manifest.get("version")
+            != PLAYER_SETTINGS_SNAPSHOT_VERSION
+        ):
+            raise ValueError("invalid player settings snapshot manifest")
+        entries = manifest.get("entries")
+        expected = set(PLAYER_SETTINGS_FILES)
+        if not isinstance(entries, dict) or set(entries) != expected:
+            raise ValueError("incomplete player settings snapshot manifest")
+
+        # Validate the complete snapshot and every live parent before touching
+        # a single setting.  A damaged backup can therefore never cause a
+        # partial rollback.
+        files_root = snapshot / "files"
+        has_file_entries = any(
+            entry.get("state") == "file"
+            for entry in entries.values()
+            if isinstance(entry, dict)
+        )
+        if os.path.lexists(files_root) and (
+            _path_is_reparse_point(files_root) or not files_root.is_dir()
+        ):
+            raise ValueError("unsafe player settings snapshot files root")
+        if has_file_entries and not files_root.is_dir():
+            raise ValueError("unsafe player settings snapshot files root")
+        validated = {}
+        for rel in PLAYER_SETTINGS_FILES:
+            entry = entries[rel]
+            if not isinstance(entry, dict):
+                raise ValueError("invalid snapshot entry: %s" % rel)
+            state = entry.get("state")
+            dst = _checked_protected_leaf(INSTANCE_DIR, rel)
+            src = _checked_protected_leaf(files_root, rel)
+            if state == "file":
+                if (
+                    _path_is_reparse_point(src)
+                    or not src.is_file()
+                    or not isinstance(entry.get("size"), int)
+                    or entry["size"] < 0
+                    or src.stat().st_size != entry["size"]
+                    or not isinstance(entry.get("sha256"), str)
+                    or calculate_file_sha256(src) != entry["sha256"]
+                ):
+                    raise ValueError("snapshot file missing: %s" % rel)
+            elif state == "absent":
+                if os.path.lexists(src):
+                    raise ValueError(
+                        "unexpected file for absent snapshot entry: %s" % rel
+                    )
+            else:
+                raise ValueError("invalid snapshot state: %s" % rel)
+            validated[rel] = (state, src, dst)
+
+        for rel in PLAYER_SETTINGS_FILES:
+            state, src, dst = validated[rel]
+            if state == "file":
+                if os.path.lexists(dst) and (
+                    _path_is_reparse_point(dst) or not dst.is_file()
+                ):
+                    _remove_path(dst)
+                _copy_file_atomic(src, dst)
+            elif os.path.lexists(dst):
+                _remove_path(dst)
+        runtime_log("player_settings_snapshot_restored path=%s", snapshot)
+    except Exception as exc:
+        runtime_log(
+            "player_settings_snapshot_restore_failed: %s",
+            exc,
+            level=logging.ERROR,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        raise
 
 
 # Клавиши по умолчанию для новых установок. Меняем ТОЛЬКО если игрок не
@@ -9943,6 +10488,7 @@ def prepare_or_repair_client(
 
     recover_interrupted_modpack_update(status_cb)
     recover_interrupted_configpack_update(status_cb)
+    seed_configpack_defaults = _is_fresh_managed_instance()
     _check_installation_preconditions()
     actions = {
         "minecraft_checked": False,
@@ -10047,9 +10593,20 @@ def prepare_or_repair_client(
     config_status, config_progress = repair_progress.scoped(
         "Настройки сборки"
     )
+    if seed_configpack_defaults:
+        # A completely rebuilt client may still have the player's compact
+        # settings backup outside the instance.  Return it after the modpack
+        # baseline exists but before configpack considers first-install
+        # defaults, so the saved choices win.
+        restore_player_settings()
+        seed_default_keybinds()
     install_configpack(
-        config_status, config_progress, force_verify=True
+        config_status,
+        config_progress,
+        force_verify=True,
+        seed_defaults=seed_configpack_defaults,
     )
+    install_minimal_ui_defaults_script(config_status)
     actions["configpack_checked"] = True
 
     progress_out(100)
@@ -10059,9 +10616,29 @@ def prepare_or_repair_client(
 
 def repair_client(status_cb=None, progress_cb=None) -> dict:
     """Public backend entry point for the one-click repair action."""
-    return prepare_or_repair_client(
-        status_cb=status_cb, progress_cb=progress_cb, force=True
-    )
+    active_session = get_active_game_session()
+    if active_session:
+        raise GameAlreadyRunning(
+            "Minecraft уже запущен. Закройте игру перед восстановлением клиента."
+        )
+    # Recover first, then snapshot.  Otherwise a killed previous transaction
+    # could leave partial live bytes which a later repair failure would save
+    # and restore over the correctly recovered copy.
+    recover_interrupted_modpack_update(status_cb)
+    recover_interrupted_configpack_update(status_cb)
+    snapshot = create_player_settings_snapshot("repair")
+    try:
+        return prepare_or_repair_client(
+            status_cb=status_cb, progress_cb=progress_cb, force=True
+        )
+    except Exception:
+        try:
+            restore_player_settings_snapshot(snapshot)
+        except Exception:
+            # Preserve the original repair error while recording the rollback
+            # failure in launcher.log for support.
+            pass
+        raise
 
 
 def repair_installation(status_cb=None, progress_cb=None) -> dict:
@@ -10586,10 +11163,11 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
     recover_interrupted_modpack_update(status_cb)
     recover_interrupted_configpack_update(status_cb)
-    # Личные настройки: вернуть из бэкапа (если папку переустановили/снесли),
-    # затем засеять дефолтные бинды новичку, затем обновить бэкап.
-    restore_player_settings()
-    seed_default_keybinds()
+    seed_configpack_defaults = _is_fresh_managed_instance()
+    # Capture the last known-good choices before any installation work.
+    # Restore happens after the modpack baseline is in place, otherwise a
+    # restored nested config file would make a deleted client look existing
+    # and incorrectly skip the clean config/kubejs installation.
     backup_player_settings()
     runtime_log(
         "launch_requested user=%s memory_mb=%s low_end=%s test=%s instance=%s",
@@ -10666,6 +11244,13 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
             extras_status, _progress_slice(extras_progress, 0, 15))
         extras_progress(15)
 
+    # The modpack baseline must be installed first so restored nested config
+    # files cannot make a deleted client look like an existing installation.
+    # Restore before any option/HUD tweaks below, so the player's saved values
+    # remain the base that those explicit launcher modes adjust.
+    restore_player_settings()
+    seed_default_keybinds()
+
     ensure_pinned_server(extras_status)
     # Режим «очень старая видеокарта» (no_sodium) — это заведомо очень слабый ПК:
     # раз ему не по силам Sodium, то и обычная дальность прорисовки с графикой
@@ -10717,7 +11302,11 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     # конце, когда никто уже не тронет его файлы.
     configpack_status, configpack_progress = progress.scoped("Настройки сборки")
     install_configpack(
-        configpack_status, _progress_slice(configpack_progress, 0, 90))
+        configpack_status,
+        _progress_slice(configpack_progress, 0, 90),
+        seed_defaults=seed_configpack_defaults,
+    )
+    install_minimal_ui_defaults_script(configpack_status)
     install_ultimine_sticky(configpack_status)
     # После configpack: install_modpack() при обновлении сборки стирает
     # config/ целиком, а здесь конфиг уже никто не перезапишет.

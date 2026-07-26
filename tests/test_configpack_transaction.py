@@ -63,6 +63,7 @@ class ConfigpackTransactionTests(unittest.TestCase):
         app_data: Path,
         digest: str,
         *,
+        seed_defaults=False,
         extra_patches=(),
     ):
         statuses = []
@@ -97,7 +98,11 @@ class ConfigpackTransactionTests(unittest.TestCase):
                 active = patcher.__enter__()
                 if patcher is download_patcher:
                     download = active
-            launcher.install_configpack(statuses.append, lambda _pct: None)
+            launcher.install_configpack(
+                statuses.append,
+                lambda _pct: None,
+                seed_defaults=seed_defaults,
+            )
             download.assert_not_called()
         finally:
             for patcher in reversed(entered):
@@ -146,6 +151,259 @@ class ConfigpackTransactionTests(unittest.TestCase):
                 (instance / launcher.CONFIGPACK_TRANSACTION_DIR_NAME).exists()
             )
             self.assertFalse(archive.exists())
+
+    def test_version_update_preserves_existing_seed_only_ui_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            app_data = root / "app"
+            seed_rel = "config/betterf3.toml"
+            immutable_rel = "kubejs/server_scripts/era_gates.js"
+            seed = instance / seed_rel
+            seed.parent.mkdir(parents=True)
+            seed.write_bytes(b"player-custom-ui")
+            self._write_marker(instance, 47, [seed_rel, immutable_rel])
+            archive = app_data / "configpack_download.zip"
+            digest = self._make_archive(
+                archive,
+                owns=(seed_rel, immutable_rel),
+                payload={
+                    seed_rel: b"pack-default-ui",
+                    immutable_rel: b"new-managed-script",
+                },
+            )
+
+            self._install_from_local_archive(instance, app_data, digest)
+
+            self.assertEqual(seed.read_bytes(), b"player-custom-ui")
+            self.assertEqual(
+                (instance / immutable_rel).read_bytes(),
+                b"new-managed-script",
+            )
+            marker = json.loads(
+                (instance / ".configpack.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(marker["seed_only"], [seed_rel])
+
+    def test_missing_seed_is_installed_for_a_clean_client(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            app_data = root / "app"
+            seed_rel = "config/create-client.toml"
+            seed = instance / seed_rel
+            archive = app_data / "configpack_download.zip"
+            digest = self._make_archive(
+                archive,
+                owns=(seed_rel,),
+                payload={seed_rel: b"minimal-ui-default"},
+            )
+
+            # No marker means this is also the retry path after a fresh
+            # modpack install committed but configpack previously failed.
+            self._install_from_local_archive(instance, app_data, digest)
+
+            self.assertEqual(seed.read_bytes(), b"minimal-ui-default")
+
+    def test_version_update_does_not_recreate_missing_player_seed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            app_data = root / "app"
+            seed_rel = "config/betterf3.toml"
+            immutable_rel = "kubejs/server_scripts/era_gates.js"
+            self._write_marker(instance, 47, [seed_rel, immutable_rel])
+            archive = app_data / "configpack_download.zip"
+            digest = self._make_archive(
+                archive,
+                owns=(seed_rel, immutable_rel),
+                payload={
+                    seed_rel: b"pack-default-ui",
+                    immutable_rel: b"new-managed-script",
+                },
+            )
+
+            self._install_from_local_archive(instance, app_data, digest)
+
+            self.assertFalse((instance / seed_rel).exists())
+            self.assertEqual(
+                (instance / immutable_rel).read_bytes(),
+                b"new-managed-script",
+            )
+
+    def test_same_version_repair_does_not_recreate_missing_player_seed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            app_data = root / "app"
+            seed_rel = "config/neat-client.toml"
+            immutable_rel = "kubejs/server_scripts/era_gates.js"
+            self._write_marker(
+                instance,
+                self.REMOTE_VERSION,
+                [seed_rel, immutable_rel],
+            )
+            archive = app_data / "configpack_download.zip"
+            digest = self._make_archive(
+                archive,
+                owns=(seed_rel, immutable_rel),
+                payload={
+                    seed_rel: b"pack-default-ui",
+                    immutable_rel: b"restored-script",
+                },
+            )
+
+            self._install_from_local_archive(instance, app_data, digest)
+
+            self.assertFalse((instance / seed_rel).exists())
+            self.assertEqual(
+                (instance / immutable_rel).read_bytes(), b"restored-script"
+            )
+
+    def test_same_version_automatic_repair_is_selective(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            app_data = root / "app"
+            seed_rel = "config/inventoryhud-client.toml"
+            immutable_rel = "kubejs/server_scripts/era_gates.js"
+            seed = instance / seed_rel
+            seed.parent.mkdir(parents=True)
+            seed.write_bytes(b"player-layout")
+            self._write_marker(
+                instance, self.REMOTE_VERSION, [seed_rel, immutable_rel]
+            )
+            archive = app_data / "configpack_download.zip"
+            digest = self._make_archive(
+                archive,
+                owns=(seed_rel, immutable_rel),
+                payload={
+                    seed_rel: b"pack-layout",
+                    immutable_rel: b"restored-script",
+                },
+            )
+
+            self._install_from_local_archive(instance, app_data, digest)
+
+            self.assertEqual(seed.read_bytes(), b"player-layout")
+            self.assertEqual(
+                (instance / immutable_rel).read_bytes(), b"restored-script"
+            )
+
+    def test_same_version_missing_mutable_verify_is_restored_without_loop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            app_data = root / "app"
+            seed_rel = "config/betterf3.toml"
+            mutable_rel = "config/fml.toml"
+            immutable_rel = "kubejs/server_scripts/era_gates.js"
+            seed = instance / seed_rel
+            immutable = instance / immutable_rel
+            seed.parent.mkdir(parents=True)
+            immutable.parent.mkdir(parents=True)
+            seed.write_bytes(b"player-ui")
+            immutable.write_bytes(b"managed-script")
+            digest_immutable = hashlib.sha256(b"managed-script").hexdigest()
+            marker = instance / ".configpack.json"
+            marker.write_text(
+                json.dumps({
+                    "version": self.REMOTE_VERSION,
+                    "owns": [seed_rel, mutable_rel, immutable_rel],
+                    "verify": [mutable_rel, immutable_rel],
+                    "files": [{
+                        "path": immutable_rel,
+                        "size": len(b"managed-script"),
+                        "sha256": digest_immutable,
+                    }],
+                }),
+                encoding="utf-8",
+            )
+            archive = app_data / "configpack_download.zip"
+            digest = self._make_archive(
+                archive,
+                owns=(seed_rel, mutable_rel, immutable_rel),
+                payload={
+                    seed_rel: b"pack-ui",
+                    mutable_rel: b"restored-mutable",
+                    immutable_rel: b"managed-script",
+                },
+            )
+
+            self._install_from_local_archive(instance, app_data, digest)
+
+            self.assertEqual(seed.read_bytes(), b"player-ui")
+            self.assertEqual(
+                (instance / mutable_rel).read_bytes(), b"restored-mutable"
+            )
+            with (
+                self._globals(instance, app_data),
+                mock.patch.dict(
+                    launcher.CONFIG,
+                    {"CONFIGPACK_URL": "https://unit.test/configpack.zip"},
+                ),
+                mock.patch.object(
+                    launcher,
+                    "get_remote_configpack_version",
+                    return_value=self.REMOTE_VERSION,
+                ),
+            ):
+                self.assertFalse(launcher.configpack_needs_install())
+
+    def test_launcher_owned_minimal_ui_script_does_not_trigger_pack_repair(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            app_data = root / "app"
+            rel = "kubejs/client_scripts/ih_minimal_ui.js"
+            target = instance / rel
+            target.parent.mkdir(parents=True)
+            legacy = b"// legacy: forced every login\n"
+            target.write_bytes(legacy)
+            digest = hashlib.sha256(legacy).hexdigest()
+            (instance / ".configpack.json").write_text(
+                json.dumps({
+                    "version": self.REMOTE_VERSION,
+                    "owns": [rel],
+                    "verify": [rel],
+                    "files": [{
+                        "path": rel,
+                        "size": len(legacy),
+                        "sha256": digest,
+                    }],
+                }),
+                encoding="utf-8",
+            )
+            with (
+                self._globals(instance, app_data),
+                mock.patch.dict(
+                    launcher.CONFIG,
+                    {"CONFIGPACK_URL": "https://unit.test/configpack.zip"},
+                ),
+                mock.patch.object(
+                    launcher,
+                    "get_remote_configpack_version",
+                    return_value=self.REMOTE_VERSION,
+                ),
+            ):
+                launcher.install_minimal_ui_defaults_script()
+                self.assertFalse(launcher.configpack_needs_install())
+
+            self.assertEqual(
+                target.read_text(encoding="utf-8"),
+                launcher.MINIMAL_UI_DEFAULTS_SCRIPT,
+            )
+
+    def test_minimal_ui_default_script_never_reapplies_after_marker(self):
+        script = launcher.MINIMAL_UI_DEFAULTS_SCRIPT
+        marker = "minimal_ui_defaults_v1.applied"
+        create = "ihJmFilesClass.createFile(ihJmMarkerPath)"
+        disable = "setEnabled(false)"
+        self.assertIn(marker, script)
+        self.assertIn("Client.gameDirectory.toPath()", script)
+        self.assertIn("ihJmFilesClass.exists(ihJmMarkerPath)", script)
+        self.assertLess(script.index(create), script.index(disable))
+        self.assertEqual(script.count(disable), 1)
 
     def test_extraction_error_keeps_old_live_files_and_marker(self):
         with tempfile.TemporaryDirectory() as tmp:

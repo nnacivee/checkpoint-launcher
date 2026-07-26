@@ -11,8 +11,8 @@ import webui
 
 
 class LauncherReliabilityTests(unittest.TestCase):
-    def test_configpack_offline_fallback_matches_v50_candidate(self):
-        self.assertEqual(launcher.CONFIG["CONFIGPACK_VERSION"], 50)
+    def test_configpack_offline_fallback_matches_live_v51(self):
+        self.assertEqual(launcher.CONFIG["CONFIGPACK_VERSION"], 51)
 
     def test_modpack_version_policy_never_downgrades(self):
         with mock.patch.object(launcher, "runtime_log") as runtime_log:
@@ -43,6 +43,107 @@ class LauncherReliabilityTests(unittest.TestCase):
                     ("mods",),
                     "a missing marker must not erase an existing config tree",
                 )
+
+    def test_modpack_staging_removes_all_configpack_seed_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stage = Path(tmp)
+            for rel in launcher.CONFIGPACK_SEED_ONLY_FILES:
+                target = stage / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(b"stale")
+            untouched = stage / "config" / "other.toml"
+            untouched.write_bytes(b"keep")
+
+            launcher._strip_modpack_seed_defaults(stage)
+
+            for rel in launcher.CONFIGPACK_SEED_ONLY_FILES:
+                self.assertFalse((stage / rel).exists(), rel)
+            self.assertEqual(untouched.read_bytes(), b"keep")
+
+    def test_full_repair_with_lost_version_marker_keeps_config_and_pack_marker(self):
+        payloads = {
+            "core-%02d.jar" % index: ("core-%02d" % index).encode("ascii")
+            for index in range(20)
+        }
+        manifest = {
+            "version": 13,
+            "modsOnly": True,
+            "files": [
+                {
+                    "path": "mods/" + name,
+                    "size": len(payload),
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                }
+                for name, payload in payloads.items()
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            app = root / "app"
+            app.mkdir()
+            archive = app / "modpack_download.zip"
+            with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+                for name, payload in payloads.items():
+                    zf.writestr("mods/" + name, payload)
+                zf.writestr("config/betterf3.toml", "stale-default")
+                zf.writestr("config/player-choice.toml", "pack-default")
+                zf.writestr("kubejs/player-choice.js", "pack-default")
+            seed = instance / "config" / "betterf3.toml"
+            config_choice = instance / "config" / "player-choice.toml"
+            kube_choice = instance / "kubejs" / "player-choice.js"
+            for path, data in (
+                (seed, b"player-ui"),
+                (config_choice, b"player-config"),
+                (kube_choice, b"player-kube"),
+            ):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+            marker = instance / ".configpack.json"
+            marker.write_text('{"version":51}', encoding="utf-8")
+
+            with (
+                mock.patch.multiple(
+                    launcher,
+                    INSTANCE_DIR=instance,
+                    APP_DATA_DIR=app,
+                    MODPACK_VERSION_FILE=instance / ".modpack_version",
+                    CONFIGPACK_MARKER_FILE=marker,
+                ),
+                mock.patch.object(
+                    launcher, "recover_interrupted_modpack_update"
+                ),
+                mock.patch.object(launcher, "backup_player_settings"),
+                mock.patch.object(
+                    launcher, "get_remote_modpack_version", return_value=13
+                ),
+                mock.patch.object(
+                    launcher, "get_local_modpack_version", return_value=-1
+                ),
+                mock.patch.object(
+                    launcher, "_fetch_modpack_manifest", return_value=manifest
+                ),
+                mock.patch.object(
+                    launcher, "_check_installation_preconditions"
+                ),
+                mock.patch.object(launcher, "download_modpack_archive"),
+                mock.patch.object(launcher, "harvest_optional_mods"),
+                mock.patch.object(launcher, "_cache_modpack_manifest"),
+            ):
+                launcher.install_modpack(
+                    lambda _text: None,
+                    lambda _pct: None,
+                    allow_delta=False,
+                )
+
+            self.assertEqual(
+                (instance / "mods" / "core-00.jar").read_bytes(),
+                payloads["core-00.jar"],
+            )
+            self.assertEqual(seed.read_bytes(), b"player-ui")
+            self.assertEqual(config_choice.read_bytes(), b"player-config")
+            self.assertEqual(kube_choice.read_bytes(), b"player-kube")
+            self.assertTrue(marker.is_file())
 
     def test_delta_and_full_install_refuse_older_release_source(self):
         manifest = {
@@ -459,6 +560,9 @@ class LauncherReliabilityTests(unittest.TestCase):
                 ),
                 mock.patch.object(launcher, "remove_blocked_mods"),
                 mock.patch.object(launcher, "install_configpack"),
+                mock.patch.object(
+                    launcher, "get_active_game_session", return_value=None
+                ),
             ):
                 launcher.repair_installation()
 

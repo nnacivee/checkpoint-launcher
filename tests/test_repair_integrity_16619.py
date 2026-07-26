@@ -159,6 +159,12 @@ class RepairIntegrity16619Tests(unittest.TestCase):
                 ) as extras,
                 mock.patch.object(launcher, "remove_blocked_mods"),
                 mock.patch.object(launcher, "install_configpack") as config,
+                mock.patch.object(
+                    launcher, "install_minimal_ui_defaults_script"
+                ) as minimal_ui,
+                mock.patch.object(
+                    launcher, "get_active_game_session", return_value=None
+                ),
             ):
                 result = launcher.repair_client()
 
@@ -167,6 +173,7 @@ class RepairIntegrity16619Tests(unittest.TestCase):
             full.assert_not_called()
             extras.assert_called_once()
             config.assert_called_once()
+            minimal_ui.assert_called_once()
             self.assertTrue(config.call_args.kwargs["force_verify"])
             self.assertTrue(
                 install_game.call_args.kwargs["force"]
@@ -182,6 +189,316 @@ class RepairIntegrity16619Tests(unittest.TestCase):
                 (instance / "options.txt").read_text(encoding="utf-8"),
                 "lang:ru_ru\n",
             )
+
+    def test_backend_repair_refuses_before_any_file_mutation(self):
+        with (
+            mock.patch.object(
+                launcher, "get_active_game_session", return_value={"pid": 42}
+            ),
+            mock.patch.object(
+                launcher, "recover_interrupted_modpack_update"
+            ) as recover_modpack,
+            mock.patch.object(
+                launcher, "recover_interrupted_configpack_update"
+            ) as recover_configpack,
+            mock.patch.object(
+                launcher, "create_player_settings_snapshot"
+            ) as snapshot,
+            mock.patch.object(
+                launcher, "prepare_or_repair_client"
+            ) as prepare,
+        ):
+            with self.assertRaises(launcher.GameAlreadyRunning):
+                launcher.repair_client()
+        recover_modpack.assert_not_called()
+        recover_configpack.assert_not_called()
+        snapshot.assert_not_called()
+        prepare.assert_not_called()
+
+    def test_failed_repair_restores_snapshot_and_keeps_map_databases(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            app = root / "app"
+            options = instance / "options.txt"
+            ui = instance / "config" / "betterf3.toml"
+            map_data = instance / "journeymap" / "data" / "map.bin"
+            ftb_data = instance / "local" / "ftbchunks" / "data" / "map.dat"
+            for path, payload in (
+                (options, b"guiScale:2\n"),
+                (ui, b"player-ui"),
+                (map_data, b"journeymap"),
+                (ftb_data, b"ftb-map"),
+            ):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(payload)
+
+            def fail_after_mutation(*_args, **_kwargs):
+                options.write_bytes(b"damaged")
+                ui.write_bytes(b"damaged")
+                raise RuntimeError("simulated repair failure")
+
+            with (
+                mock.patch.multiple(
+                    launcher, INSTANCE_DIR=instance, APP_DATA_DIR=app
+                ),
+                mock.patch.object(
+                    launcher, "get_active_game_session", return_value=None
+                ),
+                mock.patch.object(
+                    launcher, "recover_interrupted_modpack_update"
+                ),
+                mock.patch.object(
+                    launcher, "recover_interrupted_configpack_update"
+                ),
+                mock.patch.object(
+                    launcher,
+                    "prepare_or_repair_client",
+                    side_effect=fail_after_mutation,
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "simulated repair failure"
+                ):
+                    launcher.repair_client()
+
+            self.assertEqual(options.read_bytes(), b"guiScale:2\n")
+            self.assertEqual(ui.read_bytes(), b"player-ui")
+            self.assertEqual(map_data.read_bytes(), b"journeymap")
+            self.assertEqual(ftb_data.read_bytes(), b"ftb-map")
+            snapshots = [
+                path for path in (app / "player_settings_snapshots").iterdir()
+                if path.is_dir() and not path.name.startswith(".")
+            ]
+            self.assertEqual(len(snapshots), 1)
+            manifest = json.loads(
+                (snapshots[0] / "manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                manifest["entries"]["options.txt"]["state"], "file"
+            )
+            self.assertEqual(
+                manifest["entries"]["config/betterf3.toml"]["state"], "file"
+            )
+
+    def test_snapshot_exactly_restores_empty_and_absent_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            app = root / "app"
+            empty = instance / "options.txt"
+            created_later = instance / "servers.dat"
+            empty.parent.mkdir(parents=True)
+            empty.write_bytes(b"")
+            with mock.patch.multiple(
+                launcher, INSTANCE_DIR=instance, APP_DATA_DIR=app
+            ):
+                snapshot = launcher.create_player_settings_snapshot("test")
+                empty.write_bytes(b"damaged")
+                created_later.write_bytes(b"new")
+                launcher.restore_player_settings_snapshot(snapshot)
+            self.assertTrue(empty.is_file())
+            self.assertEqual(empty.read_bytes(), b"")
+            self.assertFalse(created_later.exists())
+
+    def test_snapshot_restores_file_over_wrong_type_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            app = root / "app"
+            options = instance / "options.txt"
+            options.parent.mkdir(parents=True)
+            options.write_bytes(b"known-good")
+            with mock.patch.multiple(
+                launcher, INSTANCE_DIR=instance, APP_DATA_DIR=app
+            ):
+                snapshot = launcher.create_player_settings_snapshot("test")
+                options.unlink()
+                options.mkdir()
+                (options / "junk").write_bytes(b"junk")
+                launcher.restore_player_settings_snapshot(snapshot)
+            self.assertTrue(options.is_file())
+            self.assertEqual(options.read_bytes(), b"known-good")
+
+    def test_snapshot_aborts_on_reparse_protected_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            app = root / "app"
+            options = instance / "options.txt"
+            options.parent.mkdir(parents=True)
+            options.write_bytes(b"settings")
+            original = launcher._path_is_reparse_point
+
+            def mark_options_as_reparse(path):
+                return Path(path) == options or original(path)
+
+            with (
+                mock.patch.multiple(
+                    launcher, INSTANCE_DIR=instance, APP_DATA_DIR=app
+                ),
+                mock.patch.object(
+                    launcher,
+                    "_path_is_reparse_point",
+                    side_effect=mark_options_as_reparse,
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "резервную копию"
+                ):
+                    launcher.create_player_settings_snapshot("test")
+
+    def test_corrupt_snapshot_is_rejected_before_any_live_mutation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            app = root / "app"
+            options = instance / "options.txt"
+            ui = instance / "config" / "betterf3.toml"
+            options.parent.mkdir(parents=True)
+            ui.parent.mkdir(parents=True)
+            options.write_bytes(b"known-options")
+            ui.write_bytes(b"known-ui")
+            with mock.patch.multiple(
+                launcher, INSTANCE_DIR=instance, APP_DATA_DIR=app
+            ):
+                snapshot = launcher.create_player_settings_snapshot("test")
+                options.write_bytes(b"live-options")
+                ui.write_bytes(b"live-ui")
+                (snapshot / "files" / "config" / "betterf3.toml").write_bytes(
+                    b"corrupt"
+                )
+                with self.assertRaises(ValueError):
+                    launcher.restore_player_settings_snapshot(snapshot)
+            self.assertEqual(options.read_bytes(), b"live-options")
+            self.assertEqual(ui.read_bytes(), b"live-ui")
+
+    def test_snapshot_retention_keeps_current_five_and_unrelated_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            app = root / "app"
+            options = instance / "options.txt"
+            options.parent.mkdir(parents=True)
+            options.write_bytes(b"settings")
+            unrelated = app / "player_settings_snapshots" / "do-not-delete"
+            unrelated.mkdir(parents=True)
+            (unrelated / "note.txt").write_text("user", encoding="utf-8")
+            snapshots = []
+            with mock.patch.multiple(
+                launcher, INSTANCE_DIR=instance, APP_DATA_DIR=app
+            ):
+                for _index in range(7):
+                    snapshots.append(
+                        launcher.create_player_settings_snapshot("test")
+                    )
+            managed = [
+                path
+                for path in (app / "player_settings_snapshots").iterdir()
+                if launcher._managed_snapshot_sort_key(path) is not None
+            ]
+            self.assertEqual(len(managed), 5)
+            self.assertTrue(snapshots[-1].is_dir())
+            self.assertTrue(unrelated.is_dir())
+
+    def test_repair_recovers_interrupted_transaction_before_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            app = root / "app"
+            rel = "config/betterf3.toml"
+            live = instance / rel
+            transaction = (
+                instance / launcher.CONFIGPACK_TRANSACTION_DIR_NAME
+            )
+            backup = transaction / "backup" / rel
+            stage = transaction / "stage"
+            live.parent.mkdir(parents=True)
+            backup.parent.mkdir(parents=True)
+            stage.mkdir(parents=True)
+            live.write_bytes(b"partial")
+            backup.write_bytes(b"known-good")
+            (transaction / "journal.json").write_text(
+                json.dumps({
+                    "version": 1,
+                    "phase": "committing",
+                    "targets": [rel],
+                    "existed": [rel],
+                }),
+                encoding="utf-8",
+            )
+
+            def fail_after_recovery(*_args, **_kwargs):
+                self.assertEqual(live.read_bytes(), b"known-good")
+                live.write_bytes(b"later-damage")
+                raise RuntimeError("later repair failure")
+
+            with (
+                mock.patch.multiple(
+                    launcher, INSTANCE_DIR=instance, APP_DATA_DIR=app
+                ),
+                mock.patch.object(
+                    launcher, "get_active_game_session", return_value=None
+                ),
+                mock.patch.object(
+                    launcher, "recover_interrupted_modpack_update"
+                ),
+                mock.patch.object(
+                    launcher,
+                    "prepare_or_repair_client",
+                    side_effect=fail_after_recovery,
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "later repair failure"
+                ):
+                    launcher.repair_client()
+
+            self.assertEqual(live.read_bytes(), b"known-good")
+            self.assertFalse(transaction.exists())
+
+    def test_snapshot_failure_aborts_repair_before_install_changes(self):
+        with (
+            mock.patch.object(
+                launcher, "get_active_game_session", return_value=None
+            ),
+            mock.patch.object(
+                launcher, "recover_interrupted_modpack_update"
+            ),
+            mock.patch.object(
+                launcher, "recover_interrupted_configpack_update"
+            ),
+            mock.patch.object(
+                launcher,
+                "create_player_settings_snapshot",
+                side_effect=RuntimeError("backup failed"),
+            ),
+            mock.patch.object(
+                launcher, "prepare_or_repair_client"
+            ) as prepare,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "backup failed"):
+                launcher.repair_client()
+        prepare.assert_not_called()
+
+    def test_latest_backup_restores_nested_ui_settings_when_instance_is_recreated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            backup_root = root / "latest-backup"
+            rel = "journeymap/config/6.0/journeymap.minimap.config"
+            source = instance / rel
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"player-map-layout")
+            with mock.patch.multiple(
+                launcher,
+                INSTANCE_DIR=instance,
+                PLAYER_SETTINGS_BACKUP_DIR=backup_root,
+            ):
+                launcher.backup_player_settings()
+                source.unlink()
+                launcher.restore_player_settings()
+            self.assertEqual(source.read_bytes(), b"player-map-layout")
 
     def test_preflight_reports_insufficient_space_before_repair(self):
         with tempfile.TemporaryDirectory() as tmp:
