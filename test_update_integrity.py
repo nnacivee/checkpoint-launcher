@@ -10,6 +10,82 @@ import launcher
 
 
 class UpdateIntegrityTests(unittest.TestCase):
+    def test_bunny_metadata_uses_exact_url_without_query_string(self):
+        exact = (
+            "https://industrialhorizon.b-cdn.net/stable/"
+            "launcher_version.txt"
+        )
+        self.assertEqual(launcher._cache_busted_url(exact), exact)
+        self.assertEqual(
+            launcher._cache_busted_url(exact + "?old=1#ignored"),
+            exact,
+        )
+
+    def test_other_metadata_sources_keep_cache_buster(self):
+        result = launcher._cache_busted_url(
+            "https://example.test/version.txt?channel=stable#ignored"
+        )
+        self.assertTrue(
+            result.startswith(
+                "https://example.test/version.txt?channel=stable&t="
+            )
+        )
+        self.assertNotIn("#", result)
+
+    def test_launcher_mirror_uses_immutable_versioned_installer_and_sidecar(self):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b"1.66.23\n"
+
+        digest = "d4" * 32
+        with (
+            mock.patch.dict(
+                launcher.CONFIG,
+                {
+                    "LAUNCHER_VERSION": "1.66.22",
+                    "LAUNCHER_VERSION_MIRROR_URL":
+                        "https://cdn.example/stable/launcher_version.txt",
+                    "LAUNCHER_EXE_MIRROR_URL":
+                        "https://cdn.example/stable/CheckpointSetup.exe",
+                },
+            ),
+            mock.patch.object(
+                launcher.urllib.request, "urlopen", return_value=Response()
+            ),
+            mock.patch.object(
+                launcher, "fetch_update_sha256", return_value=digest
+            ) as fetch_digest,
+        ):
+            info = launcher._check_update_via_mirror()
+
+        expected = (
+            "https://cdn.example/stable/CheckpointSetup-1.66.23.exe"
+        )
+        self.assertEqual(info["exe_url"], expected)
+        self.assertEqual(info["sha256"], digest)
+        fetch_digest.assert_called_once_with(expected)
+
+    def test_versioned_launcher_url_rejects_unsafe_or_non_https_inputs(self):
+        self.assertEqual(
+            launcher._versioned_launcher_mirror_url(
+                "https://cdn.example/stable/CheckpointSetup.exe",
+                "1.66.23",
+            ),
+            "https://cdn.example/stable/CheckpointSetup-1.66.23.exe",
+        )
+        self.assertEqual(
+            launcher._versioned_launcher_mirror_url(
+                "http://cdn.example/CheckpointSetup.exe", "1.66.23"
+            ),
+            "",
+        )
+
     def test_parse_sha256_sidecar_formats(self):
         digest = "a1" * 32
         self.assertEqual(launcher.parse_sha256_sidecar(digest), digest)

@@ -716,7 +716,14 @@ class Api:
                 remote_version = int(version_status["version"])
                 online = version_status.get("online")
                 pack_ready = local_version != -1 and local_version == remote_version
-                ready = bool(local_ready and pack_ready)
+                # The main card must reflect both halves of the client.  A
+                # configpack can change menus, translations and required
+                # client-side scripts without changing the modpack version.
+                # Previously such an update stayed invisible until Play was
+                # pressed, while the launcher claimed that the client was
+                # ready.
+                config_ready = not L.configpack_needs_install()
+                ready = bool(local_ready and pack_ready and config_ready)
                 offline = online is False
                 can_launch = bool(not offline or local_ready)
                 if offline:
@@ -732,7 +739,9 @@ class Api:
                         "Клиент готов"
                         if ready
                         else ("Требуется установка" if local_version == -1
-                              else "Требуется обновление")
+                              else ("Требуется обновление"
+                                    if not pack_ready
+                                    else "Требуется обновление настроек"))
                     )
                 payload = {
                     "state": state,
@@ -741,6 +750,7 @@ class Api:
                     "offline": offline,
                     "local_version": local_version,
                     "remote_version": remote_version,
+                    "config_ready": config_ready,
                     "detail": detail,
                     "request_id": request_id,
                 }
@@ -928,7 +938,7 @@ class Api:
                 rc = getattr(proc, "returncode", 0) or 0
                 if rc:
                     terminal_state = "error"
-                    terminal_text = "Игра закрылась с ошибкой"
+                    terminal_text = L.diagnose_game_exit()
             except Exception as exc:  # noqa: BLE001
                 restore_window = True
                 terminal_state = "error"
@@ -1064,21 +1074,27 @@ class Api:
             automatic = value <= 0
             value = recommended if automatic else max(2048, min(value, ram_max))
             L.update_settings(memory_mb=value, memory_auto=automatic)
-            return {"memory_mb": value, "memory_auto": automatic}
-        except Exception:  # noqa: BLE001
-            return None
+            return {
+                "ok": True,
+                "memory_mb": value,
+                "memory_auto": automatic,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
 
     def set_low_end(self, flag):
         try:
             L.update_settings(low_end_mode=_as_bool(flag))
-        except Exception:  # noqa: BLE001
-            pass
+            return {"ok": True}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
 
     def set_no_sodium(self, flag):
         try:
             L.update_settings(no_sodium=_as_bool(flag))
-        except Exception:  # noqa: BLE001
-            pass
+            return {"ok": True}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
 
     def get_ui_settings(self):
         """Settings owned by the HTML shell, persisted in launcher settings."""
@@ -1340,14 +1356,11 @@ class Api:
             return {"ok": False, "error": str(exc)}
 
     def graphics_preset(self, kind):
-        def worker():
-            try:
-                L.apply_graphics_preset(kind, lambda t: self._toast(t, "ok"))
-                self._toast("Пресет графики применён. Меняйте при закрытой игре.", "ok")
-            except Exception as exc:  # noqa: BLE001
-                self._toast("Не получилось применить пресет: %s" % exc, "err")
-
-        threading.Thread(target=worker, daemon=True).start()
+        try:
+            L.apply_graphics_preset(kind)
+            return {"ok": True}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
 
     def get_shaders(self):
         try:
@@ -1754,13 +1767,7 @@ class Api:
         url = str(L.CONFIG.get("LAUNCHER_VERSION_MIRROR_URL") or "").strip()
         if urllib.parse.urlsplit(url).scheme.lower() != "https":
             raise RuntimeError("источник версии лаунчера недоступен")
-        busted = url + ("&" if "?" in url else "?") + "t=" + str(
-            int(time.time()) // 300
-        )
-        request = urllib.request.Request(
-            busted,
-            headers={"User-Agent": "IH-Launcher"},
-        )
+        request = L._metadata_request(url)
         with urllib.request.urlopen(request, timeout=8) as response:
             raw = response.read(257)
         if len(raw) > 256:

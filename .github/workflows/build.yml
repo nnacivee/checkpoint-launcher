@@ -23,7 +23,13 @@ on:
       - "fonts/**"
       - "skins/nnacivee.png"
       - ".github/workflows/build.yml"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      publish_legacy:
+        description: "Publish to the retired Dynmap mirror and GitHub release"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -324,6 +330,7 @@ jobs:
   #   MIRROR_SFTP_SERVER / _PORT / _USER / _PASSWORD / MIRROR_REMOTE_DIR
   # ------------------------------------------------------------------------
   deploy-mirror:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_legacy }}
     runs-on: ubuntu-latest
     needs: build
     steps:
@@ -382,6 +389,7 @@ jobs:
           echo "Public mirror verified: $VERSION / $EXPECTED"
 
   release:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_legacy }}
     runs-on: ubuntu-latest
     needs: [build, deploy-mirror]
     steps:

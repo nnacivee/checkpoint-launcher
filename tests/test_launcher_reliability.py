@@ -11,6 +11,88 @@ import webui
 
 
 class LauncherReliabilityTests(unittest.TestCase):
+    def test_configpack_offline_fallback_matches_v50_candidate(self):
+        self.assertEqual(launcher.CONFIG["CONFIGPACK_VERSION"], 50)
+
+    def test_modpack_version_policy_never_downgrades(self):
+        with mock.patch.object(launcher, "runtime_log") as runtime_log:
+            self.assertFalse(launcher.modpack_update_required(14, 13))
+        self.assertTrue(runtime_log.called)
+        self.assertTrue(launcher.modpack_update_required(13, 14))
+        self.assertTrue(launcher.modpack_update_required(-1, 13))
+        self.assertFalse(launcher.modpack_update_required(13, 13))
+
+    def test_full_repair_preserves_config_and_kubejs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            instance = Path(tmp)
+            with mock.patch.object(launcher, "INSTANCE_DIR", instance):
+                self.assertEqual(
+                    launcher._modpack_roots_for_full_install(13),
+                    ("mods",),
+                )
+                self.assertEqual(
+                    launcher._modpack_roots_for_full_install(-1),
+                    ("mods", "config", "kubejs"),
+                )
+                (instance / "config").mkdir()
+                (instance / "config" / "player-choice.toml").write_text(
+                    "kept=true", encoding="utf-8"
+                )
+                self.assertEqual(
+                    launcher._modpack_roots_for_full_install(-1),
+                    ("mods",),
+                    "a missing marker must not erase an existing config tree",
+                )
+
+    def test_delta_and_full_install_refuse_older_release_source(self):
+        manifest = {
+            "version": 12,
+            "files": [{
+                "path": "mods/core.jar",
+                "size": 4,
+                "sha256": hashlib.sha256(b"core").hexdigest(),
+            }],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            instance = Path(tmp)
+            (instance / "mods").mkdir()
+            with (
+                mock.patch.object(launcher, "INSTANCE_DIR", instance),
+                mock.patch.object(
+                    launcher, "recover_interrupted_modpack_update"
+                ),
+                mock.patch.object(
+                    launcher, "get_local_modpack_version", return_value=13
+                ),
+                mock.patch.object(
+                    launcher, "get_remote_modpack_version", return_value=12
+                ),
+                mock.patch.object(
+                    launcher, "_fetch_modpack_manifest", return_value=manifest
+                ),
+                mock.patch.object(
+                    launcher, "_begin_modpack_transaction"
+                ) as begin_transaction,
+                mock.patch.object(
+                    launcher, "download_modpack_archive"
+                ) as download_archive,
+            ):
+                self.assertFalse(
+                    launcher.install_modpack_delta(
+                        lambda _text: None, lambda _pct: None
+                    )
+                )
+                with self.assertRaisesRegex(
+                    RuntimeError, "более старую сборку"
+                ):
+                    launcher.install_modpack(
+                        lambda _text: None,
+                        lambda _pct: None,
+                        allow_delta=False,
+                    )
+            begin_transaction.assert_not_called()
+            download_archive.assert_not_called()
+
     def test_modpack_version_prefers_bunny_then_github_fallback(self):
         with (
             mock.patch.dict(
@@ -35,6 +117,13 @@ class LauncherReliabilityTests(unittest.TestCase):
                 "https://industrialhorizon.b-cdn.net/stable/modpack_version.txt",
                 "https://github.com/example/project/modpack_version.txt",
             ],
+        )
+        self.assertNotIn(
+            "https://industrialhorizon.dynmap.xyz/modpack_version.txt",
+            candidates,
+        )
+        self.assertFalse(
+            any("95.216.30.64" in value for value in candidates)
         )
 
     def test_configpack_version_prefers_bunny_then_github_fallback(self):
@@ -61,6 +150,47 @@ class LauncherReliabilityTests(unittest.TestCase):
                 "https://industrialhorizon.b-cdn.net/stable/configpack_version.txt",
                 "https://github.com/example/project/configpack_version.txt",
             ],
+        )
+        self.assertNotIn(
+            "https://industrialhorizon.dynmap.xyz/configpack_version.txt",
+            candidates,
+        )
+        self.assertFalse(
+            any("95.216.30.64" in value for value in candidates)
+        )
+
+    def test_manifest_fetch_never_uses_stale_server_v12_roots(self):
+        with (
+            mock.patch.dict(
+                launcher.CONFIG,
+                {
+                    "MODPACK_MIRROR_URL":
+                        "https://industrialhorizon.b-cdn.net/stable/modpack.zip",
+                    "MODPACK_URL":
+                        "https://github.com/example/modpack/modpack.zip",
+                },
+            ),
+            mock.patch.object(
+                launcher.urllib.request,
+                "urlopen",
+                side_effect=OSError("offline"),
+            ) as urlopen,
+        ):
+            self.assertIsNone(launcher._fetch_modpack_manifest())
+        urls = [
+            call.args[0].full_url
+            for call in urlopen.call_args_list
+        ]
+        self.assertTrue(any("industrialhorizon.b-cdn.net" in url for url in urls))
+        self.assertTrue(any("github.com" in url for url in urls))
+        self.assertFalse(any("dynmap.xyz" in url for url in urls))
+        self.assertFalse(any("95.216.30.64" in url for url in urls))
+        bunny = next(
+            url for url in urls if "industrialhorizon.b-cdn.net" in url
+        )
+        self.assertEqual(
+            bunny,
+            "https://industrialhorizon.b-cdn.net/stable/manifest.json",
         )
 
     def test_delta_rejects_manifest_version_mismatch(self):
@@ -324,6 +454,10 @@ class LauncherReliabilityTests(unittest.TestCase):
                         "corrupt": [],
                     },
                 ),
+                mock.patch.object(
+                    launcher, "install_extra_client_mods", return_value=[]
+                ),
+                mock.patch.object(launcher, "remove_blocked_mods"),
                 mock.patch.object(launcher, "install_configpack"),
             ):
                 launcher.repair_installation()
@@ -502,6 +636,9 @@ class WebUiReliabilityTests(unittest.TestCase):
                 mock.patch.object(
                     webui.L, "get_modpack_version_status",
                     return_value={"version": 12, "online": False},
+                ),
+                mock.patch.object(
+                    webui.L, "configpack_needs_install", return_value=False
                 ),
                 mock.patch.object(webui.L, "_read_install_marker", return_value=marker),
                 mock.patch.object(
