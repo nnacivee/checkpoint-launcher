@@ -538,7 +538,22 @@ class WebUiReliabilityTests(unittest.TestCase):
         self.assertIn("querySelectorAll('[data-update-action]')", html)
         self.assertIn("function parseLaunchStage", html)
         self.assertIn("stage.step", html)
-        self.assertIn("state.title=clientStateDetail||stateText", html)
+        self.assertIn(
+            "progressTooltip=stage?t("
+            "'Шаг {step} · Общий прогресс — {progress}%'",
+            html,
+        )
+        self.assertIn("progress:Math.round(clientUpdateProgress)", html)
+        self.assertIn("state.title=progressTooltip", html)
+        translations = (
+            Path(__file__).parents[1] / "ui" / "assets" / "i18n.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            '["Шаг {step} · Общий прогресс — {progress}%",'
+            '"Крок {step} · Загальний прогрес — {progress}%",'
+            '"Step {step} · Overall progress — {progress}%"]',
+            translations,
+        )
         self.assertIn("monitorRepairCompletion()", html)
 
     def test_maintenance_state_exposes_repair_completion_without_file_details(self):

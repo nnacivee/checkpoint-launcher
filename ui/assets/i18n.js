@@ -284,6 +284,7 @@ window.LAUNCHER_I18N=(()=>{
     ["Запускаем игру","Запускаємо гру","Launching the game"],
     ["Обновление · 0%","Оновлення · 0%","Updating · 0%"],
     ["Обновление · {progress}%","Оновлення · {progress}%","Updating · {progress}%"],
+    ["Шаг {step} · Общий прогресс — {progress}%","Крок {step} · Загальний прогрес — {progress}%","Step {step} · Overall progress — {progress}%"],
     ["Клиент готов","Клієнт готовий","Client ready"],
     ["Обновление завершено · запускаем игру","Оновлення завершено · запускаємо гру","Update complete · launching the game"],
     ["Лаунчер актуален","Лаунчер актуальний","Launcher is up to date"],
