@@ -18,6 +18,7 @@ import tempfile
 import threading
 import time
 import urllib.parse
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -254,6 +255,7 @@ class Api:
         self._busy = False  # общий флаг для длительных операций (repair/установка)
         self._maintenance_result = {"state": "idle", "error": ""}
         self._pending_update = None
+        self._last_update_check = {"status": "idle"}
         self._hidden_for_game = False
         self._catalog_jobs = set()
         self._pack_icon_cache = {}  # slug -> icon_url с Modrinth
@@ -647,7 +649,7 @@ class Api:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def refresh_client_state(self):
+    def refresh_client_state(self, request_id=None):
         """Check whether the installed game files match the configured pack.
 
         Network work stays off the UI thread.  When the mirror is unavailable,
@@ -678,6 +680,11 @@ class Api:
                 base_ready and managed_ready and local_version != -1
             )
 
+        try:
+            request_id = int(request_id)
+        except (TypeError, ValueError):
+            request_id = None
+
         local_version, local_ready = local_snapshot()
         initial = {
             "state": "ready" if local_ready else "checking",
@@ -690,6 +697,7 @@ class Api:
                 "Клиент готов"
                 if local_ready else "Проверяем установленный клиент…"
             ),
+            "request_id": request_id,
         }
         self._js(
             "window.pushClientState && window.pushClientState(%s)" % _q(initial)
@@ -734,6 +742,7 @@ class Api:
                     "local_version": local_version,
                     "remote_version": remote_version,
                     "detail": detail,
+                    "request_id": request_id,
                 }
             except Exception as exc:  # noqa: BLE001
                 # No network is not fatal.  A valid local installation can
@@ -753,6 +762,7 @@ class Api:
                         if ready else "Нет сети — локальный клиент не установлен"
                     ),
                     "error": str(exc),
+                    "request_id": request_id,
                 }
             self._js(
                 "window.pushClientState && window.pushClientState(%s)"
@@ -1194,43 +1204,56 @@ class Api:
     def repair(self):
         if self._busy or self._launching:
             error = "Дождитесь окончания текущей операции"
-            self._toast(error, "err")
             return {"ok": False, "started": False, "error": error}
         active_session = L.get_active_game_session()
         if active_session:
             error = "Закройте Minecraft перед восстановлением клиента"
             self._maintenance_result = {"state": "error", "error": error}
-            self._repair_state("error", error)
-            self._toast(error, "err")
             return {"ok": False, "started": False, "error": error}
         self._busy = True
         self._maintenance_result = {"state": "progress", "error": ""}
-        state = {"text": "Проверка системных файлов"}
+        state = {"text": "Проверка системных файлов", "progress": 0}
 
         def status_cb(text):
             state["text"] = str(text)
-            self._repair_state("progress", text)
+            self._repair_state(
+                "progress", text, state["progress"]
+            )
 
         def progress_cb(pct):
             try:
-                self._repair_state("progress", state["text"], int(pct))
+                state["progress"] = int(pct)
+                self._repair_state(
+                    "progress", state["text"], state["progress"]
+                )
             except Exception:  # noqa: BLE001
                 pass
 
         def worker():
             try:
-                L.repair_installation(status_cb, progress_cb)
-                detail = "Системные файлы сброшены — установка продолжится при запуске"
+                repair_client = getattr(L, "repair_client", None)
+                if not callable(repair_client):
+                    # Compatibility with launcher.py builds from before the
+                    # safe in-place repair API was introduced.
+                    repair_client = L.repair_installation
+                result = repair_client(status_cb, progress_cb)
+                if isinstance(result, dict) and result.get("ok") is False:
+                    raise RuntimeError(
+                        result.get("error") or "восстановление не завершено"
+                    )
+                detail = (
+                    result.get("detail")
+                    if isinstance(result, dict) and result.get("detail")
+                    else "Клиент проверен и полностью готов к запуску"
+                )
                 self._maintenance_result = {"state": "complete", "error": ""}
                 self._repair_state("complete", detail, 100)
-                self._toast("Проверка подготовлена. Нажмите «Играть» для переустановки.", "ok")
             except Exception as exc:  # noqa: BLE001
                 self._maintenance_result = {
                     "state": "error",
                     "error": str(exc),
                 }
                 self._repair_state("error", str(exc))
-                self._toast("Не удалось переустановить: %s" % exc, "err")
             finally:
                 self._busy = False
 
@@ -1527,31 +1550,305 @@ class Api:
     # Логика та же, что в старом лаунчере: качаем свежий установщик С ЗЕРКАЛА
     # (в РФ GitHub заблокирован), ставим его тихо, лаунчер перезапускается сам.
     # На GitHub НЕ уходим никогда.
+    @staticmethod
+    def _update_result_file():
+        base = Path(getattr(L, "APP_DATA_DIR", tempfile.gettempdir()))
+        return base / "launcher_update_result.txt"
+
+    @staticmethod
+    def _update_pending_file():
+        base = Path(getattr(L, "APP_DATA_DIR", tempfile.gettempdir()))
+        return base / "launcher_update_pending.json"
+
+    @staticmethod
+    def _safe_update_version(value):
+        return "".join(
+            char for char in str(value or "")
+            if char.isascii() and (char.isalnum() or char in "._-")
+        )
+
+    def _save_pending_update(self, info):
+        """Remember a verified update so a failed installer can be retried."""
+        version = self._safe_update_version(info.get("version"))
+        exe_url = str(info.get("exe_url") or "").strip()
+        digest = L.parse_sha256_sidecar(info.get("sha256"))
+        if (
+            not version
+            or urllib.parse.urlsplit(exe_url).scheme.lower() != "https"
+            or not digest
+        ):
+            raise RuntimeError("неполные данные обновления")
+        payload = {
+            "version": version,
+            "exe_url": exe_url,
+            "sha256": digest,
+        }
+        release_url = str(info.get("url") or "").strip()
+        if release_url:
+            payload["url"] = release_url
+        path = self._update_pending_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        writer = getattr(L, "_atomic_write_json", None)
+        if callable(writer):
+            writer(path, payload)
+        else:
+            temporary = path.with_suffix(path.suffix + ".tmp")
+            temporary.write_text(
+                json.dumps(payload, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            os.replace(temporary, path)
+        return payload
+
+    def _clear_pending_update(self):
+        try:
+            self._update_pending_file().unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def _load_verified_pending_update(self):
+        """Return a still-newer cached installer after a failed apply."""
+        path = self._update_pending_file()
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except OSError:
+            return None
+        except (TypeError, ValueError):
+            self._clear_pending_update()
+            return None
+        if not isinstance(payload, dict):
+            self._clear_pending_update()
+            return None
+
+        version = self._safe_update_version(payload.get("version"))
+        exe_url = str(payload.get("exe_url") or "").strip()
+        digest = L.parse_sha256_sidecar(payload.get("sha256"))
+        current = str(L.CONFIG.get("LAUNCHER_VERSION") or "")
+        version_tuple = getattr(L, "_version_tuple", lambda value: (value,))
+        if (
+            not version
+            or version_tuple(version) <= version_tuple(current)
+            or urllib.parse.urlsplit(exe_url).scheme.lower() != "https"
+            or not digest
+        ):
+            self._clear_pending_update()
+            return None
+
+        installer = Path(tempfile.gettempdir()) / (
+            "CheckpointSetup_%s.exe" % version
+        )
+        if not L.verify_update_installer(installer, digest):
+            return None
+        payload.update({
+            "version": version,
+            "exe_url": exe_url,
+            "sha256": digest,
+            "retry": True,
+        })
+        return payload
+
+    @staticmethod
+    def _update_helper_script():
+        """Return a detached updater that survives the launcher process.
+
+        The installer is already SHA-verified before this helper is started.
+        Keep it after both failed attempts so support or the next launcher run
+        can reuse/inspect the exact payload that failed.
+        """
+        return (
+            "@echo off\r\n"
+            "setlocal\r\n"
+            'set "INSTALLER=%~1"\r\n'
+            'set "PARENT_PID=%~2"\r\n'
+            'set "RESULT=%~3"\r\n'
+            'set "VERSION=%~4"\r\n'
+            'set "WAIT_LEFT=120"\r\n'
+            ":wait_for_launcher\r\n"
+            'tasklist /FI "PID eq %PARENT_PID%" /NH 2>NUL '
+            '| find "%PARENT_PID%" >NUL\r\n'
+            "if errorlevel 1 goto install_first\r\n"
+            'if "%WAIT_LEFT%"=="0" goto parent_timeout\r\n'
+            "set /a WAIT_LEFT-=1 >NUL\r\n"
+            "timeout /t 1 /nobreak >NUL\r\n"
+            "goto wait_for_launcher\r\n"
+            ":parent_timeout\r\n"
+            '> "%RESULT%" echo error:parent_timeout:%VERSION%\r\n'
+            'del "%~f0" >NUL 2>&1\r\n'
+            "exit /b 1460\r\n"
+            ":install_first\r\n"
+            "call :run_installer\r\n"
+            'set "RC=%ERRORLEVEL%"\r\n'
+            'if "%RC%"=="0" goto success\r\n'
+            "timeout /t 2 /nobreak >NUL\r\n"
+            "call :run_installer\r\n"
+            'set "RC=%ERRORLEVEL%"\r\n'
+            'if "%RC%"=="0" goto success\r\n'
+            '> "%RESULT%" echo error:%RC%:%VERSION%\r\n'
+            'del "%~f0" >NUL 2>&1\r\n'
+            "exit /b %RC%\r\n"
+            ":success\r\n"
+            '> "%RESULT%" echo ok:%VERSION%\r\n'
+            'del "%INSTALLER%" >NUL 2>&1\r\n'
+            'del "%~f0" >NUL 2>&1\r\n'
+            "exit /b 0\r\n"
+            ":run_installer\r\n"
+            'start "" /wait "%INSTALLER%" /VERYSILENT /NORESTART '
+            "/SUPPRESSMSGBOXES /NOCANCEL\r\n"
+            "exit /b %ERRORLEVEL%\r\n"
+        )
+
+    @staticmethod
+    def _cmd_batch_command(script_path, *arguments):
+        """Build a fixed ``cmd.exe`` line without interpolating user paths.
+
+        The real values travel through a private environment copy and are
+        expanded only inside quotes.  This also handles spaces and cmd
+        metacharacters such as ``&`` and parentheses in Windows profile paths.
+        """
+        environment = os.environ.copy()
+        environment["IH_UPDATER_SCRIPT"] = str(script_path)
+        tokens = ['"%IH_UPDATER_SCRIPT%"']
+        for index, value in enumerate(arguments):
+            name = "IH_UPDATER_ARG_%d" % index
+            environment[name] = str(value)
+            tokens.append('"%%%s%%"' % name)
+        return (
+            'cmd.exe /d /s /c "' + " ".join(tokens) + '"',
+            environment,
+        )
+
+    def _consume_update_result(self):
+        """Read one result left by the detached updater, then consume it."""
+        path = self._update_result_file()
+        try:
+            raw = path.read_text(encoding="ascii", errors="replace").strip()
+        except OSError:
+            return None
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        if raw.startswith("ok:"):
+            self._clear_pending_update()
+            self._pending_update = None
+            return {"status": "ok", "version": raw.partition(":")[2]}
+        if raw.startswith("error:"):
+            parts = raw.split(":", 2)
+            code = parts[1] if len(parts) > 1 else "?"
+            return {
+                "status": "error",
+                "code": code,
+                "version": parts[2] if len(parts) > 2 else "",
+            }
+        return {"status": "unknown"}
+
+    @staticmethod
+    def _probe_launcher_version_marker():
+        """Prove that the primary version source answered.
+
+        ``launcher.check_for_launcher_update`` intentionally collapses
+        "current" and network failures to ``None``.  The WebUI needs to render
+        those states differently, so after a ``None`` result it performs one
+        tiny authoritative marker read.
+        """
+        url = str(L.CONFIG.get("LAUNCHER_VERSION_MIRROR_URL") or "").strip()
+        if urllib.parse.urlsplit(url).scheme.lower() != "https":
+            raise RuntimeError("источник версии лаунчера недоступен")
+        busted = url + ("&" if "?" in url else "?") + "t=" + str(
+            int(time.time()) // 300
+        )
+        request = urllib.request.Request(
+            busted,
+            headers={"User-Agent": "IH-Launcher"},
+        )
+        with urllib.request.urlopen(request, timeout=8) as response:
+            raw = response.read(257)
+        if len(raw) > 256:
+            raise RuntimeError("источник версии вернул неверный ответ")
+        for token in raw.decode("utf-8", "replace").replace(
+            "\r", " "
+        ).replace("\n", " ").split():
+            version = token.strip().lstrip("vV")
+            if version and version[0].isdigit():
+                return version
+        raise RuntimeError("источник версии вернул неверный ответ")
+
+    def get_update_check_state(self):
+        """Structured companion for old pages that only inspect ``version``."""
+        return dict(self._last_update_check)
+
     def check_update(self):
+        apply_result = self._consume_update_result()
+        if apply_result and apply_result.get("status") == "error":
+            cached = self._load_verified_pending_update()
+            if cached:
+                self._pending_update = dict(cached)
+                self._last_update_check = {
+                    "status": "available",
+                    "version": str(cached.get("version") or ""),
+                    "retry": True,
+                }
+                return cached
         try:
             if not getattr(sys, "frozen", False):
-                return None  # в режиме разработки (.py) самообновления нет
+                self._last_update_check = {"status": "current"}
+                return {"status": "current"}
             info = L.check_for_launcher_update()
             if info:
                 self._pending_update = dict(info)
-            return info  # {version, exe_url, url} | None
-        except Exception:  # noqa: BLE001
-            return None
+                self._last_update_check = {
+                    "status": "available",
+                    "version": str(info.get("version") or ""),
+                }
+                return info  # legacy UI expects {version, exe_url, url}
+
+            remote_version = self._probe_launcher_version_marker()
+            current_version = str(L.CONFIG.get("LAUNCHER_VERSION") or "")
+            version_tuple = getattr(L, "_version_tuple", lambda value: (value,))
+            if version_tuple(remote_version) > version_tuple(current_version):
+                raise RuntimeError(
+                    "обновление опубликовано не полностью — повторите проверку"
+                )
+            self._pending_update = None
+            self._clear_pending_update()
+            self._last_update_check = {
+                "status": "current",
+                "version": current_version,
+            }
+            return {"status": "current", "version_current": current_version}
+        except Exception as exc:  # noqa: BLE001
+            cached = self._load_verified_pending_update()
+            if cached:
+                self._pending_update = dict(cached)
+                self._last_update_check = {
+                    "status": "available",
+                    "version": str(cached.get("version") or ""),
+                    "retry": True,
+                }
+                return cached
+            error = "не удалось проверить обновление: %s" % exc
+            self._last_update_check = {
+                "status": "unavailable",
+                "error": error,
+            }
+            return {"status": "unavailable", "error": error}
 
     def apply_update(self):
         if getattr(self, "_updating", False):
             return {"ok": True, "started": False, "busy": True}
         self._updating = True
         info = dict(self._pending_update or {})
-        if not info:
-            try:
-                info = L.check_for_launcher_update() or {}
-            except Exception:  # noqa: BLE001
-                info = {}
-            if info:
-                self._pending_update = dict(info)
         exe_url = info.get("exe_url")
-        if not (getattr(sys, "frozen", False) and exe_url):
+        expected_sha256 = info.get("sha256")
+        parse_digest = getattr(L, "parse_sha256_sidecar", None)
+        if callable(parse_digest):
+            expected_sha256 = parse_digest(expected_sha256)
+        if not (
+            getattr(sys, "frozen", False)
+            and info.get("version")
+            and exe_url
+            and expected_sha256
+        ):
             self._updating = False
             return {
                 "ok": False,
@@ -1561,7 +1858,12 @@ class Api:
 
         def worker():
             try:
-                new_exe = Path(tempfile.gettempdir()) / "CheckpointSetup_new.exe"
+                safe_version = self._safe_update_version(
+                    info["version"]
+                ) or "update"
+                new_exe = Path(tempfile.gettempdir()) / (
+                    "CheckpointSetup_%s.exe" % safe_version
+                )
 
                 def prog(pct):
                     self._js("window.updBanner && window.updBanner('dl', %d)" % int(pct))
@@ -1570,27 +1872,51 @@ class Api:
                 # with the adjacent SHA-256 sidecar published by CI.
                 if urllib.parse.urlsplit(str(exe_url)).scheme.lower() != "https":
                     raise RuntimeError("небезопасный источник обновления")
-                expected_sha256 = (info.get("sha256") if "sha256" in info
-                                   else L.fetch_update_sha256(exe_url))
-                if not expected_sha256:
-                    raise RuntimeError("контрольная сумма обновления недоступна")
-                L.download_file(exe_url, new_exe, prog)
+                already_verified = (
+                    new_exe.is_file()
+                    and L.verify_update_installer(
+                        new_exe, expected_sha256
+                    )
+                )
+                if already_verified:
+                    prog(100)
+                else:
+                    new_exe.unlink(missing_ok=True)
+                    L.download_file(
+                        exe_url,
+                        new_exe,
+                        prog,
+                        expected_sha256=expected_sha256,
+                    )
                 if not L.verify_update_installer(new_exe, expected_sha256):
                     new_exe.unlink(missing_ok=True)
                     raise RuntimeError("контрольная сумма обновления не совпала")
+                self._save_pending_update({
+                    **info,
+                    "version": safe_version,
+                    "sha256": expected_sha256,
+                })
                 bat = Path(tempfile.gettempdir()) / ("ih_update_%d.bat" % os.getpid())
-                script = (
-                    "@echo off\r\n"
-                    "ping -n 3 127.0.0.1 >nul\r\n"
-                    "%1 /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /NOCANCEL\r\n"
-                    "ping -n 12 127.0.0.1 >nul\r\n"
-                    "del %1 >nul 2>&1\r\n"
-                    'del "%~f0" >nul 2>&1\r\n'
+                bat.write_text(self._update_helper_script(), encoding="ascii")
+                result_file = self._update_result_file()
+                result_file.parent.mkdir(parents=True, exist_ok=True)
+                result_file.unlink(missing_ok=True)
+                command, helper_environment = self._cmd_batch_command(
+                    bat,
+                    str(new_exe),
+                    str(os.getpid()),
+                    str(result_file),
+                    safe_version,
                 )
-                bat.write_text(script, encoding="ascii")
-                subprocess.Popen(["cmd", "/c", str(bat), str(new_exe)],
-                                 creationflags=0x08000000, close_fds=True)
-                self._js("window.updBanner && window.updBanner('done', 100)")
+                subprocess.Popen(
+                    command,
+                    creationflags=0x08000000,
+                    close_fds=True,
+                    env=helper_environment,
+                )
+                self._js(
+                    "window.updBanner && window.updBanner('install', 100)"
+                )
                 time.sleep(0.4)
                 self.close()
             except Exception:  # noqa: BLE001

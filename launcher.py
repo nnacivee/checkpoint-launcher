@@ -398,7 +398,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.18",
+    "LAUNCHER_VERSION": "1.66.19",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -410,6 +410,22 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.19",
+            "date": "26 июля 2026",
+            "changes": [
+                "Обновления клиента теперь находятся без перезапуска "
+                "лаунчера, а кнопка сразу предлагает «Обновить и играть».",
+                "Общий процент и текущий этап разделены: прогресс больше не "
+                "пропадает и не противоречит подписи.",
+                "«Восстановить клиент» безопасно проверяет файлы и загружает "
+                "только отсутствующее или повреждённое, сохраняя миры, "
+                "настройки, ресурспаки и шейдеры.",
+                "Ошибки сети, нехватки места и занятых файлов теперь показаны "
+                "понятным текстом; обновлятор проверяет результат установки "
+                "и сам повторяет попытку один раз.",
+            ],
+        },
         {
             "version": "1.66.18",
             "date": "26 июля 2026",
@@ -5409,6 +5425,93 @@ def _clone_tree_with_hardlinks(source: Path, destination: Path) -> None:
 # не применяется.
 
 MODS_SHA_INDEX_FILE_NAME = "mods_sha_index.json"
+INSTALL_FREE_SPACE_RESERVE = 256 * 1024 * 1024
+
+
+def _check_installation_preconditions(
+    required_bytes=0, *, app_required_bytes=0
+) -> None:
+    """Fail early with a readable error when repair/update cannot be written.
+
+    Transactions protect the live client from partial downloads, but they
+    still need writable instance/app-data folders and enough room for staging.
+    The small reserve also prevents Windows or Minecraft from exhausting the
+    disk immediately after a successful repair.
+    """
+    try:
+        required_bytes = max(0, int(required_bytes or 0))
+        app_required_bytes = max(0, int(app_required_bytes or 0))
+    except (TypeError, ValueError):
+        required_bytes = 0
+        app_required_bytes = 0
+
+    for folder in (APP_DATA_DIR, INSTANCE_DIR):
+        probe = None
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode="wb", prefix=".ih_write_test_", dir=folder, delete=False
+            ) as handle:
+                probe = Path(handle.name)
+                handle.write(b"ok")
+                handle.flush()
+                os.fsync(handle.fileno())
+        except OSError as exc:
+            raise RuntimeError(
+                "Нет доступа к папке игры: %s. Закройте Minecraft, "
+                "проверьте права доступа и защиту антивируса." % folder
+            ) from exc
+        finally:
+            if probe is not None:
+                try:
+                    probe.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+    requirements = {}
+    for folder, payload_bytes in (
+        (APP_DATA_DIR, app_required_bytes),
+        (INSTANCE_DIR, required_bytes),
+    ):
+        resolved = folder.resolve()
+        try:
+            volume_key = (
+                os.path.splitdrive(str(resolved))[0].casefold()
+                or resolved.anchor.casefold()
+                or str(resolved)
+            )
+        except OSError:
+            volume_key = str(folder)
+        entry = requirements.setdefault(
+            volume_key, {"folder": folder, "payload": 0}
+        )
+        entry["payload"] += payload_bytes
+
+    for entry in requirements.values():
+        try:
+            usage = shutil.disk_usage(entry["folder"])
+            free_value = getattr(usage, "free", None)
+            free_bytes = int(
+                free_value if free_value is not None else usage[2]
+            )
+        except OSError as exc:
+            raise RuntimeError(
+                "Не удалось проверить свободное место на диске: %s."
+                % entry["folder"]
+            ) from exc
+
+        needed = entry["payload"] + INSTALL_FREE_SPACE_RESERVE
+        if free_bytes < needed:
+            missing_mb = max(
+                1, (needed - free_bytes + 1048575) // 1048576
+            )
+            needed_mb = max(1, (needed + 1048575) // 1048576)
+            raise RuntimeError(
+                "Недостаточно места на диске для безопасного обновления "
+                "(%s). Нужно около %d МБ свободного места "
+                "(освободите ещё минимум %d МБ)."
+                % (entry["folder"], needed_mb, missing_mb)
+            )
 
 
 def _sha_index_load() -> dict:
@@ -5538,6 +5641,40 @@ def _load_cached_modpack_manifest():
         return None
 
 
+def _load_or_fetch_modpack_manifest(expected_version=None):
+    """Return a trusted manifest, refreshing a missing/broken local cache.
+
+    A lost ``modpack_manifest.json`` used to make same-version installs look
+    healthy without checking a single JAR.  Prefer the cache when it is valid,
+    otherwise fetch the manifest from the regular Bunny/primary chain and
+    cache it atomically.  A manifest for another version is never accepted.
+    """
+    manifest = _load_cached_modpack_manifest()
+    if manifest is not None:
+        try:
+            cached_version = int(str(manifest.get("version", "")).strip())
+        except (TypeError, ValueError):
+            cached_version = -1
+        if expected_version is None or cached_version == expected_version:
+            return manifest
+
+    manifest = _fetch_modpack_manifest()
+    if not _normalise_modpack_manifest(manifest):
+        return None
+    try:
+        fetched_version = int(str(manifest.get("version", "")).strip())
+    except (TypeError, ValueError):
+        return None
+    if expected_version is not None and fetched_version != expected_version:
+        runtime_log(
+            "manifest_refresh_version_mismatch expected=%s got=%s",
+            expected_version, fetched_version, level=logging.WARNING,
+        )
+        return None
+    _cache_modpack_manifest(manifest)
+    return manifest
+
+
 def _mod_manifest_skip_reason(name: str):
     """Explain manifest entries intentionally absent due to player settings."""
     lower = name.lower()
@@ -5562,16 +5699,21 @@ def verify_modpack_integrity(status_cb=None, progress_cb=None, manifest=None) ->
     by size and mtime, while edited/replaced jars are hashed again.  Optional
     and deliberately blocked render mods are excluded from false positives.
     """
-    manifest = manifest or _load_cached_modpack_manifest()
+    if manifest is None:
+        local_version = get_local_modpack_version()
+        manifest = _load_or_fetch_modpack_manifest(
+            local_version if local_version >= 0 else None
+        )
     files = _normalise_modpack_manifest(manifest)
     if not files:
         return {
             "available": False,
-            "ok": True,
+            "ok": False,
             "checked": 0,
             "missing": [],
             "corrupt": [],
             "skipped": [],
+            "error": "manifest_unavailable",
         }
     if status_cb:
         status_cb("проверка целостности модов")
@@ -5659,6 +5801,7 @@ def install_modpack_delta(status_cb, progress_cb) -> bool:
         total_bytes = sum(f["size"] for f in need)
         if total_bytes > 150 * 1024 * 1024:
             return False  # изменилось слишком много — полный путь быстрее
+        _check_installation_preconditions(total_bytes)
 
         # Удаления: ТОЛЬКО простые jar-имена из deletedFiles манифеста.
         deleted = []
@@ -5770,7 +5913,9 @@ def install_modpack_delta(status_cb, progress_cb) -> bool:
         return False
 
 
-def install_modpack(status_cb, progress_cb) -> None:
+def install_modpack(
+    status_cb, progress_cb, *, allow_delta=True
+) -> None:
     """Скачивает архив с модами и распаковывает поверх папки экземпляра.
     Сначала пробует лёгкое дельта-обновление (только изменённые моды по
     manifest.json); полный путь остаётся запасным и для первой установки.
@@ -5780,7 +5925,7 @@ def install_modpack(status_cb, progress_cb) -> None:
     """
     recover_interrupted_modpack_update(status_cb)
     backup_player_settings()
-    if install_modpack_delta(status_cb, progress_cb):
+    if allow_delta and install_modpack_delta(status_cb, progress_cb):
         return
 
     remote_version = get_remote_modpack_version()
@@ -5795,6 +5940,12 @@ def install_modpack(status_cb, progress_cb) -> None:
             "Манифест сборки ещё не синхронизирован с архивом. "
             "Попробуйте снова через минуту."
         )
+    # Full repair keeps the old client alive while archive + staging are
+    # prepared.  Reserve room for both copies before downloading anything.
+    unpacked_bytes = sum(item["size"] for item in manifest_files)
+    _check_installation_preconditions(
+        unpacked_bytes, app_required_bytes=unpacked_bytes
+    )
 
     zip_path = APP_DATA_DIR / "modpack_download.zip"
     transaction = None
@@ -6148,6 +6299,81 @@ def _commit_configpack_paths(transaction: Path, paths) -> None:
     _finish_configpack_transaction(transaction)
 
 
+CONFIGPACK_IMMUTABLE_PREFIXES = (
+    "config/fancymenu/assets/",
+    "config/fancymenu/customization/",
+    "config/ftbquests/quests/",
+    "config/simple-custom-early-loading/variants/",
+    "kubejs/",
+    "mods/",
+    "resourcepacks/checkpoint_quest_art/",
+)
+CONFIGPACK_IMMUTABLE_FILES = {
+    "config/ezactions/menu.json",
+    "config/simple-custom-early-loading/background.png",
+}
+
+
+def _is_configpack_immutable_path(path) -> bool:
+    value = str(path or "").replace("\\", "/").strip("/")
+    return (
+        value in CONFIGPACK_IMMUTABLE_FILES
+        or any(
+            value.startswith(prefix)
+            for prefix in CONFIGPACK_IMMUTABLE_PREFIXES
+        )
+    )
+
+
+def _normalise_configpack_file_manifest(raw_files):
+    """Validate the optional per-file integrity list stored in new markers.
+
+    ``None`` means an older marker and deliberately falls back to the legacy
+    existence check.  An invalid present list is treated as damaged.
+    """
+    if raw_files is None:
+        return None
+    if not isinstance(raw_files, list):
+        return []
+    result = []
+    seen = set()
+    for item in raw_files:
+        if not isinstance(item, dict):
+            return []
+        try:
+            rel = _normalise_configpack_paths([item.get("path", "")])[0]
+            size = int(item.get("size", -1))
+        except (IndexError, TypeError, ValueError):
+            return []
+        digest = str(item.get("sha256", "")).strip().lower()
+        if (
+            rel in seen
+            or size < 0
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)
+        ):
+            return []
+        seen.add(rel)
+        result.append({"path": rel, "size": size, "sha256": digest})
+    return result
+
+
+def _build_configpack_file_manifest(stage_root: Path, payload_names) -> list:
+    result = []
+    for rel in sorted(
+        value for value in set(payload_names)
+        if _is_configpack_immutable_path(value)
+    ):
+        candidate = stage_root / rel
+        if not candidate.is_file():
+            raise ValueError("Файл настроек не распакован: %s" % rel)
+        result.append({
+            "path": rel,
+            "size": candidate.stat().st_size,
+            "sha256": calculate_file_sha256(candidate),
+        })
+    return result
+
+
 def configpack_needs_install() -> bool:
     """Ставить ли пак настроек. Да, если версия разошлась ИЛИ если файлы,
     которые он приносит, кто-то стёр (например, переустановка сборки)."""
@@ -6169,6 +6395,25 @@ def configpack_needs_install() -> bool:
     for rel in verify:
         if not (INSTANCE_DIR / rel).exists():
             return True
+
+    # Markers written by 1.66.19+ carry exact size/SHA-256 values.  Old
+    # markers remain valid and use the existence fallback above; after the
+    # next regular configpack update they gain the stronger checks.
+    files = _normalise_configpack_file_manifest(marker.get("files"))
+    if files is not None:
+        if not files:
+            return True
+        for item in files:
+            candidate = INSTANCE_DIR / item["path"]
+            try:
+                if (
+                    not candidate.is_file()
+                    or candidate.stat().st_size != item["size"]
+                    or calculate_file_sha256(candidate) != item["sha256"]
+                ):
+                    return True
+            except OSError:
+                return True
     return False
 
 
@@ -6197,7 +6442,9 @@ def install_ultimine_sticky(status_cb=None) -> None:
         pass
 
 
-def install_configpack(status_cb=None, progress_cb=None) -> None:
+def install_configpack(
+    status_cb=None, progress_cb=None, *, force_verify=False
+) -> None:
     """Install the settings pack through a journalled all-or-nothing swap.
 
     The archive is SHA-checked, CRC-checked and fully extracted into a private
@@ -6205,12 +6452,17 @@ def install_configpack(status_cb=None, progress_cb=None) -> None:
     antivirus lock restores the previous complete pack on the next launch.
     """
     recover_interrupted_configpack_update(status_cb)
-    if not configpack_needs_install():
+    needs_install = configpack_needs_install()
+    if not needs_install and not force_verify:
         if status_cb:
             status_cb("настройки сборки уже актуальны")
         if progress_cb:
             progress_cb(100)
         return
+    _check_installation_preconditions(
+        128 * 1024 * 1024,
+        app_required_bytes=128 * 1024 * 1024,
+    )
 
     zip_path = APP_DATA_DIR / "configpack_download.zip"
     previous_marker = _read_configpack_marker()
@@ -6218,6 +6470,27 @@ def install_configpack(status_cb=None, progress_cb=None) -> None:
     had_working_pack = bool(previous_marker) and all(
         (INSTANCE_DIR / rel).exists() for rel in previous_verify
     )
+    previous_files = _normalise_configpack_file_manifest(
+        previous_marker.get("files")
+    )
+    if previous_files is not None:
+        # A present-but-corrupt same-version pack is not a safe fallback.
+        # If its repair download fails, surface the error instead of claiming
+        # that the damaged old copy is usable.
+        had_working_pack = had_working_pack and bool(previous_files)
+        for item in previous_files:
+            candidate = INSTANCE_DIR / item["path"]
+            try:
+                if (
+                    not candidate.is_file()
+                    or candidate.stat().st_size != item["size"]
+                    or calculate_file_sha256(candidate) != item["sha256"]
+                ):
+                    had_working_pack = False
+                    break
+            except OSError:
+                had_working_pack = False
+                break
     transaction = None
     success = False
     try:
@@ -6285,16 +6558,43 @@ def install_configpack(status_cb=None, progress_cb=None) -> None:
         # The marker participates in the same transaction.  A crash can never
         # leave old files carrying the new version number (or vice versa).
         verify = [rel for rel in owns if (stage_root / rel).exists()]
+        file_manifest = _build_configpack_file_manifest(
+            stage_root, payload_names
+        )
         _atomic_write_json(stage_root / ".configpack.json", {
             "version": remote_version,
             "owns": owns,
             "verify": verify,
             "archive_sha256": expected_digest,
+            "files": file_manifest,
         })
         if progress_cb:
             progress_cb(95)
-        _commit_configpack_paths(
-            transaction, owns + [".configpack.json"])
+        commit_targets = owns + [".configpack.json"]
+        if (
+            force_verify
+            and previous_marker.get("version") == remote_version
+        ):
+            # A same-version explicit repair must not reset settings which the
+            # game or player legitimately changes.  Replace only immutable
+            # payload files whose exact bytes differ, then migrate the marker
+            # to the verified schema.
+            commit_targets = []
+            for item in file_manifest:
+                candidate = INSTANCE_DIR / item["path"]
+                try:
+                    healthy = (
+                        candidate.is_file()
+                        and candidate.stat().st_size == item["size"]
+                        and calculate_file_sha256(candidate)
+                        == item["sha256"]
+                    )
+                except OSError:
+                    healthy = False
+                if not healthy:
+                    commit_targets.append(item["path"])
+            commit_targets.append(".configpack.json")
+        _commit_configpack_paths(transaction, commit_targets)
         transaction = None
         success = True
 
@@ -6308,7 +6608,7 @@ def install_configpack(status_cb=None, progress_cb=None) -> None:
         if transaction is not None:
             recover_interrupted_configpack_update(status_cb)
             transaction = None
-        if had_working_pack:
+        if had_working_pack and not force_verify:
             if status_cb:
                 status_cb(
                     "Не удалось обновить настройки — оставлена предыдущая "
@@ -6322,7 +6622,9 @@ def install_configpack(status_cb=None, progress_cb=None) -> None:
     finally:
         if success:
             zip_path.unlink(missing_ok=True)
-        if progress_cb and (success or had_working_pack):
+        if progress_cb and (
+            success or (had_working_pack and not force_verify)
+        ):
             progress_cb(100)
 
 
@@ -9410,58 +9712,124 @@ def seed_default_keybinds() -> None:
         runtime_log("keybind_seed_failed: %s", exc, level=logging.WARNING)
 
 
-def repair_installation(status_cb=None, progress_cb=None) -> None:
-    """Полностью удаляет файлы установки Minecraft/NeoForge/модов и сбрасывает
-    все внутренние метки лаунчера, чтобы при следующем запуске всё
-    поставилось заново с нуля. Миры (saves), скриншоты и настройки
-    (options.txt), установленные игроком ресурспаки и шейдеры не трогает."""
+def prepare_or_repair_client(
+    status_cb=None, progress_cb=None, *, force=False
+) -> dict:
+    """Verify and repair the managed client without deleting a working copy.
+
+    Minecraft-launcher-lib rechecks its own files in place, mod JARs are
+    repaired from the SHA manifest through the existing staged transaction,
+    and configpack files use their transaction as well.  Player worlds,
+    screenshots, options, resource packs and shader packs are never targets.
+    """
+    status = status_cb or (lambda _text="": None)
+    progress_out = progress_cb or (lambda _value=0: None)
+
     recover_interrupted_modpack_update(status_cb)
     recover_interrupted_configpack_update(status_cb)
-    total = len(REPAIRABLE_FOLDERS) or 1
-    for index, folder in enumerate(REPAIRABLE_FOLDERS, start=1):
-        target = INSTANCE_DIR / folder
-        if target.exists():
-            if status_cb:
-                status_cb("Удаляю старые файлы: %s..." % folder)
-            last_error = None
-            for attempt in range(1, 5):
-                try:
-                    _remove_path(target)
-                    if target.exists():
-                        raise PermissionError(
-                            "папка осталась после удаления: %s" % target)
-                    last_error = None
-                    break
-                except OSError as exc:
-                    last_error = exc
-                    if attempt < 4:
-                        if status_cb:
-                            status_cb(
-                                "Файл занят — повтор удаления %d/4"
-                                % (attempt + 1)
-                            )
-                        time.sleep(attempt)
-            if last_error is not None:
-                raise PermissionError(
-                    "Не удалось удалить %s. Закройте игру и повторите."
-                    % target
-                ) from last_error
-        if progress_cb:
-            progress_cb(int(index * 100 / total))
+    _check_installation_preconditions()
+    actions = {
+        "minecraft_checked": False,
+        "modpack_checked": False,
+        "modpack_repaired": False,
+        "configpack_checked": False,
+    }
 
-    if OPTIONAL_CACHE_DIR.exists():
-        _remove_path(OPTIONAL_CACHE_DIR)
+    loader_name = LOADER_DISPLAY_NAMES.get(
+        CONFIG["MOD_LOADER"], CONFIG["MOD_LOADER"].capitalize()
+    )
+    repair_progress = LaunchProgress(status, progress_out, [
+        ("Java", 8),
+        ("Minecraft", 20),
+        (loader_name, 18),
+        ("Сборка модов", 44),
+        ("Настройки сборки", 10),
+    ])
 
-    MODPACK_VERSION_FILE.unlink(missing_ok=True)
-    INSTALL_MARKER_FILE.unlink(missing_ok=True)
-    CONFIGPACK_MARKER_FILE.unlink(missing_ok=True)
-    (APP_DATA_DIR / MODS_SHA_INDEX_FILE_NAME).unlink(missing_ok=True)
-    MODPACK_MANIFEST_CACHE_FILE.unlink(missing_ok=True)
+    marker = _read_install_marker()
+    marker_valid = bool(
+        marker
+        and marker.get("version_id")
+        and all(
+            marker.get(key) == value
+            for key, value in _install_signature().items()
+        )
+        and (
+            INSTANCE_DIR
+            / "versions"
+            / marker["version_id"]
+            / ("%s.json" % marker["version_id"])
+        ).is_file()
+    )
+    if force or not marker_valid:
+        # Only the small success marker is reset.  The actual libraries,
+        # assets and versions stay in place; minecraft-launcher-lib verifies
+        # them and downloads just what is absent or damaged.
+        install_minecraft_and_modloader(
+            repair_progress, force=force
+        )
+    else:
+        for stage_name in ("Java", "Minecraft", loader_name):
+            stage_status, stage_progress = repair_progress.scoped(stage_name)
+            stage_status("проверено")
+            stage_progress(100)
+    actions["minecraft_checked"] = True
 
-    if status_cb:
-        status_cb("Старые файлы удалены, ставлю всё заново...")
-    if progress_cb:
-        progress_cb(0)
+    pack_status, pack_progress = repair_progress.scoped("Сборка модов")
+    local_version = get_local_modpack_version()
+    remote_version = get_remote_modpack_version()
+    if local_version != remote_version:
+        pack_status("обновление до актуальной версии")
+        install_modpack(pack_status, pack_progress)
+        actions["modpack_repaired"] = True
+    else:
+        integrity = verify_modpack_integrity(pack_status, pack_progress)
+        actions["modpack_checked"] = True
+        if not integrity.get("available"):
+            raise RuntimeError(
+                "Не удалось получить список файлов сборки для проверки. "
+                "Проверьте интернет и нажмите «Восстановить клиент» ещё раз."
+            )
+        if not integrity.get("ok"):
+            pack_status(
+                "восстанавливаю файлы: отсутствует %d, повреждено %d"
+                % (
+                    len(integrity.get("missing", [])),
+                    len(integrity.get("corrupt", [])),
+                )
+            )
+            if not install_modpack_delta(pack_status, pack_progress):
+                install_modpack(
+                    pack_status, pack_progress, allow_delta=False
+                )
+            actions["modpack_repaired"] = True
+        else:
+            pack_status("файлы сборки проверены")
+            pack_progress(100)
+
+    config_status, config_progress = repair_progress.scoped(
+        "Настройки сборки"
+    )
+    install_configpack(
+        config_status, config_progress, force_verify=True
+    )
+    actions["configpack_checked"] = True
+
+    progress_out(100)
+    status("Клиент проверен и готов")
+    return actions
+
+
+def repair_client(status_cb=None, progress_cb=None) -> dict:
+    """Public backend entry point for the one-click repair action."""
+    return prepare_or_repair_client(
+        status_cb=status_cb, progress_cb=progress_cb, force=True
+    )
+
+
+def repair_installation(status_cb=None, progress_cb=None) -> dict:
+    """Backward-compatible safe wrapper kept for older UI builds."""
+    return repair_client(status_cb=status_cb, progress_cb=progress_cb)
 
 
 LOADER_DISPLAY_NAMES = {
@@ -9583,7 +9951,9 @@ def _progress_slice(progress_cb, start: int, end: int):
     return sliced
 
 
-def install_minecraft_and_modloader(progress: "LaunchProgress") -> str:
+def install_minecraft_and_modloader(
+    progress: "LaunchProgress", *, force=False
+) -> str:
     """Ставит ванильный Minecraft нужной версии + модлоадер (NeoForge и т.д.).
     Возвращает id версии, которую нужно передать в запуск игры.
 
@@ -9598,7 +9968,7 @@ def install_minecraft_and_modloader(progress: "LaunchProgress") -> str:
     loader_status, loader_progress = progress.scoped(loader_name)
 
     marker = _read_install_marker()
-    if marker and marker.get("version_id") and all(
+    if not force and marker and marker.get("version_id") and all(
         marker.get(key) == value for key, value in _install_signature().items()
     ):
         version_id = marker["version_id"]
@@ -9609,6 +9979,8 @@ def install_minecraft_and_modloader(progress: "LaunchProgress") -> str:
             return version_id
         # Файл почему-то пропал (например, папку версий удалили руками) —
         # доверять метке нельзя, ставим заново как обычно.
+
+    _check_installation_preconditions(1024 * 1024 * 1024)
 
     def callback_dict(stage_progress):
         # Библиотека minecraft-launcher-lib шлёт технические сообщения вроде
@@ -9865,7 +10237,12 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
             install_modpack(pack_status, pack_progress)
         else:
             integrity = verify_modpack_integrity(pack_status, pack_progress)
-            if integrity.get("available") and not integrity.get("ok"):
+            if not integrity.get("available"):
+                raise RuntimeError(
+                    "Не удалось проверить файлы сборки. Проверьте интернет "
+                    "и нажмите «Играть» ещё раз."
+                )
+            if not integrity.get("ok"):
                 pack_status(
                     "восстановление файлов: отсутствует %d, повреждено %d"
                     % (len(integrity["missing"]), len(integrity["corrupt"]))
@@ -9874,7 +10251,9 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
                 # the mirror cannot serve it, the proven full archive path is
                 # still the final fallback.
                 if not install_modpack_delta(pack_status, pack_progress):
-                    install_modpack(pack_status, pack_progress)
+                    install_modpack(
+                        pack_status, pack_progress, allow_delta=False
+                    )
             else:
                 pack_status("сборка уже актуальна")
                 pack_progress(100)

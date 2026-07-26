@@ -290,11 +290,48 @@ class LauncherReliabilityTests(unittest.TestCase):
                 "OPTIONAL_CACHE_DIR": root / "optional",
                 "APP_DATA_DIR": root / "app",
             }
-            with mock.patch.multiple(launcher, INSTANCE_DIR=instance, **markers):
+            with (
+                mock.patch.multiple(
+                    launcher, INSTANCE_DIR=instance, **markers
+                ),
+                mock.patch.object(
+                    launcher, "_check_installation_preconditions"
+                ),
+                mock.patch.object(
+                    launcher, "recover_interrupted_modpack_update"
+                ),
+                mock.patch.object(
+                    launcher, "recover_interrupted_configpack_update"
+                ),
+                mock.patch.object(
+                    launcher,
+                    "install_minecraft_and_modloader",
+                    return_value="neoforge-test",
+                ),
+                mock.patch.object(
+                    launcher, "get_local_modpack_version", return_value=13
+                ),
+                mock.patch.object(
+                    launcher, "get_remote_modpack_version", return_value=13
+                ),
+                mock.patch.object(
+                    launcher,
+                    "verify_modpack_integrity",
+                    return_value={
+                        "available": True,
+                        "ok": True,
+                        "missing": [],
+                        "corrupt": [],
+                    },
+                ),
+                mock.patch.object(launcher, "install_configpack"),
+            ):
                 launcher.repair_installation()
 
             for name in launcher.REPAIRABLE_FOLDERS:
-                self.assertFalse((instance / name).exists(), name)
+                self.assertTrue(
+                    (instance / name / "keep.txt").exists(), name
+                )
             self.assertTrue((instance / "resourcepacks" / "keep.txt").exists())
             self.assertTrue((instance / "shaderpacks" / "keep.txt").exists())
 
@@ -487,7 +524,7 @@ class WebUiReliabilityTests(unittest.TestCase):
             mock.patch.object(
                 webui.L, "get_active_game_session", return_value=None
             ),
-            mock.patch.object(webui.L, "repair_installation"),
+            mock.patch.object(webui.L, "repair_client", create=True),
             mock.patch.object(
                 webui.threading, "Thread", side_effect=self._immediate_thread
             ),
@@ -506,14 +543,16 @@ class WebUiReliabilityTests(unittest.TestCase):
         api._js = messages.append
         with (
             mock.patch.object(webui.L, "get_active_game_session", return_value={"pid": 99}),
-            mock.patch.object(webui.L, "repair_installation") as repair,
+            mock.patch.object(
+                webui.L, "repair_client", create=True
+            ) as repair,
         ):
             result = api.repair()
         api._shutdown_telemetry_dispatcher()
         self.assertFalse(result["ok"])
         self.assertIn("Закройте Minecraft", result["error"])
         repair.assert_not_called()
-        self.assertIn('"state": "error"', "\n".join(messages))
+        self.assertEqual(messages, [])
 
     def test_repair_confirmation_is_rendered_inside_launcher(self):
         html = (
@@ -539,12 +578,13 @@ class WebUiReliabilityTests(unittest.TestCase):
         self.assertIn("function parseLaunchStage", html)
         self.assertIn("stage.step", html)
         self.assertIn(
-            "progressTooltip=stage?t("
-            "'Шаг {step} · Общий прогресс — {progress}%'",
+            "t('{progress}% · всего',"
+            "{progress:Math.round(clientUpdateProgress)})",
             html,
         )
         self.assertIn("progress:Math.round(clientUpdateProgress)", html)
-        self.assertIn("state.title=progressTooltip", html)
+        self.assertIn("state.removeAttribute('title')", html)
+        self.assertNotIn("state.title=progressTooltip", html)
         translations = (
             Path(__file__).parents[1] / "ui" / "assets" / "i18n.js"
         ).read_text(encoding="utf-8")
@@ -578,7 +618,7 @@ class WebUiReliabilityTests(unittest.TestCase):
                 webui.L, "get_active_game_session", return_value=None
             ),
             mock.patch.object(
-                webui.L, "repair_installation",
+                webui.L, "repair_client",
                 side_effect=RuntimeError("locked file"),
             ),
             mock.patch.object(

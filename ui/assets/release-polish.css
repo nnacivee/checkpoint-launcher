@@ -26,6 +26,13 @@
   100%{left:100%;opacity:.55}
 }
 .play[aria-disabled="true"]{opacity:1}
+.play-copy{min-width:0}
+.play-copy b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.play[data-client-mode="preparing"] .play-copy b,
+.play[data-client-mode="repairing"] .play-copy b,
+.play[data-client-mode="updating"] .play-copy b,
+.play[data-client-mode="launching"] .play-copy b{font-size:14px}
+.play[data-client-mode="warning"] .play-copy b{font-size:15px}
 .play[data-client-mode="preparing"],
 .play[data-client-mode="repairing"]{
   border-color:rgba(108,139,205,.58);
@@ -55,6 +62,13 @@
 .client-state.error i{
   background:#d26473;
   box-shadow:0 0 0 3px rgba(210,100,115,.11);
+}
+.play[data-retry="true"]{
+  cursor:pointer;
+  border-color:rgba(210,100,115,.5);
+}
+.play[data-retry="true"] .play-icon{
+  background:linear-gradient(145deg,#b85b69,#7c3440);
 }
 .client-state.warning{color:#c7a95a!important}
 .client-state.warning i{
