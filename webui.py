@@ -252,6 +252,8 @@ class Api:
         self._window = None
         self._launching = False
         self._busy = False  # общий флаг для длительных операций (repair/установка)
+        self._maintenance_result = {"state": "idle", "error": ""}
+        self._pending_update = None
         self._hidden_for_game = False
         self._catalog_jobs = set()
         self._pack_icon_cache = {}  # slug -> icon_url с Modrinth
@@ -828,7 +830,11 @@ class Api:
             return {"ok": False, "started": False, "error": error}
 
         self._launching = True
-        telemetry = {"text": "Подготовка клиента", "phase": "preparing"}
+        telemetry = {
+            "text": "Подготовка клиента",
+            "phase": "preparing",
+            "progress": 0,
+        }
 
         def phase_for(text):
             value = str(text or "").lower()
@@ -849,12 +855,16 @@ class Api:
         def status_cb(text):
             telemetry["text"] = str(text)
             telemetry["phase"] = phase_for(text)
-            self._launch_telemetry("busy", text, phase=telemetry["phase"])
+            self._launch_telemetry(
+                "busy", text, telemetry["progress"],
+                phase=telemetry["phase"],
+            )
 
         def progress_cb(pct):
             try:
+                telemetry["progress"] = int(pct)
                 self._launch_telemetry(
-                    "busy", telemetry["text"], int(pct),
+                    "busy", telemetry["text"], telemetry["progress"],
                     phase=telemetry["phase"],
                 )
             except Exception:  # noqa: BLE001
@@ -1189,10 +1199,12 @@ class Api:
         active_session = L.get_active_game_session()
         if active_session:
             error = "Закройте Minecraft перед восстановлением клиента"
+            self._maintenance_result = {"state": "error", "error": error}
             self._repair_state("error", error)
             self._toast(error, "err")
             return {"ok": False, "started": False, "error": error}
         self._busy = True
+        self._maintenance_result = {"state": "progress", "error": ""}
         state = {"text": "Проверка системных файлов"}
 
         def status_cb(text):
@@ -1209,9 +1221,14 @@ class Api:
             try:
                 L.repair_installation(status_cb, progress_cb)
                 detail = "Системные файлы сброшены — установка продолжится при запуске"
+                self._maintenance_result = {"state": "complete", "error": ""}
                 self._repair_state("complete", detail, 100)
                 self._toast("Проверка подготовлена. Нажмите «Играть» для переустановки.", "ok")
             except Exception as exc:  # noqa: BLE001
+                self._maintenance_result = {
+                    "state": "error",
+                    "error": str(exc),
+                }
                 self._repair_state("error", str(exc))
                 self._toast("Не удалось переустановить: %s" % exc, "err")
             finally:
@@ -1278,6 +1295,15 @@ class Api:
     # original methods for compatibility with already shipped pages.
     def repair_files(self):
         return self.repair()
+
+    def get_maintenance_state(self):
+        """Expose the minimal repair result needed by the UI polling fallback."""
+        return {
+            "busy": bool(self._busy),
+            "launching": bool(self._launching),
+            "state": str(self._maintenance_result.get("state") or "idle"),
+            "error": str(self._maintenance_result.get("error") or ""),
+        }
 
     def export_logs(self):
         return self.collect_logs()
@@ -1503,26 +1529,35 @@ class Api:
     # На GitHub НЕ уходим никогда.
     def check_update(self):
         try:
-            if not self._ui_settings().get("auto_updates", True):
-                return None
             if not getattr(sys, "frozen", False):
                 return None  # в режиме разработки (.py) самообновления нет
-            return L.check_for_launcher_update()  # {version, exe_url, url} | None
+            info = L.check_for_launcher_update()
+            if info:
+                self._pending_update = dict(info)
+            return info  # {version, exe_url, url} | None
         except Exception:  # noqa: BLE001
             return None
 
     def apply_update(self):
         if getattr(self, "_updating", False):
-            return
+            return {"ok": True, "started": False, "busy": True}
         self._updating = True
-        try:
-            info = L.check_for_launcher_update() or {}
-        except Exception:  # noqa: BLE001
-            info = {}
-        exe_url = info.get("exe_url") or L.CONFIG.get("LAUNCHER_EXE_MIRROR_URL")
+        info = dict(self._pending_update or {})
+        if not info:
+            try:
+                info = L.check_for_launcher_update() or {}
+            except Exception:  # noqa: BLE001
+                info = {}
+            if info:
+                self._pending_update = dict(info)
+        exe_url = info.get("exe_url")
         if not (getattr(sys, "frozen", False) and exe_url):
             self._updating = False
-            return
+            return {
+                "ok": False,
+                "started": False,
+                "error": "обновление сейчас недоступно",
+            }
 
         def worker():
             try:
@@ -1563,6 +1598,7 @@ class Api:
                 self._js("window.updBanner && window.updBanner('err', 0)")
 
         threading.Thread(target=worker, daemon=True).start()
+        return {"ok": True, "started": True}
 
     def play_menu(self):
         pass

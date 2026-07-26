@@ -389,16 +389,59 @@ class WebUiReliabilityTests(unittest.TestCase):
         window.restore.assert_not_called()
         window.show.assert_not_called()
 
-    def test_disabled_auto_updates_do_not_contact_release_sources(self):
+    def test_update_detection_ignores_legacy_auto_updates_flag(self):
         api = webui.Api()
+        update = {"version": "1.66.17", "exe_url": "https://example.test/setup.exe"}
         with (
             mock.patch.object(
                 api, "_ui_settings", return_value={"auto_updates": False}
             ),
-            mock.patch.object(webui.L, "check_for_launcher_update") as check,
+            mock.patch.object(webui.sys, "frozen", True, create=True),
+            mock.patch.object(
+                webui.L, "check_for_launcher_update", return_value=update
+            ) as check,
         ):
-            self.assertIsNone(api.check_update())
+            self.assertEqual(api.check_update(), update)
+        check.assert_called_once_with()
+
+    def test_unavailable_launcher_update_returns_visible_error_contract(self):
+        api = webui.Api()
+        with (
+            mock.patch.object(webui.sys, "frozen", False, create=True),
+            mock.patch.object(
+                webui.L, "check_for_launcher_update", return_value=None
+            ),
+        ):
+            result = api.apply_update()
+        self.assertEqual(
+            result,
+            {
+                "ok": False,
+                "started": False,
+                "error": "обновление сейчас недоступно",
+            },
+        )
+        self.assertFalse(api._updating)
+
+    def test_apply_update_reuses_the_exact_detected_release(self):
+        api = webui.Api()
+        api._pending_update = {
+            "version": "1.66.17",
+            "exe_url": "https://example.test/CheckpointSetup-1.66.17.exe",
+            "sha256": "a" * 64,
+        }
+        thread = mock.Mock()
+        with (
+            mock.patch.object(webui.sys, "frozen", True, create=True),
+            mock.patch.object(
+                webui.L, "check_for_launcher_update"
+            ) as check,
+            mock.patch.object(webui.threading, "Thread", return_value=thread),
+        ):
+            result = api.apply_update()
+        self.assertEqual(result, {"ok": True, "started": True})
         check.assert_not_called()
+        thread.start.assert_called_once_with()
 
     def test_offline_client_state_explicitly_allows_local_launch(self):
         api = webui.Api()
@@ -479,6 +522,100 @@ class WebUiReliabilityTests(unittest.TestCase):
         self.assertIn('data-dialog-view="repair-confirm"', html)
         self.assertIn("data-confirm-repair", html)
         self.assertNotIn("window.confirm(", html)
+
+    def test_main_screen_launcher_update_and_progress_are_visible(self):
+        html = (
+            Path(__file__).parents[1] / "ui" / "center-control-layouts.html"
+        ).read_text(encoding="utf-8")
+        main_banner = html.index(
+            '<aside class="launcher-update-banner" data-launcher-update-banner'
+        )
+        settings = html.index(
+            '<section class="dialog dialog-view" data-dialog-view="settings"'
+        )
+        self.assertLess(main_banner, settings)
+        self.assertGreaterEqual(html.count("data-update-action"), 2)
+        self.assertIn("querySelectorAll('[data-update-action]')", html)
+        self.assertIn("function parseLaunchStage", html)
+        self.assertIn("stage.step", html)
+        self.assertIn("state.title=clientStateDetail||stateText", html)
+        self.assertIn("monitorRepairCompletion()", html)
+
+    def test_maintenance_state_exposes_repair_completion_without_file_details(self):
+        api = webui.Api()
+        api._busy = True
+        api._launching = False
+        self.assertEqual(
+            api.get_maintenance_state(),
+            {
+                "busy": True,
+                "launching": False,
+                "state": "idle",
+                "error": "",
+            },
+        )
+
+    def test_repair_polling_state_preserves_terminal_error(self):
+        api = webui.Api()
+        api._js = lambda _code: None
+        with (
+            mock.patch.object(
+                webui.L, "get_active_game_session", return_value=None
+            ),
+            mock.patch.object(
+                webui.L, "repair_installation",
+                side_effect=RuntimeError("locked file"),
+            ),
+            mock.patch.object(
+                webui.threading, "Thread", side_effect=self._immediate_thread
+            ),
+        ):
+            result = api.repair()
+        state = api.get_maintenance_state()
+        api._shutdown_telemetry_dispatcher()
+        self.assertEqual(result, {"ok": True, "started": True})
+        self.assertFalse(state["busy"])
+        self.assertEqual(state["state"], "error")
+        self.assertEqual(state["error"], "locked file")
+
+    def test_launch_status_keeps_latest_numeric_progress(self):
+        api = webui.Api()
+        telemetry = []
+        api._launch_telemetry = (
+            lambda state, text="", progress=None, phase=None:
+            telemetry.append((state, text, progress, phase))
+        )
+        process = mock.Mock(returncode=0)
+
+        def launch(_nick, _mem, _low, status_cb, progress_cb):
+            progress_cb(37)
+            status_cb("Шаг 2/6 · Minecraft — 100%")
+            return process
+
+        with (
+            mock.patch.object(webui.L, "get_active_game_session", return_value=None),
+            mock.patch.object(
+                webui.L, "load_settings",
+                return_value={
+                    "memory_auto": False,
+                    "memory_mb": 4096,
+                    "minimize_on_launch": False,
+                },
+            ),
+            mock.patch.object(webui.L, "update_settings"),
+            mock.patch.object(webui.L, "launch_game", side_effect=launch),
+            mock.patch.object(webui.L, "record_game_finished"),
+            mock.patch.object(
+                webui.threading, "Thread", side_effect=self._immediate_thread
+            ),
+        ):
+            result = api.play("Player")
+
+        self.assertEqual(result, {"ok": True, "started": True})
+        self.assertIn(
+            ("busy", "Шаг 2/6 · Minecraft — 100%", 37, "minecraft"),
+            telemetry,
+        )
 
     def test_catalog_install_returns_started_and_emits_terminal_state(self):
         api = webui.Api()
