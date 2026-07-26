@@ -352,7 +352,10 @@ CONFIG = {
 
     # Версия пака настроек «по умолчанию» — используется, только если ниже
     # не указана CONFIGPACK_VERSION_URL или её не удалось скачать.
-    "CONFIGPACK_VERSION": 48,
+    # Запасное значение для нового чистого клиента, если все маленькие
+    # version-файлы временно недоступны. Должно совпадать с подготовленным
+    # локальным релизом; опубликованный Bunny-маркер всё равно главный.
+    "CONFIGPACK_VERSION": 50,
 
     # Текстовый файл с одним числом — версией пака настроек. Пока он указан,
     # обновление меню/квестов выглядит так: перезалить configpack.zip,
@@ -398,7 +401,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.22",
+    "LAUNCHER_VERSION": "1.66.23",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -410,6 +413,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.23",
+            "date": "26 июля 2026",
+            "changes": [
+                "Обновление настроек теперь видно на главной кнопке заранее, а не только после нажатия «Играть».",
+                "После вылета лаунчер сам показывает понятную вероятную причину и следующий шаг — искать игровые логи вручную не нужно.",
+                "Настройки интерфейса и частоты кадров больше не перезаписывают выбор игрока; значения x2 и без ограничения задаются только при первом запуске.",
+            ],
+        },
         {
             "version": "1.66.22",
             "date": "26 июля 2026",
@@ -4877,21 +4889,60 @@ def _mirror_url_variants(url: str) -> list:
     return urls
 
 
+def _cache_busted_url(url: str) -> str:
+    """Return a cache-safe request URL for mutable metadata.
+
+    Bunny's configured Pull Zone rejects every request containing a query
+    string, so its metadata must be requested by the exact public URL.  The
+    release process purges those exact paths after publishing.  Other HTTPS
+    sources retain the historical five-minute cache-buster.
+    """
+    value = str(url or "")
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.scheme.lower() == "file":
+        return value
+    if parsed.hostname and parsed.hostname.lower() == "industrialhorizon.b-cdn.net":
+        return urllib.parse.urlunsplit((
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            "",
+            "",
+        ))
+    query = parsed.query
+    token = "t=" + str(int(time.time()) // 300)
+    query = query + ("&" if query else "") + token
+    return urllib.parse.urlunsplit((
+        parsed.scheme,
+        parsed.netloc,
+        parsed.path,
+        query,
+        "",
+    ))
+
+
+def _metadata_request(url: str):
+    """Build a metadata request without breaking the Bunny Pull Zone."""
+    return urllib.request.Request(
+        _cache_busted_url(url),
+        headers={
+            "User-Agent": "IH-Launcher",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        },
+    )
+
+
 def _fetch_tiny_text(urls, timeout=3):
     """Скачивает крошечный текстовый файл, пробуя список URL по очереди;
     возвращает строку или None, если не вышло нигде.
 
-    Анти-кеш ?t= (метка меняется раз в ~5 минут) — как в fetch_server_news:
-    Cloudflare на домене кеширует ответы, и без метки игроки после релиза
-    ещё долго видели бы старый номер версии."""
+    Для Bunny используется точный URL: его Pull Zone отклоняет query string,
+    а служебные пути очищаются при публикации. Для остальных источников
+    сохраняется пяти-минутная анти-кеш метка."""
     for u in urls:
         try:
-            busted = u if str(u).startswith("file:") else u + (
-                ("&" if "?" in u else "?") + "t="
-                + str(int(time.time()) // 300)
-            )
-            request = urllib.request.Request(
-                busted, headers={"User-Agent": "IH-Launcher"})
+            request = _metadata_request(u)
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 raw = response.read().decode("utf-8", "replace").strip()
             if raw:
@@ -5025,10 +5076,7 @@ def fetch_update_sha256(exe_url: str):
     # _attach_update_sha256 instead.
     for url in (sidecar,):
         try:
-            busted = url + ("&" if "?" in url else "?") + "t=" \
-                + str(int(time.time()) // 300)
-            request = urllib.request.Request(
-                busted, headers={"User-Agent": "IH-Launcher"})
+            request = _metadata_request(url)
             with urllib.request.urlopen(request, timeout=8) as response:
                 # A checksum sidecar is tiny.  Reading one byte beyond the
                 # limit lets us reject an HTML/error document returned with 200.
@@ -5084,10 +5132,12 @@ def get_modpack_version_status() -> dict:
         return {"version": CONFIG["MODPACK_VERSION"], "online": None}
     candidates = _mirror_url_variants(url)
     if not str(url).startswith("file:"):
+        # Only release channels that publish a payload, manifest and marker
+        # together may decide the installed version.  The historical Dynmap
+        # endpoints still answer with v12 and can otherwise make a healthy
+        # v13 installation look outdated or broken during a Bunny outage.
         for extra in (
             CONFIG.get("MODPACK_VERSION_FALLBACK_URL"),
-            "https://industrialhorizon.dynmap.xyz/modpack_version.txt",
-            "http://95.216.30.64:25980/modpack_version.txt",
         ):
             if extra and extra not in candidates:
                 candidates.append(extra)
@@ -5118,6 +5168,22 @@ def get_local_modpack_version() -> int:
         except Exception:
             return -1
     return -1
+
+
+def modpack_update_required(local_version: int, remote_version: int) -> bool:
+    """Only a genuinely newer remote release may replace an installed pack."""
+    if local_version < 0:
+        return True
+    if remote_version > local_version:
+        return True
+    if remote_version < local_version:
+        runtime_log(
+            "modpack_downgrade_ignored local=%s remote=%s",
+            local_version,
+            remote_version,
+            level=logging.WARNING,
+        )
+    return False
 
 
 def _download_first(urls, dest, progress_cb=None, retries=5,
@@ -5276,6 +5342,25 @@ def download_modpack_archive(dest, progress_cb, status_cb):
 
 MODPACK_MANAGED_FOLDERS = ("mods", "config", "kubejs")
 MODPACK_TRANSACTION_DIR_NAME = ".launcher_modpack_transaction"
+
+
+def _modpack_roots_for_full_install(local_version: int):
+    """Return roots the full archive may replace atomically.
+
+    v13 still contains an old config baseline.  It is useful for a clean
+    install, but applying it during Repair would erase newer auto-generated
+    files and personal mod settings.  Existing clients therefore repair only
+    ``mods``; configpack remains the sole updater of curated configuration.
+    """
+    has_existing_configuration = any(
+        (INSTANCE_DIR / folder).exists()
+        for folder in ("config", "kubejs")
+    )
+    return (
+        MODPACK_MANAGED_FOLDERS
+        if local_version < 0 and not has_existing_configuration
+        else ("mods",)
+    )
 
 
 def _modpack_transaction_dir() -> Path:
@@ -5592,18 +5677,13 @@ def _fetch_modpack_manifest():
             primary_root = primary.rsplit("/", 1)[0]
             if primary_root not in roots:
                 roots.append(primary_root)
-        for legacy_root in (
-            "https://industrialhorizon.dynmap.xyz",
-            "http://95.216.30.64:25980",
-        ):
-            if legacy_root not in roots:
-                roots.append(legacy_root)
-    bust = "?t=" + str(int(time.time()) // 300)
+        # Do not consult historical server roots here.  They still publish a
+        # v12 manifest and are not an atomic fallback for the current v13
+        # payload; mixing their metadata with a newer version marker makes a
+        # healthy client look corrupt during a Bunny/GitHub outage.
     for r in roots:
         try:
-            request = urllib.request.Request(
-                r + "/manifest.json" + bust,
-                headers={"User-Agent": "CheckpointLauncher"})
+            request = _metadata_request(r + "/manifest.json")
             with urllib.request.urlopen(request, timeout=10) as response:
                 data = json.loads(response.read().decode("utf-8", "replace"))
             if isinstance(data, dict) and isinstance(data.get("files"), list):
@@ -5802,6 +5882,19 @@ def install_modpack_delta(status_cb, progress_cb) -> bool:
         if not files:
             return False
         remote_ver = get_remote_modpack_version()
+        local_ver = get_local_modpack_version()
+        if local_ver >= 0 and remote_ver < local_ver:
+            runtime_log(
+                "delta_modpack_downgrade_refused local=%s remote=%s",
+                local_ver,
+                remote_ver,
+                level=logging.WARNING,
+            )
+            status_cb(
+                "Источник обновлений временно отстаёт; "
+                "текущая сборка сохранена"
+            )
+            return False
         try:
             manifest_ver = int(man.get("version"))
         except (TypeError, ValueError):
@@ -5956,6 +6049,18 @@ def install_modpack(
         return
 
     remote_version = get_remote_modpack_version()
+    local_version = get_local_modpack_version()
+    if local_version >= 0 and remote_version < local_version:
+        runtime_log(
+            "full_modpack_downgrade_refused local=%s remote=%s",
+            local_version,
+            remote_version,
+            level=logging.WARNING,
+        )
+        raise RuntimeError(
+            "Источник обновлений временно показывает более старую сборку. "
+            "Текущая версия сохранена; повторите позже."
+        )
     manifest = _fetch_modpack_manifest()
     manifest_files = _normalise_modpack_manifest(manifest)
     try:
@@ -6026,18 +6131,25 @@ def install_modpack(
                 progress_cb(
                     90 + int(position * 10 / len(manifest_files)))
 
-        # Empty managed roots are intentional: the old implementation also
-        # removed a folder if the new archive no longer shipped it.
-        for folder in MODPACK_MANAGED_FOLDERS:
+        managed_roots = _modpack_roots_for_full_install(local_version)
+        # Empty managed roots are intentional on a clean install.  During a
+        # repair only mods are replaced; v13's stale config/kubejs baseline is
+        # discarded with staging instead of overwriting the player's files.
+        for folder in managed_roots:
             (stage_root / folder).mkdir(parents=True, exist_ok=True)
         _commit_managed_folders(
-            transaction, MODPACK_MANAGED_FOLDERS, cleanup=False
+            transaction, managed_roots, cleanup=False
         )
 
         # Older/custom archives may additionally contain resource packs or
         # root files. Merge those after the critical folders are committed;
         # user-owned directories are never removed wholesale.
         for child in list(stage_root.iterdir()):
+            if (
+                local_version >= 0
+                and child.name in ("config", "kubejs")
+            ):
+                continue
             target = INSTANCE_DIR / child.name
             if child.is_dir():
                 shutil.copytree(child, target, dirs_exist_ok=True)
@@ -6093,11 +6205,7 @@ def fetch_server_news() -> list:
     urls.append("http://95.216.30.64:25980/news.json")
     for url in urls:
         try:
-            # Анти-кеш (меняется раз в ~5 минут), иначе Cloudflare отдаёт старое.
-            busted = url + (("&" if "?" in url else "?") + "t="
-                            + str(int(time.time()) // 300))
-            request = urllib.request.Request(
-                busted, headers={"User-Agent": "IH-Launcher"})
+            request = _metadata_request(url)
             with urllib.request.urlopen(request, timeout=8) as response:
                 data = json.loads(response.read().decode("utf-8", "replace"))
             items = data.get("items") if isinstance(data, dict) else data
@@ -6111,17 +6219,17 @@ def fetch_server_news() -> list:
 def get_remote_configpack_version() -> int:
     """То же, что get_remote_modpack_version(), но для пака настроек.
 
-    Основной адрес — Bunny CDN, затем GitHub и старые серверные зеркала.
+    Основной адрес — Bunny CDN, затем согласованный GitHub-канал.
     Маркер версии публикуется только после проверки самого архива."""
     url = CONFIG.get("CONFIGPACK_VERSION_URL")
     if not url:
         return CONFIG.get("CONFIGPACK_VERSION", 0)
     candidates = [url]
     if not str(url).startswith("file:"):
+        # Old Dynmap/IP markers are intentionally excluded: they advertise
+        # v47 while the current configpack removes obsolete quest chapters.
         for extra in (
             CONFIG.get("CONFIGPACK_VERSION_FALLBACK_URL"),
-            "https://industrialhorizon.dynmap.xyz/configpack_version.txt",
-            "http://95.216.30.64:25980/configpack_version.txt",
         ):
             if extra and extra not in candidates:
                 candidates.append(extra)
@@ -6401,14 +6509,31 @@ def _build_configpack_file_manifest(stage_root: Path, payload_names) -> list:
     return result
 
 
-def configpack_needs_install() -> bool:
+def configpack_needs_install(remote_version=None) -> bool:
     """Ставить ли пак настроек. Да, если версия разошлась ИЛИ если файлы,
     которые он приносит, кто-то стёр (например, переустановка сборки)."""
     if not CONFIG.get("CONFIGPACK_URL"):
         return False
     marker = _read_configpack_marker()
-    if marker.get("version") != get_remote_configpack_version():
+    local_version = marker.get("version")
+    if remote_version is None:
+        remote_version = get_remote_configpack_version()
+    if not isinstance(local_version, int):
         return True
+    # Never downgrade a newer installed configpack when the primary Bunny
+    # marker is temporarily unavailable and an older fallback answers.
+    # This matters for v50: v49 still contains quest chapters intentionally
+    # removed by v50.
+    if remote_version > local_version:
+        return True
+    if remote_version < local_version:
+        runtime_log(
+            "configpack_downgrade_ignored local=%s remote=%s",
+            local_version,
+            remote_version,
+            level=logging.WARNING,
+        )
+        return False
     # Целостность проверяем по "verify" — это подмножество owns, которое
     # архив РЕАЛЬНО приносит. Раньше проверяли по всему owns, а там намеренно
     # лежат пути «только на удаление» (главы квестов, что теперь раздаёт
@@ -6479,7 +6604,24 @@ def install_configpack(
     antivirus lock restores the previous complete pack on the next launch.
     """
     recover_interrupted_configpack_update(status_cb)
-    needs_install = configpack_needs_install()
+    previous_marker = _read_configpack_marker()
+    remote_version = get_remote_configpack_version()
+    local_version = previous_marker.get("version")
+    if isinstance(local_version, int) and remote_version < local_version:
+        runtime_log(
+            "configpack_install_downgrade_blocked local=%s remote=%s",
+            local_version,
+            remote_version,
+            level=logging.WARNING,
+        )
+        if status_cb:
+            status_cb(
+                "Установлена более новая версия настроек; откат отменён"
+            )
+        if progress_cb:
+            progress_cb(100)
+        return
+    needs_install = configpack_needs_install(remote_version)
     if not needs_install and not force_verify:
         if status_cb:
             status_cb("настройки сборки уже актуальны")
@@ -6492,7 +6634,6 @@ def install_configpack(
     )
 
     zip_path = APP_DATA_DIR / "configpack_download.zip"
-    previous_marker = _read_configpack_marker()
     previous_verify = previous_marker.get("verify", previous_marker.get("owns", []))
     had_working_pack = bool(previous_marker) and all(
         (INSTANCE_DIR / rel).exists() for rel in previous_verify
@@ -6521,7 +6662,6 @@ def install_configpack(
     transaction = None
     success = False
     try:
-        remote_version = get_remote_configpack_version()
         expected_digest = fetch_artifact_sha256(
             CONFIG["CONFIGPACK_URL"],
             CONFIG.get("CONFIGPACK_MIRROR_URL") or "",
@@ -7646,6 +7786,34 @@ def _version_tuple(version_str: str):
     return tuple(parts) or (0,)
 
 
+def _versioned_launcher_mirror_url(base_url: str, version: str) -> str:
+    """Bind a launcher marker to one immutable installer URL.
+
+    Bunny may cache the mutable ``CheckpointSetup.exe`` and its sidecar for
+    weeks.  Versioned payloads avoid the race where the redirect already
+    points at the new EXE while the generic SHA still belongs to the old one.
+    """
+    parsed = urllib.parse.urlsplit(str(base_url or ""))
+    safe_version = re.sub(r"[^0-9A-Za-z._-]", "", str(version or ""))
+    if (
+        parsed.scheme.lower() != "https"
+        or not safe_version
+        or not parsed.path.lower().endswith("/checkpointsetup.exe")
+    ):
+        return ""
+    versioned_path = (
+        parsed.path[:-len("CheckpointSetup.exe")]
+        + "CheckpointSetup-%s.exe" % safe_version
+    )
+    return urllib.parse.urlunsplit((
+        parsed.scheme,
+        parsed.netloc,
+        versioned_path,
+        "",
+        "",
+    ))
+
+
 def _check_update_via_mirror():
     """ОСНОВНОЙ канал обновлений в РФ. Читает крошечный launcher_version.txt с
     HTTPS-зеркала (порт 443, работает там, где GitHub заблокирован) и, если
@@ -7659,16 +7827,12 @@ def _check_update_via_mirror():
             or urllib.parse.urlsplit(str(exe)).scheme.lower() != "https"):
         return None
     try:
-        # Cloudflare кеширует ответы — добавляем анти-кеш метку (меняется раз в
-        # ~5 минут), иначе после релиза игроки ещё долго видят старый номер.
         # Для исполняемого обновления используем только HTTPS. Прямой HTTP-IP
         # остаётся допустимым для неисполняемых файлов сборки, но не для EXE.
         raw, src = None, None
         for u in (url,):
             try:
-                bust = ("&" if "?" in u else "?") + "t=" + str(int(time.time()) // 300)
-                request = urllib.request.Request(
-                    u + bust, headers={"User-Agent": "IH-Launcher"})
+                request = _metadata_request(u)
                 with urllib.request.urlopen(request, timeout=8) as response:
                     raw = response.read().decode("utf-8", "replace")
                 src = u
@@ -7682,11 +7846,12 @@ def _check_update_via_mirror():
                 ver = t
                 break
         if ver and _version_tuple(ver) > _version_tuple(CONFIG["LAUNCHER_VERSION"]):
-            # Тот же exe-файл на зеркале для всех версий: анти-кеш по номеру,
-            # чтобы Cloudflare отдал именно свежий Launcher.exe.
-            exe_src = exe
-            exe_url = exe_src + (("&" if "?" in exe_src else "?")
-                                 + "v=" + ver.replace(".", ""))
+            # The versioned EXE and its adjacent SHA are immutable.  The
+            # release process uploads both first and publishes the tiny marker
+            # last, so CDN caches can never pair files from different builds.
+            exe_url = _versioned_launcher_mirror_url(exe, ver)
+            if not exe_url:
+                return None
             return _attach_update_sha256({
                 "version": ver,
                 "exe_url": exe_url,
@@ -8211,8 +8376,8 @@ def set_russian_once(status_cb=None) -> None:
     видит английское меню, хотя сборка переведена. Решение владельца от
     17.07: русский должен стоять сразу при входе.
 
-    Почему один раз, а не в FORCED_OPTIONS (те применяются при каждом
-    запуске): иначе игрок, которому нужен английский, не смог бы его
+    Почему один раз, а не как обязательную настройку при каждом
+    запуске: иначе игрок, которому нужен английский, не смог бы его
     оставить — лаунчер возвращал бы русский на каждом старте. Маркер лежит
     в APP_DATA, поэтому переустановка сборки язык повторно не навяжет.
 
@@ -9368,15 +9533,6 @@ LOW_END_OPTIONS = {
     "entityDistanceScaling": "0.5",  # мобы/сущности рисуются ближе — меньше нагрузка
 }
 
-# Настройки, которые лаунчер выставляет ВСЕГДА — и на слабом ПК, и на мощном.
-# Применяются последними, уже после режима для слабых ПК: иначе восстановление
-# резервной копии настроек их бы затёрло.
-FORCED_OPTIONS = {
-    "guiScale": "2",         # интерфейс x2
-    "maxFps": "260",         # 260 — это и есть "Без ограничения" в самой игре
-    "enableVsync": "false",  # вертикальная синхронизация тоже режет FPS
-}
-
 OPTIONS_BACKUP_FILE = APP_DATA_DIR / "options_backup_before_low_end.txt"
 
 # ------------------- ПРЕСЕТЫ ГРАФИКИ (18.07, пункт 48) -------------------
@@ -9484,21 +9640,6 @@ def _apply_low_end_shaders(enabled: bool, status_cb=None) -> None:
             IRIS_CONFIG_BACKUP_FILE.unlink(missing_ok=True)
             if status_cb:
                 status_cb("Настройки шейдеров восстановлены.")
-
-
-def apply_forced_options(status_cb=None) -> None:
-    """Ставит настройки из FORCED_OPTIONS: интерфейс x2 и снятое ограничение
-    FPS. Работает независимо от режима для слабых ПК и вызывается ПОСЛЕ него —
-    иначе восстановление резервной копии вернуло бы старые значения."""
-    INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
-    options_path = INSTANCE_DIR / "options.txt"
-    current = _read_options_txt(options_path)
-    if all(current.get(key) == value for key, value in FORCED_OPTIONS.items()):
-        return  # уже стоит как надо — файл не трогаем
-    current.update(FORCED_OPTIONS)
-    _write_options_txt(options_path, current)
-    if status_cb:
-        status_cb("интерфейс x2, ограничение FPS снято")
 
 
 def disable_fullscreen_once(status_cb=None) -> None:
@@ -9696,7 +9837,11 @@ CURRENT_OPTIONS_VERSION = "3955"
 # язык, интерфейс x2 и без стартового экрана «диктор/выбор языка».
 DEFAULT_OPTION_SEEDS = (
     ("lang", "ru_ru"),
-    ("guiScale", "2"),
+    # Только стартовые значения: если игрок уже менял любую из этих
+    # настроек, существующую строку options.txt никогда не переписываем.
+    ("guiScale", "2"),         # интерфейс x2
+    ("maxFps", "260"),         # «Без ограничения» в Minecraft
+    ("enableVsync", "false"),  # вертикальная синхронизация выключена
     ("onboardAccessibility", "false"),
     # Просьба владельца (23.07): не запускать игру в полноэкранном режиме.
     ("fullscreen", "false"),
@@ -9803,6 +9948,7 @@ def prepare_or_repair_client(
         "minecraft_checked": False,
         "modpack_checked": False,
         "modpack_repaired": False,
+        "extras_checked": False,
         "configpack_checked": False,
     }
 
@@ -9810,9 +9956,10 @@ def prepare_or_repair_client(
         CONFIG["MOD_LOADER"], CONFIG["MOD_LOADER"].capitalize()
     )
     repair_progress = LaunchProgress(status, progress_out, [
-        ("Minecraft", 28),
-        (loader_name, 18),
-        ("Сборка модов", 44),
+        ("Minecraft", 25),
+        (loader_name, 15),
+        ("Сборка модов", 35),
+        ("Дополнения", 15),
         ("Настройки сборки", 10),
     ])
 
@@ -9848,7 +9995,10 @@ def prepare_or_repair_client(
     pack_status, pack_progress = repair_progress.scoped("Сборка модов")
     local_version = get_local_modpack_version()
     remote_version = get_remote_modpack_version()
-    if local_version != remote_version:
+    remote_is_older = (
+        local_version >= 0 and remote_version < local_version
+    )
+    if modpack_update_required(local_version, remote_version):
         pack_status("обновление до актуальной версии")
         install_modpack(pack_status, pack_progress)
         actions["modpack_repaired"] = True
@@ -9861,6 +10011,11 @@ def prepare_or_repair_client(
                 "Проверьте интернет и нажмите «Восстановить клиент» ещё раз."
             )
         if not integrity.get("ok"):
+            if remote_is_older:
+                raise RuntimeError(
+                    "Источник обновлений временно показывает более старую "
+                    "сборку. Текущие файлы не заменены. Повторите позже."
+                )
             pack_status(
                 "восстанавливаю файлы: отсутствует %d, повреждено %d"
                 % (
@@ -9876,6 +10031,18 @@ def prepare_or_repair_client(
         else:
             pack_status("файлы сборки проверены")
             pack_progress(100)
+
+    extras_status, extras_progress = repair_progress.scoped("Дополнения")
+    remove_blocked_mods(extras_status)
+    missing_required = install_extra_client_mods(
+        extras_status, extras_progress
+    )
+    if missing_required:
+        raise RequiredModsMissing(
+            "\n".join("• " + name for name in missing_required)
+        )
+    extras_progress(100)
+    actions["extras_checked"] = True
 
     config_status, config_progress = repair_progress.scoped(
         "Настройки сборки"
@@ -10317,6 +10484,98 @@ def _prepare_game_launch_log():
     return log_path, log_file
 
 
+def diagnose_game_exit(log_path=None) -> str:
+    """Turn the latest game output into a small, stable player-facing code.
+
+    The UI translates these codes into plain RU/UA/EN text.  Technical details
+    remain in the support archive, while the player immediately sees the most
+    likely cause and a useful next action.
+    """
+    explicit = Path(log_path) if log_path else INSTANCE_DIR / "latest_launch.log"
+    candidates = [explicit]
+    try:
+        # The launch log is created for this exact run.  Extra Minecraft logs
+        # are useful only if they are at least as new; otherwise an old OOM or
+        # crash report could be presented as the reason for today's failure.
+        current_run_started = explicit.stat().st_mtime - 5
+    except OSError:
+        current_run_started = time.time() - 5
+    latest_log = INSTANCE_DIR / "logs" / "latest.log"
+    try:
+        if latest_log.stat().st_mtime >= current_run_started:
+            candidates.append(latest_log)
+    except OSError:
+        pass
+    try:
+        crash_dir = INSTANCE_DIR / "crash-reports"
+        current_crashes = [
+            path for path in crash_dir.glob("crash-*.txt")
+            if path.stat().st_mtime >= current_run_started
+        ]
+        candidates.extend(sorted(
+            current_crashes,
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )[:1])
+    except OSError:
+        pass
+
+    fragments = []
+    for path in candidates:
+        try:
+            if not path.is_file():
+                continue
+            with path.open("rb") as source:
+                size = path.stat().st_size
+                source.seek(max(0, size - 2 * 1024 * 1024))
+                fragments.append(
+                    source.read(2 * 1024 * 1024).decode(
+                        "utf-8", errors="replace"
+                    )
+                )
+        except OSError:
+            continue
+    text = "\n".join(fragments).lower()
+
+    if any(token in text for token in (
+        "outofmemoryerror",
+        "could not reserve enough space",
+        "native memory allocation",
+        "gc overhead limit exceeded",
+    )):
+        return "IH_DIAG_MEMORY"
+    if any(token in text for token in (
+        "no space left on device",
+        "there is not enough space on the disk",
+        "disk quota exceeded",
+    )):
+        return "IH_DIAG_DISK"
+    if any(token in text for token in (
+        "glfw error 65542",
+        "pixel format not accelerated",
+        "opengl is not supported",
+        "failed to create window",
+    )):
+        return "IH_DIAG_VIDEO"
+    if any(token in text for token in (
+        "missing mandatory dependencies",
+        "mod resolution encountered",
+        "incompatible mod set",
+        "loading errors encountered",
+        "mixin apply failed",
+        "failed to load mod",
+    )):
+        return "IH_DIAG_MODS"
+    if any(token in text for token in (
+        "unsupportedclassversionerror",
+        "could not create the java virtual machine",
+        "unable to access jarfile",
+        "a jni error has occurred",
+    )):
+        return "IH_DIAG_JAVA"
+    return "IH_DIAG_UNKNOWN"
+
+
 def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb, progress_cb, server_override=None, test_mode=False):
     active_session = get_active_game_session()
     if active_session:
@@ -10363,7 +10622,13 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     else:
         local_pack_version = get_local_modpack_version()
         remote_pack_version = get_remote_modpack_version()
-        if local_pack_version != remote_pack_version:
+        remote_pack_is_older = (
+            local_pack_version >= 0
+            and remote_pack_version < local_pack_version
+        )
+        if modpack_update_required(
+            local_pack_version, remote_pack_version
+        ):
             install_modpack(pack_status, pack_progress)
         else:
             integrity = verify_modpack_integrity(pack_status, pack_progress)
@@ -10373,6 +10638,12 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
                     "и нажмите «Играть» ещё раз."
                 )
             if not integrity.get("ok"):
+                if remote_pack_is_older:
+                    raise RuntimeError(
+                        "Источник обновлений временно показывает более "
+                        "старую сборку. Текущие файлы не заменены. "
+                        "Повторите позже."
+                    )
                 pack_status(
                     "восстановление файлов: отсутствует %d, повреждено %d"
                     % (len(integrity["missing"]), len(integrity["corrupt"]))
@@ -10403,7 +10674,6 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     # минимальную графику (низкая дальность, Fast), иначе играть невозможно.
     weak_gpu = bool(load_settings().get("no_sodium"))
     apply_low_end_mode(low_end_enabled or weak_gpu, extras_status)
-    apply_forced_options(extras_status)
     disable_fullscreen_once(extras_status)
     install_extra_shaderpacks(
         extras_status, _progress_slice(extras_progress, 15, 30))
@@ -10461,8 +10731,8 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     # создаётся самим лаунчером, поэтому он обязан содержать актуальную
     # DataVersion до того, как Minecraft запустит миграции старых клавиш.
     # Повтор здесь также лечит старую неполную копию из player_settings_backup
-    # после переустановки, не затрагивая остальные настройки игрока.
-    apply_forced_options(configpack_status)
+    # после переустановки. Отсутствующие стартовые значения добавятся ниже,
+    # но существующий выбор игрока никогда не будет перезаписан.
     set_russian_once(configpack_status)
     seed_default_keybinds()
     backup_player_settings()

@@ -154,6 +154,10 @@ class RepairIntegrity16619Tests(unittest.TestCase):
                 ),
                 mock.patch.object(launcher, "install_modpack_delta") as delta,
                 mock.patch.object(launcher, "install_modpack") as full,
+                mock.patch.object(
+                    launcher, "install_extra_client_mods", return_value=[]
+                ) as extras,
+                mock.patch.object(launcher, "remove_blocked_mods"),
                 mock.patch.object(launcher, "install_configpack") as config,
             ):
                 result = launcher.repair_client()
@@ -161,6 +165,7 @@ class RepairIntegrity16619Tests(unittest.TestCase):
             install_game.assert_called_once()
             delta.assert_not_called()
             full.assert_not_called()
+            extras.assert_called_once()
             config.assert_called_once()
             self.assertTrue(config.call_args.kwargs["force_verify"])
             self.assertTrue(
@@ -168,6 +173,7 @@ class RepairIntegrity16619Tests(unittest.TestCase):
             )
             self.assertTrue(result["minecraft_checked"])
             self.assertTrue(result["modpack_checked"])
+            self.assertTrue(result["extras_checked"])
             for name in launcher.REPAIRABLE_FOLDERS + [
                 "saves", "resourcepacks", "shaderpacks"
             ]:
@@ -462,6 +468,60 @@ class RepairIntegrity16619Tests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 self.assertFalse(launcher.configpack_needs_install())
+
+    def test_newer_configpack_is_never_downgraded_to_old_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            instance = Path(tmp)
+            marker = instance / ".configpack.json"
+            marker.write_text(
+                json.dumps({
+                    "version": 50,
+                    "owns": [],
+                    "verify": [],
+                }),
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.multiple(
+                    launcher,
+                    INSTANCE_DIR=instance,
+                    CONFIGPACK_MARKER_FILE=marker,
+                ),
+                mock.patch.object(
+                    launcher, "get_remote_configpack_version", return_value=49
+                ),
+                mock.patch.object(launcher, "runtime_log") as runtime_log,
+                mock.patch.dict(
+                    launcher.CONFIG, {"CONFIGPACK_URL": "https://example.test"}
+                ),
+            ):
+                self.assertFalse(launcher.configpack_needs_install())
+        self.assertTrue(runtime_log.called)
+
+    def test_forced_repair_cannot_downgrade_newer_configpack(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            instance = Path(tmp)
+            marker = instance / ".configpack.json"
+            marker.write_text(
+                json.dumps({"version": 50, "owns": [], "verify": []}),
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.multiple(
+                    launcher,
+                    INSTANCE_DIR=instance,
+                    CONFIGPACK_MARKER_FILE=marker,
+                ),
+                mock.patch.object(
+                    launcher, "get_remote_configpack_version", return_value=49
+                ),
+                mock.patch.object(launcher, "runtime_log"),
+                mock.patch.object(
+                    launcher, "download_with_mirror"
+                ) as download,
+            ):
+                launcher.install_configpack(force_verify=True)
+            download.assert_not_called()
 
 
 if __name__ == "__main__":

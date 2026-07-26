@@ -14,6 +14,41 @@ class Updater16619Tests(unittest.TestCase):
         del daemon
         return mock.Mock(start=target)
 
+    def test_version_probe_does_not_add_query_to_bunny(self):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _limit):
+                return b"1.66.23\n"
+
+        url = (
+            "https://industrialhorizon.b-cdn.net/stable/"
+            "launcher_version.txt"
+        )
+        with (
+            mock.patch.dict(
+                webui.L.CONFIG,
+                {"LAUNCHER_VERSION_MIRROR_URL": url},
+            ),
+            mock.patch.object(
+                webui.urllib.request,
+                "urlopen",
+                return_value=Response(),
+            ) as urlopen,
+        ):
+            self.assertEqual(
+                webui.Api._probe_launcher_version_marker(),
+                "1.66.23",
+            )
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, url)
+        self.assertEqual(request.headers["Cache-control"], "no-cache")
+
     def test_check_update_has_distinct_current_and_unavailable_contracts(self):
         api = webui.Api()
         with (

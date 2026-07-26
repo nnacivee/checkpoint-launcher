@@ -44,8 +44,38 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(boot["nick"], "Test_User")
         self.assertTrue(boot["memory_auto"])
         self.assertEqual(boot["ui_settings"]["language"], "uk")
+        self.assertTrue(memory["ok"])
         self.assertTrue(memory["memory_auto"])
         self.assertTrue(saved["memory_auto"])
+
+    def test_settings_apis_report_failures_instead_of_hiding_them(self):
+        with mock.patch.object(
+            webui.L, "update_settings", side_effect=OSError("locked")
+        ):
+            memory = self.api.set_memory(4096)
+            low_end = self.api.set_low_end(True)
+            gpu = self.api.set_no_sodium(True)
+
+        with mock.patch.object(
+            webui.L, "apply_graphics_preset",
+            side_effect=OSError("options locked"),
+        ):
+            graphics = self.api.graphics_preset("balance")
+
+        self.assertFalse(memory["ok"])
+        self.assertFalse(low_end["ok"])
+        self.assertFalse(gpu["ok"])
+        self.assertFalse(graphics["ok"])
+        self.assertIn("locked", graphics["error"])
+
+    def test_graphics_preset_confirms_completed_write(self):
+        with mock.patch.object(
+            webui.L, "apply_graphics_preset"
+        ) as apply_preset:
+            result = self.api.graphics_preset("balance")
+
+        self.assertTrue(result["ok"])
+        apply_preset.assert_called_once_with("balance")
 
     def test_client_mods_are_whitelisted_and_persisted(self):
         configured = [{
@@ -93,7 +123,7 @@ class ApiTests(unittest.TestCase):
 
             def capture(code):
                 messages.append(code)
-                if "ClientState" in code and "ready" in code:
+                if '"config_ready": true' in code:
                     finished.set()
 
             marker = {**webui.L._install_signature(), "version_id": "test-neoforge"}
@@ -105,6 +135,9 @@ class ApiTests(unittest.TestCase):
                     webui.L, "get_modpack_version_status",
                     return_value={"version": 4, "online": True},
                 ),
+                mock.patch.object(
+                    webui.L, "configpack_needs_install", return_value=False
+                ),
                 mock.patch.object(webui.L, "_read_install_marker", return_value=marker),
             ):
                 self.api.refresh_client_state()
@@ -113,6 +146,49 @@ class ApiTests(unittest.TestCase):
         payload = "\n".join(messages)
         self.assertIn('"state": "ready"', payload)
         self.assertIn('"needs_update": false', payload)
+        self.assertIn('"config_ready": true', payload)
+
+    def test_client_state_exposes_configpack_update_before_play(self):
+        finished = threading.Event()
+        messages = []
+
+        with tempfile.TemporaryDirectory() as tmp:
+            instance = Path(tmp)
+            (instance / "mods").mkdir()
+            (instance / "config").mkdir()
+            version_json = (
+                instance / "versions" / "test-neoforge" / "test-neoforge.json"
+            )
+            version_json.parent.mkdir(parents=True)
+            version_json.write_text("{}", encoding="utf-8")
+
+            def capture(code):
+                messages.append(code)
+                if '"config_ready": false' in code:
+                    finished.set()
+
+            marker = {**webui.L._install_signature(), "version_id": "test-neoforge"}
+            self.api._js = capture
+            with (
+                mock.patch.object(webui.L, "INSTANCE_DIR", instance),
+                mock.patch.object(webui.L, "get_local_modpack_version", return_value=4),
+                mock.patch.object(
+                    webui.L, "get_modpack_version_status",
+                    return_value={"version": 4, "online": True},
+                ),
+                mock.patch.object(
+                    webui.L, "configpack_needs_install", return_value=True
+                ),
+                mock.patch.object(webui.L, "_read_install_marker", return_value=marker),
+            ):
+                self.api.refresh_client_state()
+                self.assertTrue(finished.wait(2), messages)
+
+        payload = "\n".join(messages)
+        self.assertIn('"state": "warning"', payload)
+        self.assertIn('"needs_update": true', payload)
+        self.assertIn('"config_ready": false', payload)
+        self.assertIn("Требуется обновление настроек", payload)
 
     def test_empty_install_path_is_rejected_without_moving(self):
         with mock.patch.object(webui.L, "move_installation") as move:

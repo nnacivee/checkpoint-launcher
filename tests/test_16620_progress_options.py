@@ -181,6 +181,8 @@ class Launcher16620OptionsTests(unittest.TestCase):
         self.assertEqual(lines[0], "version:3955")
         self.assertIn("onboardAccessibility:false", lines)
         self.assertIn("guiScale:2", lines)
+        self.assertIn("maxFps:260", lines)
+        self.assertIn("enableVsync:false", lines)
         self.assertIn("key_key.ezactions.open:key.keyboard.g", lines)
         self.assertIn(
             "key_key.voice_chat_group:key.keyboard.unknown", lines
@@ -211,7 +213,7 @@ class Launcher16620OptionsTests(unittest.TestCase):
             lines.count("key_key.voice_chat_group:key.keyboard.unknown"), 1
         )
 
-    def test_live_style_g_conflicts_and_forced_video_options_are_repaired(self):
+    def test_live_style_g_conflicts_keep_player_video_options(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             instance = root / "instance"
@@ -236,7 +238,6 @@ class Launcher16620OptionsTests(unittest.TestCase):
                 mock.patch.object(launcher, "runtime_log"),
             ):
                 launcher.seed_default_keybinds()
-                launcher.apply_forced_options()
             lines = path.read_text(encoding="utf-8").splitlines()
 
         plain_g = [
@@ -261,9 +262,34 @@ class Launcher16620OptionsTests(unittest.TestCase):
         self.assertIn("key_key.guideme.guide:key.keyboard.unknown", lines)
         self.assertIn("key_key.voice_chat:key.keyboard.v", lines)
         self.assertEqual(lines[0], "version:3955")
-        self.assertIn("guiScale:2", lines)
+        self.assertIn("guiScale:0", lines)
+        self.assertIn("maxFps:120", lines)
+        self.assertIn("enableVsync:true", lines)
+
+    def test_only_missing_video_defaults_are_added(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "instance"
+            instance.mkdir()
+            path = instance / "options.txt"
+            path.write_text(
+                "version:3955\n"
+                "guiScale:3\n"
+                "enableVsync:true\n",
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(launcher, "INSTANCE_DIR", instance),
+                mock.patch.object(launcher, "runtime_log"),
+            ):
+                launcher.seed_default_keybinds()
+            lines = path.read_text(encoding="utf-8").splitlines()
+
+        self.assertIn("guiScale:3", lines)
+        self.assertIn("enableVsync:true", lines)
         self.assertIn("maxFps:260", lines)
-        self.assertIn("enableVsync:false", lines)
+        self.assertNotIn("guiScale:2", lines)
+        self.assertNotIn("enableVsync:false", lines)
 
     def test_numeric_tab_ping_mod_is_retired(self):
         extra_slugs = {
@@ -331,7 +357,11 @@ class Launcher16620UiContractTests(unittest.TestCase):
         self.assertIn(r"replace(/\b\d+\s*\/\s*\d+\b/g,'')", compact)
         self.assertNotIn("{current}/{total}", compact)
         self.assertIn(
-            '["Библиотеки","Бібліотеки","Libraries"]', self.i18n
+            '["Файлы игры","Файли гри","Game files"]', self.i18n
+        )
+        self.assertLess(
+            compact.index("/провер|check/i"),
+            compact.index("/мод|дополн|addon/i"),
         )
 
     def test_activity_timer_fits_the_compact_arrow_column(self):
