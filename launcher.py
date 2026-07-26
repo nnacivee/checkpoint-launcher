@@ -398,7 +398,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.21",
+    "LAUNCHER_VERSION": "1.66.22",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -410,6 +410,14 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.22",
+            "date": "26 июля 2026",
+            "changes": [
+                "В списке игроков больше нет лишних цифр пинга в миллисекундах — "
+                "вернулись понятные ванильные полоски качества соединения.",
+            ],
+        },
         {
             "version": "1.66.21",
             "date": "26 июля 2026",
@@ -2121,14 +2129,6 @@ CONFIG = {
          "url": "https://cdn.modrinth.com/data/CnOG2wlS/versions/jXHDAUrd/ToastControl-1.21.1-9.0.1.jar",
          "filename": "ToastControl-1.21.1-9.0.1.jar",
          "label": "Toast Control (без спама всплывашек рецептов)"},
-        # Пинг числом в списке игроков (Tab) вместо палочек-иконки —
-        # просьба владельца 19.07. Чисто клиентский (server_side=unsupported),
-        # лицензия Unlicense (public domain) — можно и зеркалить. Прямая ссылка.
-        {"slug": "ping-in-tablist",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/l92I91s6/versions/Jgsz0FC1/Ping%20in%20Tablist-neoforge-1.21.1-1.1.0.jar",
-         "filename": "PingInTablist-neoforge-1.21.1-1.1.0.jar",
-         "label": "Ping in Tablist (пинг числом в списке игроков)"},
         # Поддержка геймпада и сенсора (просьба владельца): играть
         # контроллером/пальцами вместо клавиатуры-мыши. Client-only,
         # сервер о нём не знает. GPL, прямая ссылка на CDN Modrinth,
@@ -2503,6 +2503,11 @@ CONFIG = {
         # вообще без обязательного мода.
         "ih_russian-1.3.4.jar",
         "iris-neoforge-1.8.12+mc1.21.1.jar",
+        # Убран владельцем 26.07: числовой пинг перегружал TAB. Запись удалена
+        # и из EXTRA_CLIENT_MODS, а этот шаблон вычистит копию из старого
+        # modpack.zip. После удаления Minecraft снова показывает обычные
+        # ванильные полоски качества соединения.
+        "pingintablist",
         # Убран владельцем 23.07: Chat Heads дублировал ник поверх серверного
         # формата чата (ih_chat_format). Был в EXTRA_CLIENT_MODS — запись
         # убрана этим же релизом (slug-чистка вычистит кэш), а эта строка

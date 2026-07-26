@@ -265,6 +265,19 @@ class Launcher16620OptionsTests(unittest.TestCase):
         self.assertIn("maxFps:260", lines)
         self.assertIn("enableVsync:false", lines)
 
+    def test_numeric_tab_ping_mod_is_retired(self):
+        extra_slugs = {
+            str(entry.get("slug", "")).lower()
+            for entry in launcher.CONFIG["EXTRA_CLIENT_MODS"]
+        }
+        removed = {
+            str(value).lower()
+            for value in launcher.CONFIG["REMOVED_MODS"]
+        }
+
+        self.assertNotIn("ping-in-tablist", extra_slugs)
+        self.assertIn("pingintablist", removed)
+
     def test_final_player_backup_keeps_the_healed_options_version(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
