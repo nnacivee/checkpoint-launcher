@@ -309,12 +309,14 @@ class Launcher16620UiContractTests(unittest.TestCase):
         self.assertNotIn("aria-valuenow", heartbeat)
         self.assertIn("formatClientClock(elapsed)", heartbeat)
 
-    def test_stage_detail_and_file_counter_are_visible(self):
+    def test_stage_detail_is_visible_without_noisy_file_counter(self):
         self.assertIn("detail:percentMatch?'':detail", self.html)
         self.assertIn("stage.detail||stage.title", self.html)
-        self.assertIn(
-            "t('{current}/{total} · {action}'", self.html
-        )
+        compact = self.html.split(
+            "function compactLaunchPhase", 1
+        )[1].split("function parseLaunchStage", 1)[0]
+        self.assertIn(r"replace(/\b\d+\s*\/\s*\d+\b/g,'')", compact)
+        self.assertNotIn("{current}/{total}", compact)
         self.assertIn(
             '["Библиотеки","Бібліотеки","Libraries"]', self.i18n
         )
