@@ -401,7 +401,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.24",
+    "LAUNCHER_VERSION": "1.66.25",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -413,6 +413,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.25",
+            "date": "27 июля 2026",
+            "changes": [
+                "Добавлены плавные анимации рук при рубке, копании и использовании инструментов.",
+                "Если включён EMI, над списком предметов теперь появляются удобные вкладки категорий.",
+                "Кнопка «Показать создаваемое» в EMI оставляет только предметы, которые можно собрать из текущего инвентаря.",
+            ],
+        },
         {
             "version": "1.66.24",
             "date": "26 июля 2026",
@@ -2125,6 +2134,38 @@ CONFIG = {
         {"slug": "not-enough-animations",
          "url": "https://cdn.modrinth.com/data/MPCX6s5C/versions/eYNogep3/notenoughanimations-neoforge-1.12.4-mc1.21.1.jar",
          "filename": "notenoughanimations-neoforge-1.12.4-mc1.21.1.jar", "label": "Not Enough Animations (анимации игроков)"},
+        # Плавные анимации действий от первого лица: рубка, копание и
+        # использование инструментов. Оба мода client-only; Vintage
+        # Animations использует Player Animator как библиотеку.
+        {"slug": "playeranimator-2-0-4",
+         "mirror": True,
+         "required": False,
+         "atomic_group": "vintage-animations",
+         "url": "https://cdn.modrinth.com/data/gedNE4y2/versions/HJZB6bmA/player-animation-lib-forge-2.0.4%2B1.21.1.jar",
+         "filename": "player-animation-lib-forge-2.0.4+1.21.1.jar",
+         "sha256": "DBE5DE45F5CD60C0E5E47AF14E6D564534A98456E973CF670CB881F6938EEE92",
+         "label": "Player Animator (движок анимаций игрока)"},
+        {"slug": "vintage-animations-1-4-0",
+         # GPLv3-файл берём напрямую с официального Modrinth; на своё CDN
+         # без полного комплекта исходников его не перезаливаем.
+         "mirror": False,
+         "required": False,
+         "atomic_group": "vintage-animations",
+         "url": "https://cdn.modrinth.com/data/yY9ix3J0/versions/mWrDw9oM/vintage_animations-neoforge-1.4.0.jar",
+         "filename": "vintage_animations-neoforge-1.4.0.jar",
+         "sha256": "8C574E7EFFAC9DC89F7F11891372F6C3526DA9C31B89020A64078897FB89A490",
+         "label": "Vintage Animations (анимации рубки и копания)"},
+        # Компактные вкладки категорий над списком предметов EMI. Ставится
+        # только когда игрок оставил включённым сам EMI: без него дополнение
+        # не нужно и автоматически убирается при следующем запуске.
+        {"slug": "emi-tabs-1-0-0",
+         "mirror": True,
+         "required": False,
+         "enabled_with_optional_mod": "emi",
+         "url": "https://cdn.modrinth.com/data/Rz9g2Db4/versions/q44wR6Jf/EmiTabs-neoforge-1.0.0%2B1.21.1.jar",
+         "filename": "EmiTabs-neoforge-1.0.0+1.21.1.jar",
+         "sha256": "2E5B1C35F7E345BD1620AFA645C570743D295C1F49292E38AFF33C177EA901DA",
+         "label": "EMI Tabs (вкладки категорий предметов)"},
         # GraveStone УБРАН отсюда (21.07, 1.64.10). Могилы сняты с СЕРВЕРА по
         # решению владельца, а мод регистрирует сетевой канал
         # (gravestone:open_obituary) — клиент с ним, сервер без него = кик
@@ -8872,9 +8913,22 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
     клиента» и рвёт соединение. Раньше их сбой тоже был «не критичным» —
     лаунчер молча запускал игру, а человек упирался в отказ уже на входе и
     не понимал почему."""
-    entries = CONFIG.get("EXTRA_CLIENT_MODS", [])
-    if not entries:
+    configured_entries = CONFIG.get("EXTRA_CLIENT_MODS", [])
+    if not configured_entries:
         return []
+    optional_selection = get_optional_mods_selection()
+    entries = [
+        entry for entry in configured_entries
+        if (
+            not entry.get("enabled_with_optional_mod")
+            or optional_selection.get(
+                entry["enabled_with_optional_mod"], True
+            )
+        )
+    ]
+    inactive_entries = [
+        entry for entry in configured_entries if entry not in entries
+    ]
 
     cache = APP_DATA_DIR / "extra_client_mods_cache"
     cache.mkdir(parents=True, exist_ok=True)
@@ -9135,6 +9189,57 @@ def install_extra_client_mods(status_cb=None, progress_cb=None) -> list:
                 stale.unlink(missing_ok=True)
             except OSError:
                 pass  # файл занят игрой — удалится при следующем запуске
+
+    # Дополнение, зависящее от выключенного опционального мода, не должно
+    # оставаться в mods/ даже после потери старого маркера кэша. Например,
+    # EMI Tabs автоматически уходит вместе с EMI.
+    for entry in inactive_entries:
+        filename = entry.get("filename")
+        if not filename:
+            continue
+        if filename in integrity:
+            integrity.pop(filename, None)
+            changed = True
+        for stale in (mods_dir / filename, cache / filename):
+            try:
+                stale.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    # Связанные необязательные моды устанавливаются только полным набором.
+    # Vintage Animations жёстко зависит от Player Animator: если доехал
+    # только один JAR, оставлять его нельзя — следующая загрузка игры упадёт.
+    atomic_groups = {}
+    for entry in entries:
+        group = entry.get("atomic_group")
+        if group:
+            atomic_groups.setdefault(group, []).append(entry)
+    for grouped_entries in atomic_groups.values():
+        complete = True
+        for entry in grouped_entries:
+            filename = installed.get(entry.get("slug"))
+            if (
+                not filename
+                or not _valid_cached_jar(
+                    cache / filename, integrity.get(filename)
+                )
+            ):
+                complete = False
+                break
+        if complete:
+            continue
+        for entry in grouped_entries:
+            slug = entry.get("slug")
+            names = {entry.get("filename"), installed.pop(slug, None)}
+            names.discard(None)
+            for filename in names:
+                integrity.pop(filename, None)
+                for stale in (mods_dir / filename, cache / filename):
+                    try:
+                        stale.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+            changed = True
 
     if changed:
         _atomic_write_json(marker, installed)
