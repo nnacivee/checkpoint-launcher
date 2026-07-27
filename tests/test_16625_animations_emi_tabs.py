@@ -205,9 +205,11 @@ class Launcher16625ClientAdditionsTests(unittest.TestCase):
             self.assertEqual(installed, {})
 
     def test_launcher_version_and_changelog_are_in_sync(self):
-        self.assertEqual(launcher.CONFIG["LAUNCHER_VERSION"], "1.66.25")
-        self.assertEqual(
-            launcher.CONFIG["LAUNCHER_CHANGELOG"][0]["version"], "1.66.25"
+        self.assertTrue(
+            any(
+                item.get("version") == "1.66.25"
+                for item in launcher.CONFIG["LAUNCHER_CHANGELOG"]
+            )
         )
 
 

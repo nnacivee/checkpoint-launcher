@@ -401,7 +401,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.25",
+    "LAUNCHER_VERSION": "1.66.26",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -413,6 +413,14 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.26",
+            "date": "27 июля 2026",
+            "changes": [
+                "В чат добавлены небольшие головы игроков рядом с их сообщениями — теперь сразу видно, кто пишет.",
+                "Мод работает только на клиенте: сервер, мир и игровые рецепты не меняются.",
+            ],
+        },
         {
             "version": "1.66.25",
             "date": "27 июля 2026",
@@ -2120,6 +2128,17 @@ CONFIG = {
          "mirror": True,
          "url": "https://cdn.modrinth.com/data/LQ3K71Q1/versions/T238FZpQ/dynamic-fps-3.11.4%2Bminecraft-1.21.0-neoforge.jar",
          "filename": "dynamic-fps-3.11.4+minecraft-1.21.0-neoforge.jar", "label": "Dynamic FPS (экономия ресурсов в фоне)"},
+        # Небольшая голова игрока перед его сообщением в чате. Вернули по
+        # решению владельца 27.07. Версия 0.15.3 совместима с Modern UI;
+        # мод полностью клиентский.
+        {"slug": "chat-heads",
+         "mirror": True,
+         "required": False,
+         "url": "https://cdn.modrinth.com/data/Wb5oqrBJ/versions/BBw4KFaY/chat_heads-0.15.3-neoforge-1.21.jar",
+         "filename": "chat_heads-0.15.3-neoforge-1.21.jar",
+         "sha256": "1AA41AA6D8E28D66D9379CCC02197AA540B607D1A7DDEAD3F1CCB72E57118BEB",
+         "replaces": ["chat_heads-0.15.2-neoforge-1.21.jar"],
+         "label": "Chat Heads (головы игроков рядом с сообщениями)"},
         # Тройка анимаций (решение владельца 18.07). Все — client-only,
         # сервер о них не знает. EMF+ETF — «движки», без которых ресурспак
         # Fresh Animations (кнопка в «Текстурах») просто не применяется.
@@ -2575,11 +2594,6 @@ CONFIG = {
         # modpack.zip. После удаления Minecraft снова показывает обычные
         # ванильные полоски качества соединения.
         "pingintablist",
-        # Убран владельцем 23.07: Chat Heads дублировал ник поверх серверного
-        # формата чата (ih_chat_format). Был в EXTRA_CLIENT_MODS — запись
-        # убрана этим же релизом (slug-чистка вычистит кэш), а эта строка
-        # добивает копии, приехавшие с modpack.zip.
-        "chat_heads",
         # Удалён владельцем 22.07: мод добавлял кнопку «P» в главное меню и
         # требовал одинаковую установку на клиенте и сервере. Запись нужна,
         # чтобы вычистить jar, уже приехавший игрокам со старым modpack.zip.
