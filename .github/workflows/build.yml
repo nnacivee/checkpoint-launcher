@@ -256,6 +256,7 @@ jobs:
           $setup = (Resolve-Path "installer_out\CheckpointSetup.exe").Path
           $install = Start-Process $setup -ArgumentList @(
             "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/NOCANCEL",
+            "/NOAUTOLAUNCH=1",
             ('/DIR="{0}"' -f $smoke)
           ) -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw "Silent setup failed: $($install.ExitCode)" }

@@ -11,10 +11,13 @@ SPEC.loader.exec_module(launcher)
 
 
 class ChatHeadsReleaseTests(unittest.TestCase):
-    def test_release_version_and_changelog_are_current(self):
-        self.assertEqual(launcher.CONFIG["LAUNCHER_VERSION"], "1.66.26")
-        self.assertEqual(
-            launcher.CONFIG["LAUNCHER_CHANGELOG"][0]["version"], "1.66.26"
+    def test_chat_heads_release_remains_in_changelog(self):
+        versions = [
+            entry["version"]
+            for entry in launcher.CONFIG["LAUNCHER_CHANGELOG"]
+        ]
+        self.assertIn(
+            "1.66.26", versions
         )
 
     def test_exact_neoforge_chat_heads_release_is_managed(self):

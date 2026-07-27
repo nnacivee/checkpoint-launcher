@@ -82,10 +82,19 @@ Name: "{group}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\Удалить {#MyAppDisplayName}"; Filename: "{uninstallexe}"
 
 [Run]
-; skipifsilent — намеренно: при ТИХОМ обновлении лаунчер НЕ открывается заново.
-; Обновление применяется в момент, когда игрок сам закрывает лаунчер (см.
-; on_close в launcher.py), поэтому перезапускать его не нужно и не нужно, чтобы
-; он выскакивал обратно. При обычной установке мастером (не тихой) галочка
-; «Запустить» остаётся, как и раньше.
+; При обычной установке оставляем привычную галочку «Запустить».
 Filename: "{app}\{#MyAppExeName}"; Description: "Запустить {#MyAppDisplayName}"; \
     Flags: nowait postinstall skipifsilent
+; Автообновление запускает Setup с /VERYSILENT. После успешной замены файлов
+; новое окно должно открыться само, иначе игрок видит установленную версию, но
+; думает, что лаунчер сломался. /NOAUTOLAUNCH=1 оставлен для CI и поддержки.
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait; \
+    Check: ShouldLaunchAfterSilentInstall
+
+[Code]
+function ShouldLaunchAfterSilentInstall(): Boolean;
+begin
+  Result :=
+    WizardSilent and
+    (CompareText(ExpandConstant('{param:NOAUTOLAUNCH|0}'), '1') <> 0);
+end;
