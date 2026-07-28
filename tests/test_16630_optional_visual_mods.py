@@ -332,6 +332,26 @@ class OptionalVisualModsTests(unittest.TestCase):
             reconcile.assert_not_called()
             self.assertTrue(marker.is_file())
 
+    def test_disabled_legendary_without_state_never_reads_modernui(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (
+                mock.patch.object(launcher, "INSTANCE_DIR", root / "instance"),
+                mock.patch.object(launcher, "APP_DATA_DIR", root / "state"),
+                mock.patch.object(
+                    Path,
+                    "read_text",
+                    side_effect=OSError("locked"),
+                ) as read_text,
+                mock.patch.object(
+                    launcher,
+                    "_atomic_write_text",
+                ) as write_text,
+            ):
+                launcher._reconcile_modernui_tooltip(False)
+            read_text.assert_not_called()
+            write_text.assert_not_called()
+
     def test_only_selected_optional_files_are_managed_and_preferred(self):
         entries = [
             {

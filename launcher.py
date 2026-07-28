@@ -8022,6 +8022,8 @@ def _reconcile_modernui_tooltip(legendary_enabled: bool) -> None:
     """
     path = INSTANCE_DIR / "config" / "ModernUI" / "client.toml"
     state_path = _modernui_tooltip_state_path()
+    if not legendary_enabled and not state_path.is_file():
+        return
     try:
         source = (
             path.read_text(encoding="utf-8")
