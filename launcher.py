@@ -401,7 +401,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.30",
+    "LAUNCHER_VERSION": "1.66.31",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -413,6 +413,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.31",
+            "date": "28 июля 2026",
+            "changes": [
+                "В каталог текстур добавлены Fusion Connected Glass, "
+                "Fusion Connected Blocks и Fusion Block Transitions.",
+                "Все три пака устанавливаются с официального Modrinth по выбору игрока "
+                "и используют уже входящий в сборку Fusion.",
+            ],
+        },
         {
             "version": "1.66.30",
             "date": "28 июля 2026",
@@ -2968,6 +2978,21 @@ CONFIG = {
             "slug": "create-sophisticated-backpacks",
             "name": "Create Style Sophisticated Backpacks",
             "description": "Перерисовывает рюкзаки Sophisticated Backpacks в стиле механизмов Create",
+        },
+        {
+            "slug": "fusion-connected-glass",
+            "name": "Fusion Connected Glass",
+            "description": "Соединяет стекло и стеклянные панели в цельные окна без внутренних рамок",
+        },
+        {
+            "slug": "fusion-connected-blocks",
+            "name": "Fusion Connected Blocks",
+            "description": "Соединяет текстуры распространённых строительных блоков в цельные поверхности",
+        },
+        {
+            "slug": "fusion-block-transitions",
+            "name": "Fusion Block Transitions",
+            "description": "Добавляет плавные переходы между травой, песком, грязью и другими природными блоками",
         },
     ],
 

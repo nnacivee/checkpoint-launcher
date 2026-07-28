@@ -23,9 +23,9 @@ SPEC.loader.exec_module(launcher)
 
 class ManifestOwnedClientReleaseTests(unittest.TestCase):
     def test_release_and_modpack_fallback_are_current(self):
-        self.assertEqual(launcher.CONFIG["LAUNCHER_VERSION"], "1.66.30")
+        self.assertEqual(launcher.CONFIG["LAUNCHER_VERSION"], "1.66.31")
         self.assertEqual(
-            launcher.CONFIG["LAUNCHER_CHANGELOG"][0]["version"], "1.66.30"
+            launcher.CONFIG["LAUNCHER_CHANGELOG"][0]["version"], "1.66.31"
         )
         self.assertEqual(launcher.CONFIG["MODPACK_VERSION"], 15)
 
