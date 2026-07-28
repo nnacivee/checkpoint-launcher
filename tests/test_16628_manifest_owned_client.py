@@ -23,15 +23,19 @@ SPEC.loader.exec_module(launcher)
 
 class ManifestOwnedClientReleaseTests(unittest.TestCase):
     def test_release_and_modpack_fallback_are_current(self):
-        self.assertEqual(launcher.CONFIG["LAUNCHER_VERSION"], "1.66.29")
+        self.assertEqual(launcher.CONFIG["LAUNCHER_VERSION"], "1.66.30")
         self.assertEqual(
-            launcher.CONFIG["LAUNCHER_CHANGELOG"][0]["version"], "1.66.29"
+            launcher.CONFIG["LAUNCHER_CHANGELOG"][0]["version"], "1.66.30"
         )
         self.assertEqual(launcher.CONFIG["MODPACK_VERSION"], 15)
 
-    def test_manifest_is_the_only_active_jar_source(self):
+    def test_manifest_remains_the_only_mandatory_jar_source(self):
         self.assertEqual(launcher.CONFIG["EXTRA_CLIENT_MODS"], [])
-        self.assertEqual(launcher.CONFIG["OPTIONAL_MODS"], [])
+        optional = launcher.CONFIG["OPTIONAL_MODS"]
+        self.assertTrue(optional)
+        self.assertTrue(all(mod.get("default") is False for mod in optional))
+        self.assertTrue(all(mod.get("url") for mod in optional))
+        self.assertTrue(all(mod.get("hashes") for mod in optional))
         self.assertFalse(launcher.CONFIG["SET_GAME_WINDOW_ICON"])
         self.assertEqual(launcher.CONFIG["MOD_SHOWCASE"], {})
 

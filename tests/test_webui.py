@@ -107,6 +107,62 @@ class ApiTests(unittest.TestCase):
         self.assertFalse(saved["emi"])
         self.assertFalse(rejected["ok"])
 
+    def test_client_mod_dependencies_are_hidden_and_choices_are_exclusive(self):
+        configured = [
+            {
+                "id": "hidden_library",
+                "name": "Hidden Library",
+                "filename": "library.jar",
+                "visible": False,
+                "dependency_only": True,
+                "default": False,
+            },
+            {
+                "id": "item_highlighter",
+                "name": "Item Highlighter",
+                "filename": "highlighter.jar",
+                "exclusive_group": "pickup_feedback",
+                "default": False,
+            },
+            {
+                "id": "pick_up_notifier",
+                "name": "Pick Up Notifier",
+                "filename": "notifier.jar",
+                "exclusive_group": "pickup_feedback",
+                "default": False,
+            },
+        ]
+        current = {
+            "hidden_library": False,
+            "item_highlighter": True,
+            "pick_up_notifier": False,
+        }
+        saved = {}
+        with (
+            mock.patch.dict(webui.L.CONFIG, {"OPTIONAL_MODS": configured}),
+            mock.patch.object(
+                webui.L, "get_optional_mods_selection", return_value=current
+            ),
+            mock.patch.object(
+                webui.L, "save_optional_mods_selection",
+                side_effect=lambda value: saved.update(value),
+            ),
+            mock.patch.object(self.api, "_pack_icons", return_value={}),
+        ):
+            catalog = self.api.get_client_mods()
+            changed = self.api.set_client_mod("pick_up_notifier", True)
+            rejected = self.api.set_client_mod("hidden_library", True)
+
+        self.assertEqual(
+            [mod["id"] for mod in catalog["mods"]],
+            ["item_highlighter", "pick_up_notifier"],
+        )
+        self.assertTrue(changed["selection"]["pick_up_notifier"])
+        self.assertFalse(changed["selection"]["item_highlighter"])
+        self.assertTrue(saved["pick_up_notifier"])
+        self.assertFalse(saved["item_highlighter"])
+        self.assertFalse(rejected["ok"])
+
     def test_client_state_pushes_ready_for_current_install(self):
         finished = threading.Event()
         messages = []
