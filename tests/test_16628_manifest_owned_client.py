@@ -13,6 +13,9 @@ SPEC = importlib.util.spec_from_file_location(
 WORKFLOW = (
     ROOT / ".github" / "workflows" / "build.yml"
 ).read_text(encoding="utf-8")
+REPAIR_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "repair-launcher-mirror.yml"
+).read_text(encoding="utf-8")
 launcher = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(launcher)
@@ -20,9 +23,9 @@ SPEC.loader.exec_module(launcher)
 
 class ManifestOwnedClientReleaseTests(unittest.TestCase):
     def test_release_and_modpack_fallback_are_current(self):
-        self.assertEqual(launcher.CONFIG["LAUNCHER_VERSION"], "1.66.28")
+        self.assertEqual(launcher.CONFIG["LAUNCHER_VERSION"], "1.66.29")
         self.assertEqual(
-            launcher.CONFIG["LAUNCHER_CHANGELOG"][0]["version"], "1.66.28"
+            launcher.CONFIG["LAUNCHER_CHANGELOG"][0]["version"], "1.66.29"
         )
         self.assertEqual(launcher.CONFIG["MODPACK_VERSION"], 15)
 
@@ -116,18 +119,41 @@ class ManifestOwnedClientReleaseTests(unittest.TestCase):
             '$versionedInstaller = "CheckpointSetup-$version.exe"',
             WORKFLOW,
         )
+        self.assertIn(
+            "storage.bunnycdn.com/industrial-horizon-downloads/stable",
+            WORKFLOW,
+        )
+        self.assertIn("BUNNY_STORAGE_ACCESS_KEY", WORKFLOW)
+        self.assertIn("BUNNY_API_KEY", WORKFLOW)
+        self.assertNotIn("lftp -c", WORKFLOW)
         upload = WORKFLOW.split(
-            'lftp -c "', 1
-        )[1].split('"', 1)[0]
-        self.assertIn("put deploy/$VERSIONED", upload)
-        self.assertIn("put deploy/$VERSIONED.sha256", upload)
+            "- name: Upload installer payload to Bunny Storage", 1
+        )[1].split("- name: Purge and verify installer payload", 1)[0]
+        self.assertIn('upload "$VERSIONED"', upload)
+        self.assertIn('upload "$VERSIONED.sha256"', upload)
+        marker = WORKFLOW.split("- name: Publish version marker last", 1)[1]
         self.assertLess(
-            upload.index("put deploy/$VERSIONED"),
-            upload.index("put deploy/launcher_version.txt"),
+            WORKFLOW.index("- name: Purge and verify installer payload"),
+            WORKFLOW.index("- name: Publish version marker last"),
         )
         self.assertIn(
             'BASE="https://industrialhorizon.b-cdn.net/stable"',
             WORKFLOW,
+        )
+        self.assertIn("--upload-file deploy/launcher_version.txt", marker)
+
+    def test_existing_release_can_repair_bunny_without_rebuilding(self):
+        self.assertIn("gh release download", REPAIR_WORKFLOW)
+        self.assertIn("BUNNY_STORAGE_ACCESS_KEY", REPAIR_WORKFLOW)
+        self.assertIn("BUNNY_API_KEY", REPAIR_WORKFLOW)
+        self.assertIn("CheckpointSetup-${VERSION}.exe", REPAIR_WORKFLOW)
+        self.assertLess(
+            REPAIR_WORKFLOW.index(
+                "- name: Purge and verify payload before activation"
+            ),
+            REPAIR_WORKFLOW.index(
+                "- name: Activate marker last and verify"
+            ),
         )
 
 

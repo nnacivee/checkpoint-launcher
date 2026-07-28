@@ -401,7 +401,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.28",
+    "LAUNCHER_VERSION": "1.66.29",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -413,6 +413,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.29",
+            "date": "28 июля 2026",
+            "changes": [
+                "Настройки интерфейса сборки теперь точечно применяются и к уже существующим клиентам: "
+                "у полос здоровья остаётся только процент без серого фона, а мировые лучи путевых точек отключены.",
+                "Публикация обновлений перенесена на фактическое хранилище CDN и проверяет установщик "
+                "до включения новой версии — зависание друзей на старом лаунчере больше не должно повториться.",
+            ],
+        },
         {
             "version": "1.66.28",
             "date": "28 июля 2026",
@@ -5439,6 +5449,7 @@ CONFIGPACK_SEED_ONLY_FILES = {
     "config/betterf3.toml",
     "config/create-client.toml",
     "config/darkmodeeverywhere-client.toml",
+    "config/ftbchunks-client.snbt",
     "config/jade/jade.json",
     "config/jade/plugins.json",
     "config/modern_industrialization-client.toml",
@@ -7003,6 +7014,135 @@ def install_configpack(
             success or (had_working_pack and not force_verify)
         ):
             progress_cb(100)
+
+
+UI_CONFIG_MIGRATION_VERSION = 54
+UI_CONFIG_MIGRATION_MARKER_NAME = ".industrial_horizon_ui_v54.json"
+NEAT_V54_BOOLEAN_DEFAULTS = {
+    "draw_background": False,
+    "show_attributes": False,
+    "show_max_hp": False,
+    "show_current_hp": False,
+    "show_hp_percentage": True,
+}
+
+
+def _patch_boolean_config_values(text: str, values: dict, separator: str):
+    """Return a minimally changed config plus keys that were not present."""
+    result = text
+    missing = []
+    for key, enabled in values.items():
+        pattern = re.compile(
+            r"^([ \t]*"
+            + re.escape(key)
+            + r"[ \t]*"
+            + re.escape(separator)
+            + r"[ \t]*)(?:true|false)([ \t]*(?:#[^\r\n]*)?)(\r?)$",
+            re.MULTILINE | re.IGNORECASE,
+        )
+        replacement = "true" if enabled else "false"
+        result, count = pattern.subn(
+            lambda match: (
+                match.group(1)
+                + replacement
+                + match.group(2)
+                + match.group(3)
+            ),
+            result,
+        )
+        if count != 1:
+            missing.append(key)
+    return result, missing
+
+
+def install_ui_config_migration_v54(status_cb=None) -> bool:
+    """Apply the v54 UI decision once without resetting player preferences.
+
+    Neat and FTB Chunks are seed-only files: configpack provides them to new
+    clients but deliberately preserves the rest of an existing player's
+    settings.  This migration changes only the six pack-mandated booleans and
+    records completion after every effective config (including an optional
+    FTB Chunks local override) was written successfully.
+    """
+    marker = INSTANCE_DIR / UI_CONFIG_MIGRATION_MARKER_NAME
+    try:
+        if marker.is_file():
+            marker_data = json.loads(marker.read_text(encoding="utf-8"))
+            if marker_data.get("version") == UI_CONFIG_MIGRATION_VERSION:
+                return False
+    except (OSError, ValueError, TypeError):
+        # A damaged marker is not proof that the migration completed.
+        pass
+
+    configpack_version = _read_configpack_marker().get("version")
+    if (
+        not isinstance(configpack_version, int)
+        or configpack_version < UI_CONFIG_MIGRATION_VERSION
+    ):
+        return False
+
+    targets = [
+        (
+            INSTANCE_DIR / "config" / "neat-client.toml",
+            NEAT_V54_BOOLEAN_DEFAULTS,
+            "=",
+        ),
+        (
+            INSTANCE_DIR / "config" / "ftbchunks-client.snbt",
+            {"in_world_waypoints": False},
+            ":",
+        ),
+    ]
+    local_ftb = INSTANCE_DIR / "local" / "ftbchunks-client.snbt"
+    if local_ftb.is_file():
+        targets.append(
+            (local_ftb, {"in_world_waypoints": False}, ":")
+        )
+
+    prepared = []
+    for path, values, separator in targets:
+        try:
+            # newline="" keeps the player's original LF/CRLF layout; only the
+            # requested boolean token changes on disk.
+            with open(path, "r", encoding="utf-8", newline="") as fh:
+                original = fh.read()
+        except OSError as exc:
+            runtime_log(
+                "ui_config_migration_v54_deferred missing=%s error=%s",
+                path,
+                exc,
+                level=logging.WARNING,
+            )
+            return False
+        patched, missing = _patch_boolean_config_values(
+            original, values, separator
+        )
+        if missing:
+            runtime_log(
+                "ui_config_migration_v54_deferred path=%s missing_keys=%s",
+                path,
+                ",".join(missing),
+                level=logging.WARNING,
+            )
+            return False
+        prepared.append((path, original, patched))
+
+    for path, original, patched in prepared:
+        if patched != original:
+            _atomic_write_text(path, patched)
+
+    _atomic_write_json(marker, {
+        "version": UI_CONFIG_MIGRATION_VERSION,
+        "neat": NEAT_V54_BOOLEAN_DEFAULTS,
+        "ftbchunks": {"in_world_waypoints": False},
+        "patched_files": [
+            path.relative_to(INSTANCE_DIR).as_posix()
+            for path, _original, _patched in prepared
+        ],
+    })
+    if status_cb:
+        status_cb("Интерфейс существ настроен, маяки путевых точек отключены")
+    return True
 
 
 MINIMAL_UI_DEFAULTS_SCRIPT = """\
@@ -10705,6 +10845,7 @@ def prepare_or_repair_client(
         force_verify=True,
         seed_defaults=seed_configpack_defaults,
     )
+    install_ui_config_migration_v54(config_status)
     actions["configpack_checked"] = True
 
     progress_out(100)
@@ -11405,6 +11546,7 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
         _progress_slice(configpack_progress, 0, 90),
         seed_defaults=seed_configpack_defaults,
     )
+    install_ui_config_migration_v54(configpack_status)
     # После configpack: install_modpack() при обновлении сборки стирает
     # config/ целиком, а здесь конфиг уже никто не перезапишет.
     install_toast_config(configpack_status)

@@ -26,7 +26,7 @@ on:
   workflow_dispatch:
     inputs:
       publish_legacy:
-        description: "Publish to the retired Dynmap mirror and GitHub release"
+        description: "Publish to the Bunny mirror and GitHub release"
         required: false
         default: false
         type: boolean
@@ -312,6 +312,7 @@ jobs:
           retention-days: 1
 
       - name: Has this version been released before?
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_legacy }}
         id: released
         shell: pwsh
         run: |
@@ -334,13 +335,10 @@ jobs:
             throw "Release $tag already exists. Bump LAUNCHER_VERSION before rebuilding."
           }
 
-  # ------------------------------------------------------------------------
-  # Заливка установщика на зеркало (Linux-джоб: SFTP-инструменты надёжно
-  # работают именно на Linux). Берём собранный CheckpointSetup.exe и кладём в
-  # веб-корень зеркала обычным lftp. Production-релиз без зеркала запрещён:
-  # клиенты не должны видеть версию, для которой нет EXE и SHA-256.
-  #   MIRROR_SFTP_SERVER / _PORT / _USER / _PASSWORD / MIRROR_REMOTE_DIR
-  # ------------------------------------------------------------------------
+  # Bunny Storage is the actual origin of industrialhorizon.b-cdn.net.
+  # Upload immutable payloads first, verify them through the CDN, then publish
+  # and purge the version marker last. Required secrets:
+  #   BUNNY_STORAGE_ACCESS_KEY / BUNNY_API_KEY
   deploy-mirror:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_legacy }}
     runs-on: ubuntu-latest
@@ -352,31 +350,93 @@ jobs:
           name: mirror-files
           path: deploy
 
-      - name: Upload to mirror over SFTP (lftp)
+      - name: Upload installer payload to Bunny Storage
         env:
           VERSION: ${{ needs.build.outputs.version }}
-          SRV: ${{ secrets.MIRROR_SFTP_SERVER }}
-          PRT: ${{ secrets.MIRROR_SFTP_PORT }}
-          USR: ${{ secrets.MIRROR_SFTP_USER }}
-          PW: ${{ secrets.MIRROR_SFTP_PASSWORD }}
-          DIR: ${{ secrets.MIRROR_REMOTE_DIR }}
+          BUNNY_STORAGE_ACCESS_KEY: ${{ secrets.BUNNY_STORAGE_ACCESS_KEY }}
         run: |
-          if [ -z "$SRV" ] || [ -z "$USR" ] || [ -z "$PW" ]; then
-            echo "::error::Секреты MIRROR_SFTP_* не заданы — production-релиз остановлен."
+          set -euo pipefail
+          if [ -z "$BUNNY_STORAGE_ACCESS_KEY" ]; then
+            echo "::error::BUNNY_STORAGE_ACCESS_KEY is not configured."
             exit 1
           fi
-          sudo apt-get update -y >/dev/null && sudo apt-get install -y lftp >/dev/null
-          PORT="${PRT:-2022}"
-          REMOTE="${DIR:-/}"
+          STORAGE="https://storage.bunnycdn.com/industrial-horizon-downloads/stable"
           VERSIONED="CheckpointSetup-${VERSION}.exe"
-          echo "Заливаю versioned и generic installer, SHA-256 и launcher_version.txt на $SRV:$PORT$REMOTE"
-          # Immutable payload first, mutable aliases second, version marker
-          # strictly last. Launcher 1.66.27 requests VERSIONED, not the generic
-          # alias, so omitting this pair makes every future update invisible.
-          lftp -c "set sftp:auto-confirm yes; set net:timeout 20; set net:max-retries 2; open -u '$USR','$PW' -p $PORT sftp://$SRV; cd '$REMOTE'; put deploy/$VERSIONED; put deploy/$VERSIONED.sha256; put deploy/CheckpointSetup.exe; put deploy/CheckpointSetup.exe.sha256; put deploy/launcher_version.txt; bye"
-          echo "Готово: зеркало обновлено."
+          upload() {
+            local file="$1"
+            local checksum
+            checksum="$(sha256sum "deploy/$file" | awk '{print toupper($1)}')"
+            curl --fail --silent --show-error --retry 4 --retry-all-errors \
+              --request PUT "$STORAGE/$file" \
+              --header "AccessKey: $BUNNY_STORAGE_ACCESS_KEY" \
+              --header "Checksum: $checksum" \
+              --header "Content-Type: application/octet-stream" \
+              --upload-file "deploy/$file"
+          }
+          # Publish the executable pair before exposing the new marker.
+          upload "$VERSIONED"
+          upload "$VERSIONED.sha256"
+          upload "CheckpointSetup.exe"
+          upload "CheckpointSetup.exe.sha256"
 
-      - name: Verify the public mirror byte-for-byte
+      - name: Purge and verify installer payload
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BUNNY_API_KEY" ]; then
+            echo "::error::BUNNY_API_KEY is not configured."
+            exit 1
+          fi
+          BASE="https://industrialhorizon.b-cdn.net/stable"
+          VERSIONED="CheckpointSetup-${VERSION}.exe"
+          EXPECTED="$(awk '{print tolower($1)}' deploy/CheckpointSetup.exe.sha256)"
+          purge() {
+            curl --fail --silent --show-error --retry 4 --retry-all-errors \
+              --request POST --get "https://api.bunny.net/purge" \
+              --header "AccessKey: $BUNNY_API_KEY" \
+              --data-urlencode "url=$1" \
+              --data-urlencode "async=false" >/dev/null
+          }
+          purge "$BASE/$VERSIONED"
+          purge "$BASE/$VERSIONED.sha256"
+          purge "$BASE/CheckpointSetup.exe"
+          purge "$BASE/CheckpointSetup.exe.sha256"
+          curl --fail --location --silent --show-error --retry 4 \
+            "$BASE/$VERSIONED" \
+            --output /tmp/CheckpointSetup.exe
+          REMOTE_SHA="$(curl --fail --silent --show-error --retry 4 \
+            "$BASE/$VERSIONED.sha256" | awk '{print tolower($1)}')"
+          ACTUAL="$(sha256sum /tmp/CheckpointSetup.exe | awk '{print tolower($1)}')"
+          if [ "$REMOTE_SHA" != "$EXPECTED" ] || [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::Public Bunny installer SHA-256 mismatch"
+            exit 1
+          fi
+          echo "Public Bunny payload verified: $VERSION / $EXPECTED"
+
+      - name: Publish version marker last
+        env:
+          BUNNY_STORAGE_ACCESS_KEY: ${{ secrets.BUNNY_STORAGE_ACCESS_KEY }}
+          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+        run: |
+          set -euo pipefail
+          MARKER_URL="https://industrialhorizon.b-cdn.net/stable/launcher_version.txt"
+          STORAGE_URL="https://storage.bunnycdn.com/industrial-horizon-downloads/stable/launcher_version.txt"
+          CHECKSUM="$(sha256sum deploy/launcher_version.txt | awk '{print toupper($1)}')"
+          curl --fail --silent --show-error --retry 4 --retry-all-errors \
+            --request PUT "$STORAGE_URL" \
+            --header "AccessKey: $BUNNY_STORAGE_ACCESS_KEY" \
+            --header "Checksum: $CHECKSUM" \
+            --header "Content-Type: text/plain" \
+            --upload-file deploy/launcher_version.txt
+          curl --fail --silent --show-error --retry 4 --retry-all-errors \
+            --request POST --get "https://api.bunny.net/purge" \
+            --header "AccessKey: $BUNNY_API_KEY" \
+            --data-urlencode "url=$MARKER_URL" \
+            --data-urlencode "async=false" >/dev/null
+
+      - name: Verify activated Bunny release
         env:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
@@ -385,25 +445,14 @@ jobs:
           VERSIONED="CheckpointSetup-${VERSION}.exe"
           EXPECTED="$(awk '{print tolower($1)}' deploy/CheckpointSetup.exe.sha256)"
           REMOTE_VERSION="$(curl --fail --silent --show-error --retry 4 \
-            -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
             "$BASE/launcher_version.txt" | tr -d '\r\n ')"
-          if [ "$REMOTE_VERSION" != "$VERSION" ]; then
-            echo "::error::Mirror version mismatch: expected $VERSION, got $REMOTE_VERSION"
-            exit 1
-          fi
-          curl --fail --location --silent --show-error --retry 4 \
-            "$BASE/$VERSIONED" \
-            --output /tmp/CheckpointSetup.exe
           REMOTE_SHA="$(curl --fail --silent --show-error --retry 4 \
-            -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
-            "$BASE/$VERSIONED.sha256" | \
-            awk '{print tolower($1)}')"
-          ACTUAL="$(sha256sum /tmp/CheckpointSetup.exe | awk '{print tolower($1)}')"
-          if [ "$REMOTE_SHA" != "$EXPECTED" ] || [ "$ACTUAL" != "$EXPECTED" ]; then
-            echo "::error::Public mirror SHA-256 mismatch"
+            "$BASE/$VERSIONED.sha256" | awk '{print tolower($1)}')"
+          if [ "$REMOTE_VERSION" != "$VERSION" ] || [ "$REMOTE_SHA" != "$EXPECTED" ]; then
+            echo "::error::Bunny activation mismatch."
             exit 1
           fi
-          echo "Public mirror verified: $VERSION / $EXPECTED"
+          echo "Public Bunny release activated: $VERSION / $EXPECTED"
 
   release:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_legacy }}

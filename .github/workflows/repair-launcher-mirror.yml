@@ -1,0 +1,133 @@
+name: Repair Launcher Bunny Mirror
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Existing GitHub release version to republish (for example 1.66.28)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-and-release
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      BUNNY_STORAGE_ACCESS_KEY: ${{ secrets.BUNNY_STORAGE_ACCESS_KEY }}
+      BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+    steps:
+      - name: Download and validate the existing GitHub release
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+){2,3}$ ]]; then
+            echo "::error::Invalid launcher version: $VERSION"
+            exit 1
+          fi
+          if [ -z "$BUNNY_STORAGE_ACCESS_KEY" ] || [ -z "$BUNNY_API_KEY" ]; then
+            echo "::error::BUNNY_STORAGE_ACCESS_KEY and BUNNY_API_KEY are required."
+            exit 1
+          fi
+          mkdir deploy
+          gh release download "v$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "CheckpointSetup.exe" \
+            --pattern "CheckpointSetup.exe.sha256" \
+            --dir deploy
+          EXPECTED="$(awk '{print tolower($1)}' deploy/CheckpointSetup.exe.sha256)"
+          ACTUAL="$(sha256sum deploy/CheckpointSetup.exe | awk '{print tolower($1)}')"
+          if ! [[ "$EXPECTED" =~ ^[0-9a-f]{64}$ ]] || [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::GitHub release installer SHA-256 mismatch."
+            exit 1
+          fi
+          if [ "$(od -An -tx1 -N2 deploy/CheckpointSetup.exe | tr -d ' \n')" != "4d5a" ]; then
+            echo "::error::GitHub release asset is not a Windows executable."
+            exit 1
+          fi
+          VERSIONED="CheckpointSetup-${VERSION}.exe"
+          cp deploy/CheckpointSetup.exe "deploy/$VERSIONED"
+          printf '%s  %s' "$EXPECTED" "$VERSIONED" >"deploy/$VERSIONED.sha256"
+          printf '%s' "$VERSION" >deploy/launcher_version.txt
+
+      - name: Upload payload to Bunny Storage
+        run: |
+          set -euo pipefail
+          STORAGE="https://storage.bunnycdn.com/industrial-horizon-downloads/stable"
+          VERSIONED="CheckpointSetup-${VERSION}.exe"
+          upload() {
+            local file="$1"
+            local checksum
+            checksum="$(sha256sum "deploy/$file" | awk '{print toupper($1)}')"
+            curl --fail --silent --show-error --retry 4 --retry-all-errors \
+              --request PUT "$STORAGE/$file" \
+              --header "AccessKey: $BUNNY_STORAGE_ACCESS_KEY" \
+              --header "Checksum: $checksum" \
+              --header "Content-Type: application/octet-stream" \
+              --upload-file "deploy/$file"
+          }
+          upload "$VERSIONED"
+          upload "$VERSIONED.sha256"
+          upload "CheckpointSetup.exe"
+          upload "CheckpointSetup.exe.sha256"
+
+      - name: Purge and verify payload before activation
+        run: |
+          set -euo pipefail
+          BASE="https://industrialhorizon.b-cdn.net/stable"
+          VERSIONED="CheckpointSetup-${VERSION}.exe"
+          EXPECTED="$(awk '{print tolower($1)}' deploy/CheckpointSetup.exe.sha256)"
+          purge() {
+            curl --fail --silent --show-error --retry 4 --retry-all-errors \
+              --request POST --get "https://api.bunny.net/purge" \
+              --header "AccessKey: $BUNNY_API_KEY" \
+              --data-urlencode "url=$1" \
+              --data-urlencode "async=false" >/dev/null
+          }
+          purge "$BASE/$VERSIONED"
+          purge "$BASE/$VERSIONED.sha256"
+          purge "$BASE/CheckpointSetup.exe"
+          purge "$BASE/CheckpointSetup.exe.sha256"
+          curl --fail --location --silent --show-error --retry 4 \
+            "$BASE/$VERSIONED" --output /tmp/CheckpointSetup.exe
+          REMOTE_SHA="$(curl --fail --silent --show-error --retry 4 \
+            "$BASE/$VERSIONED.sha256" | awk '{print tolower($1)}')"
+          ACTUAL="$(sha256sum /tmp/CheckpointSetup.exe | awk '{print tolower($1)}')"
+          if [ "$REMOTE_SHA" != "$EXPECTED" ] || [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::Public Bunny payload SHA-256 mismatch."
+            exit 1
+          fi
+
+      - name: Activate marker last and verify
+        run: |
+          set -euo pipefail
+          BASE="https://industrialhorizon.b-cdn.net/stable"
+          STORAGE="https://storage.bunnycdn.com/industrial-horizon-downloads/stable"
+          EXPECTED="$(awk '{print tolower($1)}' deploy/CheckpointSetup.exe.sha256)"
+          MARKER_CHECKSUM="$(sha256sum deploy/launcher_version.txt | awk '{print toupper($1)}')"
+          curl --fail --silent --show-error --retry 4 --retry-all-errors \
+            --request PUT "$STORAGE/launcher_version.txt" \
+            --header "AccessKey: $BUNNY_STORAGE_ACCESS_KEY" \
+            --header "Checksum: $MARKER_CHECKSUM" \
+            --header "Content-Type: text/plain" \
+            --upload-file deploy/launcher_version.txt
+          curl --fail --silent --show-error --retry 4 --retry-all-errors \
+            --request POST --get "https://api.bunny.net/purge" \
+            --header "AccessKey: $BUNNY_API_KEY" \
+            --data-urlencode "url=$BASE/launcher_version.txt" \
+            --data-urlencode "async=false" >/dev/null
+          REMOTE_VERSION="$(curl --fail --silent --show-error --retry 4 \
+            "$BASE/launcher_version.txt" | tr -d '\r\n ')"
+          REMOTE_SHA="$(curl --fail --silent --show-error --retry 4 \
+            "$BASE/CheckpointSetup-${VERSION}.exe.sha256" | awk '{print tolower($1)}')"
+          if [ "$REMOTE_VERSION" != "$VERSION" ] || [ "$REMOTE_SHA" != "$EXPECTED" ]; then
+            echo "::error::Bunny launcher channel did not activate safely."
+            exit 1
+          fi
+          echo "Launcher Bunny mirror repaired: $VERSION / $EXPECTED"
