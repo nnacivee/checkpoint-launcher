@@ -987,7 +987,10 @@ class Api:
         """Return the real optional/client mods configured by launcher.py."""
         try:
             selection = L.get_optional_mods_selection()
-            configured = list(L.CONFIG.get("OPTIONAL_MODS", []))
+            configured = [
+                mod for mod in L.CONFIG.get("OPTIONAL_MODS", [])
+                if mod.get("visible", True)
+            ]
             icons = self._pack_icons([
                 str(mod.get("slug") or "") for mod in configured
             ])
@@ -1004,6 +1007,9 @@ class Api:
                     "slug": mod.get("slug", ""),
                     "icon": icons.get(str(mod.get("slug") or ""), ""),
                     "enabled": bool(selection.get(mod_id, mod.get("default", True))),
+                    "exclusive_group": mod.get("exclusive_group", ""),
+                    "exclusive_label": mod.get("exclusive_label", ""),
+                    "experimental": bool(mod.get("experimental", False)),
                 })
             return {"ok": True, "mods": mods, "selection": selection}
         except Exception as exc:  # noqa: BLE001
@@ -1014,14 +1020,18 @@ class Api:
         allowed = {
             str(mod.get("id"))
             for mod in L.CONFIG.get("OPTIONAL_MODS", [])
-            if mod.get("id")
+            if mod.get("id") and mod.get("visible", True)
         }
         if mod_id not in allowed:
             return {"ok": False, "error": "Unknown client mod", "id": mod_id}
         try:
-            selection = L.get_optional_mods_selection()
-            selection[mod_id] = _as_bool(enabled)
-            L.save_optional_mods_selection(selection)
+            with L.OPTIONAL_MODS_LOCK:
+                selection = L.get_optional_mods_selection()
+                selection[mod_id] = _as_bool(enabled)
+                selection = L.normalise_optional_mods_selection(
+                    selection, preferred_id=mod_id
+                )
+                L.save_optional_mods_selection(selection)
             return {
                 "ok": True,
                 "id": mod_id,
@@ -1042,15 +1052,28 @@ class Api:
         allowed = {
             str(mod.get("id"))
             for mod in L.CONFIG.get("OPTIONAL_MODS", [])
-            if mod.get("id")
+            if mod.get("id") and mod.get("visible", True)
         }
         try:
-            selection = L.get_optional_mods_selection()
-            for mod_id, enabled in values.items():
-                mod_id = str(mod_id)
-                if mod_id in allowed:
-                    selection[mod_id] = _as_bool(enabled)
-            L.save_optional_mods_selection(selection)
+            with L.OPTIONAL_MODS_LOCK:
+                selection = L.get_optional_mods_selection()
+                for mod_id, enabled in values.items():
+                    mod_id = str(mod_id)
+                    if mod_id in allowed:
+                        selection[mod_id] = _as_bool(enabled)
+                preferred_id = next(
+                    (
+                        str(mod_id) for mod_id, enabled in reversed(
+                            list(values.items())
+                        )
+                        if str(mod_id) in allowed and _as_bool(enabled)
+                    ),
+                    "",
+                )
+                selection = L.normalise_optional_mods_selection(
+                    selection, preferred_id=preferred_id
+                )
+                L.save_optional_mods_selection(selection)
             return {"ok": True, "selection": selection}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
@@ -1257,10 +1280,20 @@ class Api:
                     raise RuntimeError(
                         result.get("error") or "восстановление не завершено"
                     )
+                optional_failed = (
+                    result.get("optional_failed", [])
+                    if isinstance(result, dict)
+                    else []
+                )
                 detail = (
                     result.get("detail")
                     if isinstance(result, dict) and result.get("detail")
-                    else "Клиент проверен и полностью готов к запуску"
+                    else (
+                        "Клиент восстановлен, но не удалось применить: "
+                        + ", ".join(map(str, optional_failed))
+                        if optional_failed
+                        else "Клиент проверен и полностью готов к запуску"
+                    )
                 )
                 self._maintenance_result = {"state": "complete", "error": ""}
                 self._repair_state("complete", detail, 100)

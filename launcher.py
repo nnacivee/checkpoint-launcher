@@ -401,7 +401,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.29",
+    "LAUNCHER_VERSION": "1.66.30",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -413,6 +413,19 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.30",
+            "date": "28 июля 2026",
+            "changes": [
+                "В «Дополнения → Клиентские моды» появился каталог визуальных "
+                "и интерфейсных улучшений. Все новые моды выключены по умолчанию "
+                "и устанавливаются только после выбора игрока.",
+                "Зависимости подбираются автоматически, а Item Highlighter и "
+                "Pick Up Notifier работают как два взаимоисключающих варианта.",
+                "Smooth Swapping получает плавную 300-мс анимацию с мягкой дугой; "
+                "Status Effect Bars — компактный цветной стиль.",
+            ],
+        },
         {
             "version": "1.66.29",
             "date": "28 июля 2026",
@@ -3271,7 +3284,372 @@ CONFIG = {
 # exact 136-JAR baseline.
 LEGACY_EXTRA_CLIENT_MODS = tuple(CONFIG["EXTRA_CLIENT_MODS"])
 CONFIG["EXTRA_CLIENT_MODS"] = []
-CONFIG["OPTIONAL_MODS"] = []
+CONFIG["OPTIONAL_MODS"] = [
+    # Служебные зависимости скрыты из каталога и включаются только вместе
+    # с тем модом, которому они нужны.
+    {
+        "id": "prism",
+        "name": "Prism",
+        "slug": "prism-lib",
+        "filename": "Prism-1.21.1-neoforge-1.0.11.jar",
+        "url": "https://cdn.modrinth.com/data/1OE8wbN0/versions/kMcz2lDj/Prism-1.21.1-neoforge-1.0.11.jar",
+        "hashes": {
+            "sha1": "1ae6f7be2ba8f963344dbf27e552920a7bc7a35f",
+            "sha512": "b3539b5dba6414b5f6db126dd703a0923984c1fa11a53e50090eb1b03ec3ef3a09fc048ae2d03b8241e4d182ec4e942cc905d0f3e7366608fd8a0bb2509f55f4",
+        },
+        "default": False,
+        "visible": False,
+        "dependency_only": True,
+    },
+    {
+        "id": "stylish_effects",
+        "name": "Stylish Effects",
+        "slug": "stylish-effects",
+        "filename": "StylishEffects-v21.1.3-1.21.1-NeoForge.jar",
+        "url": "https://cdn.modrinth.com/data/onDuQF5e/versions/MT3yeDds/StylishEffects-v21.1.3-1.21.1-NeoForge.jar",
+        "hashes": {
+            "sha1": "83f764d776e2093d4e822fe784d4b17bc76c1815",
+            "sha512": "5dbf9be82e7da514b84b0b984789d272b5e0ccf2d667dd3d669e504ed512c3b7de1eb59be6ef4895ccd1fd88c4d6aee23ae28748b36b84528d64e94ebfad6282",
+        },
+        "default": False,
+        "visible": False,
+        "dependency_only": True,
+    },
+    {
+        "id": "enchantment_descriptions",
+        "name": "Enchantment Descriptions",
+        "slug": "enchantment-descriptions",
+        "category": "Интерфейс",
+        "description": "Понятные описания эффектов зачарований во всплывающих подсказках.",
+        "filename": "enchdesc-neoforge-1.21.1-21.1.10.jar",
+        "url": "https://cdn.modrinth.com/data/UVtY3ZAC/versions/OuJDPGSM/enchdesc-neoforge-1.21.1-21.1.10.jar",
+        "hashes": {
+            "sha1": "9a06a20881c5feb730aa249666cac2871ca99fda",
+            "sha512": "8932647d23f19ead791a921b0793f61fd7c36601824afef060a55dad9e1ace64f1cb50bd83490d43c9dff3a34661b68b89975f8c4f36b69f36b8e44592d0ad16",
+        },
+        "default": False,
+    },
+    {
+        "id": "chat_animation",
+        "name": "Chat Animation",
+        "slug": "chatanimation",
+        "category": "Интерфейс",
+        "description": "Плавное появление новых строк чата.",
+        "filename": "chatanimation-neoforge-1.3.1+mc1.21.jar",
+        "url": "https://cdn.modrinth.com/data/DnNYdJsx/versions/wC0uTsko/chatanimation-neoforge-1.3.1%2Bmc1.21.jar",
+        "hashes": {
+            "sha1": "52a07c701aa877a1b158cc235ec5aed93e5819a9",
+            "sha512": "8f9d9d9800bb028897333754b7eacb49d64fb41ccb85e308cc38de5c74bbd9572fe12ce2f5751e85432a5d219c88e057ae87d7b2301a6435fc84bbb1921e125a",
+        },
+        "config_seeds": [
+            {
+                "path": "config/chatanimation.json",
+                "content": (
+                    "{\n"
+                    "  \"enableMessageAnimation\": true,\n"
+                    "  \"fadeTimeMessage\": 150,\n"
+                    "  \"removeMessageIndicator\": true,\n"
+                    "  \"enableOpacity\": true,\n"
+                    "  \"enableTextFieldAnimation\": true,\n"
+                    "  \"fadeTimeTextField\": 170\n"
+                    "}\n"
+                ),
+            },
+        ],
+        "default": False,
+    },
+    {
+        "id": "item_highlighter",
+        "name": "Item Highlighter",
+        "slug": "item-highlighter",
+        "category": "Интерфейс",
+        "description": "Подсвечивает недавно подобранные предметы. Выберите его или Pick Up Notifier.",
+        "filename": "Highlighter-1.21-neoforge-1.1.11.jar",
+        "url": "https://cdn.modrinth.com/data/cVNW5lr6/versions/AsQ0Y2G9/Highlighter-1.21-neoforge-1.1.11.jar",
+        "hashes": {
+            "sha1": "22d29eba774530b40a540fdf5ce2d14d89bbe036",
+            "sha512": "41e1d2b3f73cf81b94563f04877528d0076672f95a456e959ca8f72162c8803bb9cf5ad540d1fbd15642a1d974bf11362a6b161003cd0853de050a443458a13b",
+        },
+        "exclusive_group": "pickup_feedback",
+        "exclusive_label": "Один вариант уведомлений",
+        "default": False,
+    },
+    {
+        "id": "pick_up_notifier",
+        "name": "Pick Up Notifier",
+        "slug": "pick-up-notifier",
+        "category": "Интерфейс",
+        "description": "Показывает компактный список подобранных предметов. Выберите его или Item Highlighter.",
+        "filename": "PickUpNotifier-v21.1.1-1.21.1-NeoForge.jar",
+        "url": "https://cdn.modrinth.com/data/ZX66K16c/versions/5NZounJc/PickUpNotifier-v21.1.1-1.21.1-NeoForge.jar",
+        "hashes": {
+            "sha1": "90d3fe207c95a3a5d849ebf8d70ffa885694e30f",
+            "sha512": "9754f44f3bf084f45b47c88c3830dc37ffc68b4b5d6cf03ca5015177611068e8c1725670d20c0ed4674fb619227b18ccbff39cfc687a46f5258caf91c96db6db",
+        },
+        "exclusive_group": "pickup_feedback",
+        "exclusive_label": "Один вариант уведомлений",
+        "default": False,
+    },
+    {
+        "id": "legendary_tooltips",
+        "name": "Legendary Tooltips",
+        "slug": "legendary-tooltips",
+        "category": "Интерфейс",
+        "description": "Красивые рамки и оформление подсказок редких предметов.",
+        "filename": "LegendaryTooltips-1.21.1-neoforge-1.5.5.jar",
+        "url": "https://cdn.modrinth.com/data/atHH8NyV/versions/BabRJO04/LegendaryTooltips-1.21.1-neoforge-1.5.5.jar",
+        "hashes": {
+            "sha1": "e7d3b66f3afe115c709749739f26f807ca8e827b",
+            "sha512": "3c0de6b6597a57b0fc3a134dde03ea3aeed0a7d64db63def8eda182c8bb7717293d2e4753887dcecaa27e17051c308269039eec6e74186d5eede68f98e74feeb",
+        },
+        "requires": ["prism"],
+        "compatibility": ["modernui_tooltip"],
+        "default": False,
+    },
+    {
+        "id": "status_effect_bars",
+        "name": "Status Effect Bars Reforged",
+        "slug": "status-effect-bars-reforged",
+        "category": "Интерфейс",
+        "description": "Тонкие цветные полосы оставшегося времени эффектов.",
+        "filename": "statuseffectbars-1.21.1-NeoForge-1.0.2.jar",
+        "url": "https://cdn.modrinth.com/data/TxIuhIFo/versions/PPVE16f7/statuseffectbars-1.21.1-NeoForge-1.0.2.jar",
+        "hashes": {
+            "sha1": "bc2d624a831126bb00032d53ca0211d026e95682",
+            "sha512": "7d81eeb0e60fb304f0a26d696911b4aa0771553975275214750ae99511da17850ad196fb5268cb4362959c10221beb5c92e43ed1d965493c8a76354e76555540",
+        },
+        "requires": ["stylish_effects"],
+        "config_seeds": [
+            {
+                "path": "config/statuseffectbars-common.toml",
+                "content": (
+                    "[color]\n"
+                    "colorMode = \"CUSTOM\"\n"
+                    "backgroundColor = 1711803152\n"
+                    "beneficialForegroundColor = -11151734\n"
+                    "harmfulForegroundColor = -1741969\n"
+                    "neutralForegroundColor = -8869418\n\n"
+                    "[behavior]\n"
+                    "maxRemainingDuration = 12000\n"
+                    "minAmbientAge = 90\n"
+                    "renderOldTimer = false\n"
+                    "renderCustomTimer = false\n\n"
+                    "[layout.hud]\n"
+                    "enabled = true\n"
+                    "[layout.hud.position]\n"
+                    "direction = \"LEFT_TO_RIGHT\"\n"
+                    "relativeToEnd = true\n"
+                    "[layout.hud.shape]\n"
+                    "thickness = 2\n"
+                    "collinearPadding = 2\n"
+                    "[layout.hud.fineTuning]\n"
+                    "collinearOffset = 0\n"
+                    "orthogonalOffset = 1\n\n"
+                    "[layout.inventory]\n"
+                    "enabled = true\n"
+                    "[layout.inventory.position]\n"
+                    "direction = \"LEFT_TO_RIGHT\"\n"
+                    "relativeToEnd = true\n"
+                    "[layout.inventory.shape]\n"
+                    "thickness = 2\n"
+                    "collinearPadding = 3\n"
+                    "[layout.inventory.fineTuning]\n"
+                    "collinearOffset = 0\n"
+                    "orthogonalOffset = 2\n"
+                ),
+            },
+        ],
+        "default": False,
+    },
+    {
+        "id": "sodium_extra",
+        "name": "Sodium Extra",
+        "slug": "sodium-extra",
+        "category": "Графика",
+        "description": "Дополнительные параметры графики и анимаций для Sodium.",
+        "filename": "sodium-extra-neoforge-0.9.3+mc1.21.1.jar",
+        "url": "https://cdn.modrinth.com/data/PtjYWJkn/versions/iJsZtWpc/sodium-extra-neoforge-0.9.3%2Bmc1.21.1.jar",
+        "hashes": {
+            "sha1": "3aaac7712521b477acc73757459b3883c4e0bbda",
+            "sha512": "36a7c237519c35e35300deadbdcfd1a270c507d49b9de10eea2cad1075c67567935e95d49ca9db470bd946de8e2ef7634361f912866f84570f3c367bf96d2b79",
+        },
+        "requires_sodium": True,
+        "default": False,
+    },
+    {
+        "id": "not_enough_animations",
+        "name": "Not Enough Animations",
+        "slug": "not-enough-animations",
+        "category": "Анимации",
+        "description": "Больше естественных анимаций игрока и предметов от третьего лица.",
+        "filename": "notenoughanimations-neoforge-1.12.4-mc1.21.1.jar",
+        "url": "https://cdn.modrinth.com/data/MPCX6s5C/versions/eYNogep3/notenoughanimations-neoforge-1.12.4-mc1.21.1.jar",
+        "hashes": {
+            "sha1": "b509863deaa27890f8db600f612966a07490a6cd",
+            "sha512": "9d929cf8e0a0ff2c806e007571b10cd9b81cd508826519f55e25f0390149109c7c12605143e4c11b5b5fac749e69de532c1ad00aa6a257e4dd0d3a3a77f2461b",
+        },
+        "default": False,
+    },
+    {
+        "id": "more_culling",
+        "name": "More Culling",
+        "slug": "moreculling",
+        "category": "Оптимизация",
+        "description": "Не рисует невидимые грани блоков. Версия 1.0.8 исправляет краш с Sodium 0.8.",
+        "filename": "moreculling-neoforge-1.21.1-1.0.8.jar",
+        "url": "https://cdn.modrinth.com/data/51shyZVL/versions/tFPgktUw/moreculling-neoforge-1.21.1-1.0.8.jar",
+        "hashes": {
+            "sha1": "fdbfaa5d6d93a11d44020301199dac68de231649",
+            "sha512": "efc7e0bfeafe4a659540417796675b1ba8fd2cd4d4f3030a85c7cb675a065da6bd0bea9b79ce4e5bf3d13728f1a85c7c9e523567bfd569a415d92ac227d0b023",
+        },
+        "experimental": True,
+        "default": False,
+    },
+    {
+        "id": "model_gap_fix",
+        "name": "Model Gap Fix",
+        "slug": "modelfix",
+        "category": "Графика",
+        "description": "Убирает тонкие щели на моделях предметов.",
+        "filename": "modelfix-1.21-1.10.jar",
+        "url": "https://cdn.modrinth.com/data/QdG47OkI/versions/X2U8ceG9/modelfix-1.21-1.10.jar",
+        "hashes": {
+            "sha1": "9608b1bff92e075ad8c2feb07f7ef095f6887117",
+            "sha512": "647cab9a1bed84e10cfe77732a66bdfe116a6371dcceadcf896083654f7ab39542df4152674b5a3a653e3b36f517f5c1bff4c25db37dd789df9eeb1e1d799c07",
+        },
+        "default": False,
+    },
+    {
+        "id": "chunks_fade_in",
+        "name": "Chunks Fade In",
+        "slug": "chunks-fade-in",
+        "category": "Графика",
+        "description": "Новые чанки плавно проявляются вместо резкого появления.",
+        "filename": "chunksfadein-neoforge-3.0.25-1.21.jar",
+        "url": "https://cdn.modrinth.com/data/JaNmzvA8/versions/prD71pT4/chunksfadein-neoforge-3.0.25-1.21.jar",
+        "hashes": {
+            "sha1": "636721281273905958b408f0452dae9863ab4d1b",
+            "sha512": "533de1f1614f9e8f8a9c967a3016dded84a797c2b9a82db9b6472d62491e0c3e802832ff00acf113c39f889409cdb675c32ebaaad2ebe68d71ed6e9c9d6306f7",
+        },
+        "config_seeds": [
+            {
+                "path": "config/chunksfadein.properties",
+                "content": (
+                    "config-version = 5\n"
+                    "mod-enabled = true\n"
+                    "show-mod-tab-in-settings = false\n"
+                    "update-notifier-enabled = false\n"
+                    "fade-enabled = true\n"
+                    "fade-patch-shaders = true\n"
+                    "fade-time = 0.75\n"
+                    "fade-type = \"full\"\n"
+                    "fade-curve = \"quintic\"\n"
+                    "fade-mix-type = \"linear\"\n"
+                    "fog-override = \"cylindrical\"\n"
+                    "fade-near-player = true\n"
+                    "animation-enabled = false\n"
+                    "animation-patch-shaders = true\n"
+                    "animation-type = \"full\"\n"
+                    "animate-near-player = true\n"
+                    "fade-with-dh = false\n"
+                    "animation-time = 2.56\n"
+                    "animation-curve = \"ease_out\"\n"
+                    "animation-offset = -64.0\n"
+                    "animation-angle = 0.0\n"
+                    "animation-factor = 1.0\n"
+                    "world-curvature-enabled = false\n"
+                    "world-curvature-patch-shaders = true\n"
+                    "world-curvature = 16384\n"
+                ),
+            },
+        ],
+        "requires_sodium": True,
+        "default": False,
+    },
+    {
+        "id": "itemphysic_lite",
+        "name": "ItemPhysic Lite",
+        "slug": "itemphysic-lite",
+        "category": "Анимации",
+        "description": "Выброшенные предметы лежат и вращаются естественнее.",
+        "filename": "ItemPhysicLite_NEOFORGE_v1.6.11_mc1.21.1.jar",
+        "url": "https://cdn.modrinth.com/data/OuyCgP8t/versions/futoVn2U/ItemPhysicLite_NEOFORGE_v1.6.11_mc1.21.1.jar",
+        "hashes": {
+            "sha1": "8a92b235a424bc29f56cf6331e533f8c11f65975",
+            "sha512": "a8f0dc3cc92c2be42e854b2f168fb4f978a833eab2d50bf26d05817505dbe634a159986488b93b0524280b0dae8d601b1d8dfa6ad8be8e75d4b35b18a75d0b76",
+        },
+        "default": False,
+    },
+    {
+        "id": "subtle_effects",
+        "name": "Subtle Effects",
+        "slug": "subtle-effects",
+        "category": "Частицы",
+        "description": "Небольшие атмосферные частицы и реакции мира. Лучше включать один набор частиц за раз.",
+        "filename": "SubtleEffects-neoforge-1.21.1-1.14.3.jar",
+        "url": "https://cdn.modrinth.com/data/4q8UOK1d/versions/s3Fo4cDk/SubtleEffects-neoforge-1.21.1-1.14.3.jar",
+        "hashes": {
+            "sha1": "f0c846484bd7c769b88f38ab31429457f52552d7",
+            "sha512": "efaf415d9dad768ac9b3893973349db65d7848b42d99952e82dbd1b0e66163ba09cfc2233953a8887b54da5ef52e366d7fa18f1b467e05780639be10a0e1e0ef",
+        },
+        "default": False,
+    },
+    {
+        "id": "visuality_reforged",
+        "name": "Visuality: Reforged",
+        "slug": "visuality-forge",
+        "category": "Частицы",
+        "description": "Частицы ударов, блоков, брони и существ. Лучше включать один набор частиц за раз.",
+        "filename": "visuality-forge-2.1.0.jar",
+        "url": "https://cdn.modrinth.com/data/z13R7Et1/versions/ZBidwV02/visuality-forge-2.1.0.jar",
+        "hashes": {
+            "sha1": "b400034ca8affe8f30b21935ae4ef74b1cf2fa29",
+            "sha512": "7ec2beefea92d32e27abf83da7791fbf2d14cc12341ad96672976c119b475e8b376d663e8b42970a3f12cdeb68ec31f976b05c6c749a29dbd3bed8744288aabf",
+        },
+        "default": False,
+    },
+    {
+        "id": "particular_reforged",
+        "name": "Particular Reforged",
+        "slug": "particular-reforged",
+        "category": "Частицы",
+        "description": "Водопады, пещерная пыль, светлячки и водные эффекты. Лучше включать один набор частиц за раз.",
+        "filename": "particular-1.21.1-NeoForge-1.5.5.jar",
+        "url": "https://cdn.modrinth.com/data/pYFUU6cq/versions/gxO1XUMR/particular-1.21.1-NeoForge-1.5.5.jar",
+        "hashes": {
+            "sha1": "ae12a64a5763c701325b8ca5bf6729f645a427e7",
+            "sha512": "60e0a740675cef0b3b18289b62e2fb33662acdc05e5451e977082f4588639fd2d81de33cb619ba88ff0353fd5c16c37403ef7ce233b1d1ce3a5ce6920423597e",
+        },
+        "default": False,
+    },
+    {
+        "id": "smooth_swapping",
+        "name": "Smooth Swapping",
+        "slug": "smooth-swapping",
+        "category": "Анимации",
+        "description": "Плавно перемещает предметы между слотами инвентаря.",
+        "filename": "smoothswapping-0.9.3.2-1.21.1-neoforge.jar",
+        "url": "https://cdn.modrinth.com/data/ydZic5r4/versions/tnvwgXE6/smoothswapping-0.9.3.2-1.21.1-neoforge.jar",
+        "hashes": {
+            "sha1": "00338f16b360d6b24b53fc8f92b76256729aee75",
+            "sha512": "0a54365d26c9023bf48129c85a8d771353432ece848e88d8e3a9a3f27d0e058e64fe2c43d5e82c4ed0e8c9494321411362c5af4bb66de5430e142f003667fb5f",
+        },
+        "config_seeds": [
+            {
+                "path": "config/smoothswapping.json",
+                "content": (
+                    "{\n"
+                    "  \"toggle_mod\": true,\n"
+                    "  \"animation_speed\": 300,\n"
+                    "  \"curve_points\": [[0.35, 0.68], [0.72, 0.94]]\n"
+                    "}\n"
+                ),
+            },
+        ],
+        "experimental": True,
+        "default": False,
+    },
+]
 CONFIG["SET_GAME_WINDOW_ICON"] = False
 CONFIG["MOD_SHOWCASE"] = {}
 # ================================================================
@@ -3639,6 +4017,7 @@ _RUNTIME_LOGGER.setLevel(logging.INFO)
 _RUNTIME_LOGGER.propagate = False
 _RUNTIME_HOOKS_INSTALLED = False
 _SETTINGS_LOCK = threading.RLock()
+OPTIONAL_MODS_LOCK = threading.RLock()
 
 
 def _atomic_write_text(path, text: str, encoding="utf-8", keep_backup=False) -> None:
@@ -7285,19 +7664,77 @@ def _install_with_retry(func, *args, retries=4, delay_seconds=2, status_cb=None,
     raise last_error
 
 
-def get_optional_mods_selection() -> dict:
-    """Возвращает {id_мода: включён_ли} для всех модов из CONFIG["OPTIONAL_MODS"].
-    Для модов, которые игрок ещё не трогал, берётся значение "default" из конфига."""
-    settings = load_settings()
-    saved = settings.get("optional_mods", {})
-    result = {}
-    for mod in CONFIG.get("OPTIONAL_MODS", []):
-        result[mod["id"]] = bool(saved.get(mod["id"], mod.get("default", True)))
+def normalise_optional_mods_selection(
+        selection: dict, preferred_id: str = "") -> dict:
+    """Return a safe, complete selection for the active optional catalogue.
+
+    Dependency-only entries never stay enabled on their own.  Exclusive groups
+    behave like radio buttons; when the caller supplies ``preferred_id``, the
+    newly enabled option wins over an older saved peer.
+    """
+    optional_mods = list(CONFIG.get("OPTIONAL_MODS", []))
+    by_id = {
+        str(mod.get("id")): mod
+        for mod in optional_mods if mod.get("id")
+    }
+    raw = selection if isinstance(selection, dict) else {}
+    result = {
+        mod_id: bool(raw.get(mod_id, mod.get("default", False)))
+        for mod_id, mod in by_id.items()
+    }
+
+    # Hidden libraries are derived from their parent choices, not persisted as
+    # independent switches that can become orphaned after a catalogue update.
+    for mod_id, mod in by_id.items():
+        if mod.get("dependency_only"):
+            result[mod_id] = False
+
+    groups = {}
+    for mod_id, mod in by_id.items():
+        group = str(mod.get("exclusive_group") or "")
+        if group and result.get(mod_id):
+            groups.setdefault(group, []).append(mod_id)
+    for enabled_ids in groups.values():
+        if len(enabled_ids) < 2:
+            continue
+        keep = (
+            preferred_id
+            if preferred_id in enabled_ids and result.get(preferred_id)
+            else enabled_ids[0]
+        )
+        for mod_id in enabled_ids:
+            result[mod_id] = mod_id == keep
+
+    # Resolve transitive dependencies to make future catalogue additions safe.
+    pending = [mod_id for mod_id, enabled in result.items() if enabled]
+    visited = set()
+    while pending:
+        mod_id = pending.pop()
+        if mod_id in visited:
+            continue
+        visited.add(mod_id)
+        for dependency_id in by_id.get(mod_id, {}).get("requires", []):
+            dependency_id = str(dependency_id)
+            if dependency_id not in by_id:
+                continue
+            if not result.get(dependency_id):
+                result[dependency_id] = True
+            pending.append(dependency_id)
     return result
 
 
-def save_optional_mods_selection(selection: dict) -> None:
-    update_settings(optional_mods=selection)
+def get_optional_mods_selection() -> dict:
+    """Return the effective enabled state for every optional catalogue entry."""
+    settings = load_settings()
+    saved = settings.get("optional_mods", {})
+    return normalise_optional_mods_selection(saved)
+
+
+def save_optional_mods_selection(
+        selection: dict, preferred_id: str = "") -> dict:
+    normalised = normalise_optional_mods_selection(selection, preferred_id)
+    update_settings(optional_mods=normalised)
+    return normalised
 
 
 def remove_blocked_mods(status_cb=None) -> None:
@@ -7339,29 +7776,73 @@ def harvest_optional_mods(status_cb=None) -> None:
     for mod in optional_mods:
         src = mods_dir / mod["filename"]
         cached = OPTIONAL_CACHE_DIR / mod["filename"]
-        if src.exists():
-            shutil.copy2(src, cached)
+        if (
+            src.exists()
+            and _optional_mod_file_is_valid(src, mod)
+            and not _optional_mod_file_is_valid(cached, mod)
+        ):
+            _install_with_retry(
+                shutil.copy2, src, cached, status_cb=status_cb
+            )
+
+
+def _optional_mod_file_is_valid(path: Path, mod: dict) -> bool:
+    """Validate a cached optional JAR against its pinned Modrinth digests."""
+    if not _valid_cached_jar(Path(path)):
+        return False
+    hashes = mod.get("hashes")
+    if hashes:
+        return _verify_modrinth_hashes(Path(path), hashes)
+    # Legacy catalogue entries without a pinned URL may still resolve exact
+    # Modrinth metadata at download time.  Pinned production entries fail
+    # closed when their digest is missing.
+    return not bool(mod.get("url"))
 
 
 def _download_optional_from_modrinth(mod: dict, status_cb=None) -> bool:
-    """Качает jar опционального мода напрямую с Modrinth по его slug и кладёт в
-    кэш под именем mod["filename"]. Нужно для модов, которых нет в самой сборке
-    (например, InvMove) — их всё равно можно включить одной галочкой.
-    Возвращает True, если файл появился в кэше."""
+    """Download one exact optional JAR and verify its official digests."""
     slug = mod.get("slug")
-    if not slug:
+    if not slug or not mod.get("filename"):
         return False
+    cached = OPTIONAL_CACHE_DIR / mod["filename"]
     try:
+        if _optional_mod_file_is_valid(cached, mod):
+            return True
+        cached.unlink(missing_ok=True)
         if status_cb:
             status_cb("Скачиваю мод: %s" % mod["name"])
-        _fname, url = _find_modrinth_download(
-            slug, CONFIG["MC_VERSION"], [CONFIG["MOD_LOADER"]])
+        url = str(mod.get("url") or "")
+        hashes = dict(mod.get("hashes") or {})
+        size = int(mod.get("size", 0) or 0)
         if not url:
-            return False
+            _fname, url, metadata = _find_modrinth_download(
+                slug, CONFIG["MC_VERSION"], [CONFIG["MOD_LOADER"]],
+                include_metadata=True,
+            )
+            hashes = dict(metadata.get("hashes") or {})
+            size = int(metadata.get("size", 0) or 0)
+        elif not hashes:
+            metadata = _modrinth_metadata_for_direct_url(
+                url, mod["filename"]
+            )
+            hashes = dict(metadata.get("hashes") or {})
+            size = int(metadata.get("size", 0) or size)
+        if not url or not hashes:
+            raise IOError("нет проверяемой версии Modrinth")
         OPTIONAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        download_file(url, OPTIONAL_CACHE_DIR / mod["filename"])
-        return (OPTIONAL_CACHE_DIR / mod["filename"]).exists()
-    except Exception:
+        download_file(url, cached, expected_size=size)
+        if not _verify_modrinth_hashes(cached, hashes):
+            raise IOError("контрольная сумма Modrinth не совпадает")
+        if not _valid_cached_jar(cached):
+            raise IOError("скачанный файл не является целым JAR")
+        return True
+    except Exception as exc:
+        cached.unlink(missing_ok=True)
+        cached.with_name(cached.name + ".part").unlink(missing_ok=True)
+        if status_cb:
+            status_cb(
+                "Не удалось скачать %s: %s" % (mod.get("name", slug), exc)
+            )
         return False
 
 
@@ -7403,9 +7884,16 @@ def _apply_one_optional_mod(mod: dict, enabled: bool, status_cb=None) -> str:
     cached = OPTIONAL_CACHE_DIR / mod["filename"]
 
     if enabled:
-        if dst.exists():
+        if _optional_mod_file_is_valid(dst, mod):
+            if not _optional_mod_file_is_valid(cached, mod):
+                OPTIONAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                _install_with_retry(
+                    shutil.copy2, dst, cached, status_cb=status_cb
+                )
             return ""
-        if not cached.exists():
+        dst.unlink(missing_ok=True)
+        if not _optional_mod_file_is_valid(cached, mod):
+            cached.unlink(missing_ok=True)
             # Файла нет в кэше — значит мода нет в самой сборке (как InvMove).
             # Пробуем скачать его напрямую с Modrinth по slug.
             if not _download_optional_from_modrinth(mod, status_cb):
@@ -7416,6 +7904,9 @@ def _apply_one_optional_mod(mod: dict, enabled: bool, status_cb=None) -> str:
         if status_cb:
             status_cb("Включаю мод: %s" % mod["name"])
         _install_with_retry(shutil.copy2, cached, dst, status_cb=status_cb)
+        if not _optional_mod_file_is_valid(dst, mod):
+            dst.unlink(missing_ok=True)
+            return "Файл %s не прошёл проверку целостности" % mod["name"]
         return ""
     else:
         if dst.exists():
@@ -7424,42 +7915,214 @@ def _apply_one_optional_mod(mod: dict, enabled: bool, status_cb=None) -> str:
             # На всякий случай сохраняем копию в кэш перед удалением из
             # mods/ — если вдруг её там ещё не было (например, самый
             # первый запуск после появления этой функции в лаунчере).
-            if not cached.exists():
+            if (
+                _optional_mod_file_is_valid(dst, mod)
+                and not _optional_mod_file_is_valid(cached, mod)
+            ):
+                OPTIONAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
                 _install_with_retry(shutil.copy2, dst, cached, status_cb=status_cb)
             _install_with_retry(dst.unlink, status_cb=status_cb)
         return ""
 
 
 def restore_no_longer_optional_mods(status_cb=None) -> None:
-    """Если какой-то мод раньше был опциональным и игрок его выключил (файл
-    осел в кэше), а потом вы убрали этот мод из CONFIG["OPTIONAL_MODS"]
-    (то есть он снова должен быть обязательным для всех) — эта функция
-    сама вернёт файл обратно в mods/, если его там почему-то до сих пор
-    нет. Работает автоматически при каждом запуске, отдельно ничего
-    делать не нужно."""
+    """Keep retired cache entries inert.
+
+    Old launcher versions cached mandatory baseline mods in this directory.
+    Restoring every unknown JAR would resurrect obsolete versions alongside
+    the manifest-owned client, so only explicitly blocked leftovers are
+    discarded and every other retired cache file remains unused.
+    """
     if not OPTIONAL_CACHE_DIR.exists():
         return
-    known_filenames = {mod["filename"] for mod in CONFIG.get("OPTIONAL_MODS", [])}
-    # Мод, выброшенный из сборки, возвращать нельзя: remove_blocked_mods его
-    # только что удалил, а мы бы принесли обратно из кэша — и так каждый
-    # запуск. Именно так emi-1.1.22 воскресал бы после смены filename.
     blocked = [p.lower() for p in CONFIG.get("REMOVED_MODS", []) if p]
-    mods_dir = INSTANCE_DIR / "mods"
     for cached_file in OPTIONAL_CACHE_DIR.iterdir():
-        if not cached_file.is_file() or cached_file.name in known_filenames:
+        if not cached_file.is_file():
             continue
         if any(p in cached_file.name.lower() for p in blocked):
             try:
-                cached_file.unlink()  # чтобы не всплыл и в следующий раз
+                cached_file.unlink()
             except OSError:
                 pass
+
+
+def _seed_optional_mod_configs(mod: dict) -> None:
+    """Write recommended defaults once, without overwriting player choices."""
+    for seed in mod.get("config_seeds", []):
+        rel = str(seed.get("path") or "").replace("\\", "/").strip("/")
+        parts = [part for part in rel.split("/") if part]
+        if not parts or any(part in (".", "..") for part in parts):
             continue
-        target = mods_dir / cached_file.name
-        if not target.exists():
-            mods_dir.mkdir(parents=True, exist_ok=True)
-            if status_cb:
-                status_cb("Восстанавливаю обязательный мод: %s" % cached_file.name)
-            shutil.copy2(cached_file, target)
+        target = INSTANCE_DIR.joinpath(*parts)
+        if target.exists():
+            continue
+        _atomic_write_text(target, str(seed.get("content") or ""))
+
+
+def _modernui_tooltip_state_path() -> Path:
+    return APP_DATA_DIR / "optional_mod_state" / "modernui_tooltip.json"
+
+
+def _read_modernui_tooltip_value(source: str) -> bool:
+    """Return ModernUI's effective tooltip switch (its default is enabled)."""
+    in_tooltip = False
+    for line in source.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            in_tooltip = stripped == "[tooltip]"
+            continue
+        if not in_tooltip:
+            continue
+        match = re.match(
+            r"^\s*enable\s*=\s*(true|false)\s*(?:#.*)?$",
+            line,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return match.group(1).lower() == "true"
+    return True
+
+
+def _set_modernui_tooltip_value(source: str, enabled: bool) -> str:
+    """Change only ``[tooltip].enable``, preserving every unrelated option."""
+    lines = source.splitlines()
+    in_tooltip = False
+    tooltip_header = -1
+    insert_at = len(lines)
+    replacement_value = "true" if enabled else "false"
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            if in_tooltip:
+                insert_at = index
+                break
+            in_tooltip = stripped == "[tooltip]"
+            if in_tooltip:
+                tooltip_header = index
+            continue
+        if in_tooltip and re.match(r"^\s*enable\s*=", line):
+            indent = line[:len(line) - len(line.lstrip())]
+            lines[index] = indent + "enable = " + replacement_value
+            return "\n".join(lines) + "\n"
+    if tooltip_header >= 0:
+        lines.insert(insert_at, "enable = " + replacement_value)
+    else:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.extend(["[tooltip]", "enable = " + replacement_value])
+    return "\n".join(lines) + "\n"
+
+
+def _reconcile_modernui_tooltip(legendary_enabled: bool) -> None:
+    """Disable ModernUI's renderer for Legendary Tooltips, reversibly.
+
+    Only the original boolean is remembered outside the instance.  Restoring
+    the whole TOML would destroy unrelated font/blur edits made by the player
+    while Legendary Tooltips was active.
+    """
+    path = INSTANCE_DIR / "config" / "ModernUI" / "client.toml"
+    state_path = _modernui_tooltip_state_path()
+    if not legendary_enabled and not state_path.is_file():
+        return
+    try:
+        source = (
+            path.read_text(encoding="utf-8")
+            if path.is_file()
+            else ""
+        )
+    except OSError as exc:
+        raise RuntimeError(
+            "Не удалось прочитать настройки Modern UI. "
+            "Закройте Minecraft и повторите запуск."
+        ) from exc
+    if legendary_enabled:
+        if not state_path.is_file():
+            _atomic_write_json(
+                state_path,
+                {"previous_enabled": _read_modernui_tooltip_value(source)},
+            )
+        patched = _set_modernui_tooltip_value(source, False)
+        if patched != source:
+            _atomic_write_text(path, patched)
+        return
+
+    if not state_path.is_file():
+        return
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        previous = bool(state.get("previous_enabled", True))
+    except OSError as exc:
+        raise RuntimeError(
+            "Не удалось прочитать сохранённые настройки Modern UI. "
+            "Закройте Minecraft и повторите запуск."
+        ) from exc
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        previous = True
+    restored = _set_modernui_tooltip_value(source, previous)
+    if restored != source:
+        _atomic_write_text(path, restored)
+    try:
+        state_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _optional_mod_jar_is_valid(mod_id: str) -> bool:
+    """Return whether the exact pinned optional JAR is physically active."""
+    for mod in CONFIG.get("OPTIONAL_MODS", []):
+        if str(mod.get("id")) != str(mod_id):
+            continue
+        return _optional_mod_file_is_valid(
+            INSTANCE_DIR / "mods" / str(mod.get("filename") or ""),
+            mod,
+        )
+    return False
+
+
+def _reconcile_legendary_tooltip_if_configured() -> None:
+    configured = any(
+        str(mod.get("id")) == "legendary_tooltips"
+        for mod in CONFIG.get("OPTIONAL_MODS", [])
+    )
+    if configured:
+        _reconcile_modernui_tooltip(
+            _optional_mod_jar_is_valid("legendary_tooltips")
+        )
+
+
+def _ensure_disabled_optional_mods_absent(status_cb=None) -> None:
+    """Fail closed if a disabled optional JAR is still physically active.
+
+    This matters for mutually exclusive choices and for Legendary Tooltips:
+    an antivirus may briefly lock the old JAR while the launcher is trying to
+    remove it.  Starting Java with both choices would be worse than asking the
+    player to retry once.
+    """
+    selection = get_optional_mods_selection()
+    no_sodium = bool(load_settings().get("no_sodium"))
+    mods_dir = INSTANCE_DIR / "mods"
+    for mod in CONFIG.get("OPTIONAL_MODS", []):
+        selected = bool(
+            selection.get(str(mod.get("id")), mod.get("default", False))
+        )
+        effectively_enabled = selected and not (
+            no_sodium and mod.get("requires_sodium")
+        )
+        if effectively_enabled:
+            continue
+        path = mods_dir / str(mod.get("filename") or "")
+        if not path.is_file():
+            continue
+        try:
+            error = _apply_one_optional_mod(mod, False, status_cb)
+        except (PermissionError, OSError) as exc:
+            error = str(exc)
+        if error or path.exists():
+            raise RuntimeError(
+                "Не удалось отключить клиентский мод %s. "
+                "Закройте Minecraft и нажмите «Играть» ещё раз."
+                % mod.get("name", mod.get("id", path.name))
+            )
 
 
 def apply_optional_mods(status_cb=None, progress_cb=None) -> list:
@@ -7474,17 +8137,40 @@ def apply_optional_mods(status_cb=None, progress_cb=None) -> list:
 
     selection = get_optional_mods_selection()
     failed = []
+    failed_ids = set()
+    no_sodium = bool(load_settings().get("no_sodium"))
     total = len(optional_mods) or 1
     for index, mod in enumerate(optional_mods, start=1):
         enabled = selection.get(mod["id"], mod.get("default", True))
-        try:
-            error = _apply_one_optional_mod(mod, enabled, status_cb)
-        except (PermissionError, OSError) as exc:
-            error = str(exc)
+        if enabled and no_sodium and mod.get("requires_sodium"):
+            enabled = False
+            if status_cb:
+                status_cb(
+                    "Режим старой видеокарты: %s временно выключен"
+                    % mod["name"]
+                )
+        dependencies = [str(value) for value in mod.get("requires", [])]
+        dependency_failed = enabled and any(
+            dependency_id in failed_ids
+            or not selection.get(dependency_id, False)
+            for dependency_id in dependencies
+        )
+        if dependency_failed:
+            _apply_one_optional_mod(mod, False, status_cb)
+            error = "Не установлена обязательная библиотека"
+        else:
+            try:
+                error = _apply_one_optional_mod(mod, enabled, status_cb)
+            except (PermissionError, OSError) as exc:
+                error = str(exc)
         if error:
             failed.append(mod["name"])
+            failed_ids.add(str(mod["id"]))
+        elif enabled:
+            _seed_optional_mod_configs(mod)
         if progress_cb:
             progress_cb(int(index * 100 / total))
+    _reconcile_legendary_tooltip_if_configured()
     return failed
 
 
@@ -9473,6 +10159,11 @@ def _managed_mod_filenames() -> set:
         filename = entry.get("filename")
         if filename:
             names.add(str(filename).lower())
+    selection = get_optional_mods_selection()
+    for entry in CONFIG.get("OPTIONAL_MODS", []):
+        filename = entry.get("filename")
+        if filename and selection.get(str(entry.get("id")), False):
+            names.add(str(filename).lower())
     return names
 
 
@@ -9486,6 +10177,13 @@ def _preferred_mod_filenames() -> set:
         str(entry.get("filename")).lower()
         for entry in CONFIG.get("EXTRA_CLIENT_MODS", [])
         if entry.get("filename")
+    })
+    selection = get_optional_mods_selection()
+    names.update({
+        str(entry.get("filename")).lower()
+        for entry in CONFIG.get("OPTIONAL_MODS", [])
+        if entry.get("filename")
+        and selection.get(str(entry.get("id")), False)
     })
     marker = _read_configpack_marker()
     for rel in marker.get("verify", []):
@@ -9568,6 +10266,7 @@ def _quarantine_mod(path: Path, status_cb=None) -> None:
 def validate_client_before_launch(status_cb=None, progress_cb=None) -> None:
     """Final gate: no broken JAR, blocked file or duplicate modId may launch."""
     mods_dir = INSTANCE_DIR / "mods"
+    _ensure_disabled_optional_mods_absent(status_cb)
     jars = sorted(mods_dir.glob("*.jar")) if mods_dir.is_dir() else []
     managed = _managed_mod_filenames()
     preferred = _preferred_mod_filenames()
@@ -10819,8 +11518,15 @@ def prepare_or_repair_client(
 
     extras_status, extras_progress = repair_progress.scoped("Дополнения")
     remove_blocked_mods(extras_status)
+    optional_failed = []
+    if CONFIG.get("OPTIONAL_MODS"):
+        harvest_optional_mods(extras_status)
+        restore_no_longer_optional_mods(extras_status)
+        optional_failed = apply_optional_mods(
+            extras_status, _progress_slice(extras_progress, 0, 30)
+        )
     missing_required = install_extra_client_mods(
-        extras_status, extras_progress
+        extras_status, _progress_slice(extras_progress, 30, 100)
     )
     if missing_required:
         raise RequiredModsMissing(
@@ -10828,6 +11534,16 @@ def prepare_or_repair_client(
         )
     extras_progress(100)
     actions["extras_checked"] = True
+    actions["optional_failed"] = optional_failed
+    if optional_failed:
+        actions["detail"] = (
+            "Клиент восстановлен, но не удалось применить: "
+            + ", ".join(optional_failed)
+        )
+    else:
+        actions["detail"] = (
+            "Клиент проверен и полностью готов к запуску"
+        )
 
     config_status, config_progress = repair_progress.scoped(
         "Настройки сборки"
@@ -10846,10 +11562,17 @@ def prepare_or_repair_client(
         seed_defaults=seed_configpack_defaults,
     )
     install_ui_config_migration_v54(config_status)
+    _reconcile_legendary_tooltip_if_configured()
     actions["configpack_checked"] = True
 
     progress_out(100)
-    status("Клиент проверен и готов")
+    if optional_failed:
+        status(
+            "Клиент готов; не удалось применить: "
+            + ", ".join(optional_failed)
+        )
+    else:
+        status("Клиент проверен и готов")
     return actions
 
 
@@ -11213,8 +11936,10 @@ def deploy_test_mods(status_cb, progress_cb) -> bool:
 # sodium, но оставить createbetterfps — игра падает на старте. Поэтому его тоже
 # удаляем вместе с рендер-модами. (У Create зависимость от sodium optional, у
 # create_submarine — incompatible, так что там проблем нет.)
-_RENDER_MOD_PATTERNS = ("sodium", "iris", "reeses", "immediatelyfast",
-                        "rubidium", "oculus", "createbetterfps")
+_RENDER_MOD_PATTERNS = (
+    "sodium", "iris", "reeses", "immediatelyfast", "rubidium", "oculus",
+    "createbetterfps", "chunksfadein",
+)
 
 
 def install_embeddium(status_cb=None) -> None:
@@ -11552,6 +12277,7 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     install_toast_config(configpack_status)
     validate_client_before_launch(
         configpack_status, _progress_slice(configpack_progress, 90, 100))
+    _reconcile_legendary_tooltip_if_configured()
 
     # Последний барьер перед CreateProcess. На чистой установке options.txt
     # создаётся самим лаунчером, поэтому он обязан содержать актуальную
@@ -13758,8 +14484,12 @@ class LauncherApp:
         ).pack(anchor="w", pady=(6, 10))
 
         # ---- Фильтр по категориям ----
+        visible_optional_mods = [
+            mod for mod in CONFIG["OPTIONAL_MODS"]
+            if mod.get("visible", True)
+        ]
         categories = ["Все"]
-        for mod in CONFIG["OPTIONAL_MODS"]:
+        for mod in visible_optional_mods:
             category = mod.get("category") or "Прочее"
             if category not in categories:
                 categories.append(category)
@@ -13815,6 +14545,7 @@ class LauncherApp:
         checkbox_vars = {}
         status_labels = {}
         checkboxes = {}
+        apply_state = {"running": False}
 
         def set_row_status(mod_id, text, color=None):
             label = status_labels.get(mod_id)
@@ -13824,6 +14555,11 @@ class LauncherApp:
         def on_toggle(mod):
             var = checkbox_vars[mod["id"]]
             cb = checkboxes[mod["id"]]
+            if apply_state["running"]:
+                var.set(
+                    get_optional_mods_selection().get(mod["id"], False)
+                )
+                return
             enabled = var.get()
 
             # Сохраняем выбор игрока НА ДИСК СРАЗУ, ещё до попытки
@@ -13834,17 +14570,25 @@ class LauncherApp:
             # снятой. Теперь ваше намерение в любом случае не потеряется:
             # если применить прямо сейчас не получится, оно всё равно
             # точно применится при следующем запуске игры.
-            selection = get_optional_mods_selection()
-            selection[mod["id"]] = enabled
-            save_optional_mods_selection(selection)
+            with OPTIONAL_MODS_LOCK:
+                selection = get_optional_mods_selection()
+                selection[mod["id"]] = enabled
+                selection = save_optional_mods_selection(
+                    selection, preferred_id=mod["id"]
+                )
+            for mod_id, selected in selection.items():
+                peer_var = checkbox_vars.get(mod_id)
+                if peer_var is not None:
+                    peer_var.set(bool(selected))
 
-            cb.configure(state="disabled")
+            for checkbox in checkboxes.values():
+                checkbox.configure(state="disabled")
+            apply_state["running"] = True
             set_row_status(mod["id"], "Применяю...")
 
             def worker():
                 try:
-                    error = _apply_one_optional_mod(
-                        mod, enabled,
+                    failed = apply_optional_mods(
                         status_cb=lambda text: dialog.after(
                             0, lambda t=text: set_row_status(mod["id"], t)
                         ),
@@ -13854,27 +14598,28 @@ class LauncherApp:
                     # уже сохранён выше, файл доустановится сам при
                     # следующем запуске игры — откатывать галочку не нужно.
                     def show_retry_later():
+                        apply_state["running"] = False
                         set_row_status(
                             mod["id"], "Применится при следующем запуске игры"
                         )
-                        cb.configure(state="normal")
+                        for checkbox in checkboxes.values():
+                            checkbox.configure(state="normal")
 
                     dialog.after(0, show_retry_later)
                     return
 
                 def finish():
-                    if error:
-                        # А вот это уже не временная ситуация, а реальная
-                        # проблема конфигурации (имя файла в CONFIG не
-                        # совпадает с тем, что реально лежит в mods/) —
-                        # здесь откат галочки и выбора оправдан.
-                        var.set(not enabled)
-                        selection[mod["id"]] = not enabled
-                        save_optional_mods_selection(selection)
-                        set_row_status(mod["id"], "Ошибка: файл не найден", "#e05555")
+                    apply_state["running"] = False
+                    if failed:
+                        set_row_status(
+                            mod["id"],
+                            "Не удалось: " + ", ".join(failed),
+                            "#e05555",
+                        )
                     else:
                         set_row_status(mod["id"], "Включено" if enabled else "Выключено")
-                    cb.configure(state="normal")
+                    for checkbox in checkboxes.values():
+                        checkbox.configure(state="normal")
 
                 dialog.after(0, finish)
 
@@ -13930,6 +14675,7 @@ class LauncherApp:
                 body, text="", variable=var,
                 bg=colors["bg_field"], activebackground=colors["bg_field"],
                 selectcolor=colors["accent"], highlightthickness=0, bd=0,
+                state="disabled" if apply_state["running"] else "normal",
                 cursor="hand2", command=lambda m=mod: on_toggle(m),
             )
             cb.pack(side="right", padx=(6, 0))
@@ -13970,13 +14716,15 @@ class LauncherApp:
             for child in scroll_frame.winfo_children():
                 child.destroy()
             icon_labels.clear()
+            checkboxes.clear()
+            status_labels.clear()
 
             query = search_var.get().strip().lower()
             category = category_var.get()
             selection = get_optional_mods_selection()
 
             mods = []
-            for mod in CONFIG["OPTIONAL_MODS"]:
+            for mod in visible_optional_mods:
                 if category != "Все" and (mod.get("category") or "Прочее") != category:
                     continue
                 if query and query not in (mod["name"] + " " +
