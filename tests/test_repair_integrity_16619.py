@@ -173,7 +173,7 @@ class RepairIntegrity16619Tests(unittest.TestCase):
             full.assert_not_called()
             extras.assert_called_once()
             config.assert_called_once()
-            minimal_ui.assert_called_once()
+            minimal_ui.assert_not_called()
             self.assertTrue(config.call_args.kwargs["force_verify"])
             self.assertTrue(
                 install_game.call_args.kwargs["force"]
@@ -481,7 +481,7 @@ class RepairIntegrity16619Tests(unittest.TestCase):
                 launcher.repair_client()
         prepare.assert_not_called()
 
-    def test_latest_backup_restores_nested_ui_settings_when_instance_is_recreated(self):
+    def test_latest_backup_does_not_restore_retired_journeymap_settings(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             instance = root / "instance"
@@ -498,7 +498,7 @@ class RepairIntegrity16619Tests(unittest.TestCase):
                 launcher.backup_player_settings()
                 source.unlink()
                 launcher.restore_player_settings()
-            self.assertEqual(source.read_bytes(), b"player-map-layout")
+            self.assertFalse(source.exists())
 
     def test_preflight_reports_insufficient_space_before_repair(self):
         with tempfile.TemporaryDirectory() as tmp:

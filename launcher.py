@@ -278,7 +278,7 @@ CONFIG = {
     # Это число теперь запасное: MODPACK_VERSION_URL ниже заполнена, и версия
     # берётся из неё. Сюда лаунчер откатится, только если интернета нет —
     # и тогда он ничего переустанавливать не станет, что и правильно.
-    "MODPACK_VERSION": 13,
+    "MODPACK_VERSION": 15,
 
     # ВНИМАНИЕ: список REMOVED_MODS живёт НИЖЕ, в разделе «УДАЛЕНИЕ МОДОВ У
     # ИГРОКОВ» (ищи "REMOVED_MODS"). Здесь его больше НЕТ намеренно: до
@@ -401,7 +401,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.27",
+    "LAUNCHER_VERSION": "1.66.28",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -413,6 +413,16 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.28",
+            "date": "28 июля 2026",
+            "changes": [
+                "Клиент переведён на единый проверенный манифест: лаунчер "
+                "больше не докачивает и не переключает отдельные JAR поверх сборки.",
+                "Убраны устаревшие правила JourneyMap, FancyMenu и старого "
+                "экрана загрузки, которых больше нет в клиенте.",
+            ],
+        },
         {
             "version": "1.66.27",
             "date": "27 июля 2026",
@@ -2438,16 +2448,17 @@ CONFIG = {
         # — все четыре не скачались, и сервер никого не пускал. GitHub при
         # этом работал. Лицензии позволяют (MIT/LGPL), а джарки взяты байт в
         # байт с сервера — клиент и сервер гарантированно совпадают.
-        {"slug": "modern-industrialization-2-5-3",
-         "url": "https://cdn.modrinth.com/data/Gov5Dboq/versions/xDYiDP82/Modern-Industrialization-2.5.4.jar",
+        {"slug": "modern-industrialization-2-5-5",
+         "url": "https://cdn.modrinth.com/data/Gov5Dboq/versions/13aV4b1P/Modern-Industrialization-2.5.5.jar",
          "mirror": True,
-         "filename": "Modern-Industrialization-2.5.4.jar",
+         "filename": "Modern-Industrialization-2.5.5.jar",
          "required": True,
          "replaces": [
              "Modern-Industrialization-2.5.2.jar",
              "Modern-Industrialization-2.5.3.jar",
+             "Modern-Industrialization-2.5.4.jar",
          ],
-         "label": "Modern Industrialization 2.5.4 (обновление)"},
+         "label": "Modern Industrialization 2.5.5 (обновление)"},
         # Беспроводные терминалы AE2. ОБЕ стороны (server_side=required):
         # на сервер jar залит 16.07 — порядок «сначала сервер» соблюдён.
         # Ссылка версионная (19.5.0), не «последняя»: клиент и сервер должны
@@ -2640,18 +2651,6 @@ CONFIG = {
         # там же). Пишем "gravestone-neoforge", а не "gravestone" — короче
         # нельзя: вдруг появится другой мод с "gravestone" в имени.
         "gravestone-neoforge",
-        # Xaero's World Map (переехал из верхнего, мёртвого списка). В его
-        # собственном jar написано: "works as an add-on to Xaero's Minimap" —
-        # а самого Xaero's Minimap в сборке нет. То есть это была только
-        # полноэкранная карта, дублирующая карту JourneyMap.
-        # Пишем именно "xaeroworldmap", а не "xaero": XaeroLib лежит внутри
-        # его же jar (jar-in-jar) и отдельным файлом в mods/ не появляется,
-        # но если когда-нибудь добавишь Xaero's Minimap — короткий шаблон
-        # снёс бы и его молча.
-        # ВАЖНО: этот же jar надо убрать и с СЕРВЕРА. Xaero регистрирует свои
-        # эффекты, и если он останется на одной стороне, игроков выкинет с
-        # "сервер отправил реестры с неизвестными ключами".
-        "xaeroworldmap",
         # Chisels & Bits — убран по решению владельца (16.07).
         "chisels-and-bits-neoforge-21.1.32.jar",
         # Industrial Horizons — временно убран владельцем (16.07). Его руды
@@ -3255,6 +3254,16 @@ CONFIG = {
         },
     ],
 }
+
+# 1.66.28: the tested client manifest is now the only source of JAR files.
+# Keep the historical catalogue available to focused regression tests, but do
+# not let normal launches download, harvest, restore or toggle mods around the
+# exact 136-JAR baseline.
+LEGACY_EXTRA_CLIENT_MODS = tuple(CONFIG["EXTRA_CLIENT_MODS"])
+CONFIG["EXTRA_CLIENT_MODS"] = []
+CONFIG["OPTIONAL_MODS"] = []
+CONFIG["SET_GAME_WINDOW_ICON"] = False
+CONFIG["MOD_SHOWCASE"] = {}
 # ================================================================
 
 # Цвета интерфейса — тёмная и светлая тема (индустриальный стиль:
@@ -5430,16 +5439,10 @@ CONFIGPACK_SEED_ONLY_FILES = {
     "config/betterf3.toml",
     "config/create-client.toml",
     "config/darkmodeeverywhere-client.toml",
-    "config/inventoryhud-client.toml",
     "config/jade/jade.json",
     "config/jade/plugins.json",
     "config/modern_industrialization-client.toml",
     "config/neat-client.toml",
-    "journeymap/config/6.0/journeymap.core.config",
-    "journeymap/config/6.0/journeymap.fullmap.config",
-    "journeymap/config/6.0/journeymap.minimap.config",
-    "journeymap/config/6.0/journeymap.minimap2.config",
-    "journeymap/config/6.0/journeymap.waypoint.config",
 }
 
 
@@ -8603,49 +8606,16 @@ def disable_shaders_once(status_cb=None) -> None:
 
 
 def fix_key_conflicts_once(status_cb=None) -> None:
-    """Разводит клавиши, которые моды заняли вдвоём — один раз на компьютер.
+    """Разводит актуальные клавиши модов — один раз на компьютер.
 
-    Два конфликта, оба вылезли через круговое меню (оно жмёт клавишу за
-    игрока), но существовали и при обычном нажатии:
-
-    O  — Iris («Список наборов шейдеров») и InventoryHUD+ («Открыть
-         конфиг»). Выигрывал InventoryHUD. Iris переносим на F6.
-    B  — Sophisticated Backpacks («Открыть рюкзак») и JourneyMap
-         («Создать метку»). Выигрывал JourneyMap: вместо рюкзака
-         открывалось окно новой метки. Метку переносим на Ctrl+B —
-         внутри полноэкранной карты у неё своя клавиша
-         (fullscreen_create_waypoint), её не трогаем.
-
-    Один раз: если игрок сам переназначит клавишу, второй раз не лезем."""
+    Если игрок сам переназначит клавишу, второй раз не вмешиваемся."""
     marker = APP_DATA_DIR / ".key_conflicts_fixed_once_v6"
     if marker.exists():
         return
     try:
-        key = "key_iris.keybind.shaderPackSelection"
-        current = _read_options_value(key, "")
-        # Пишем безусловно, если игрок не выбрал клавишу сам.
-        #
-        # Первая версия фикса проверяла current == "key.keyboard.o" и не
-        # срабатывала: строки Iris в options.txt просто НЕТ — игра её не
-        # сохраняет, а мод берёт O из своего умолчания (в логах keyVal=79).
-        # Поэтому пустое значение здесь — это тоже "стоит O", и его надо
-        # перебить. Чужой осознанный выбор не трогаем: любое другое
-        # значение оставляем как есть.
-        if current in ("", "key.keyboard.o", "key.keyboard.unknown"):
-            _write_options_value(key, "key.keyboard.f6")
-            if status_cb:
-                status_cb("Шейдеры переехали на F6 — раньше O открывала чужое окно.")
-
-        wp = "key_key.journeymap.create_waypoint"
-        wp_current = _read_options_value(wp, "")
-        if wp_current in ("", "key.keyboard.b", "key.keyboard.unknown"):
-            _write_options_value(wp, "key.keyboard.b:CONTROL")
-            if status_cb:
-                status_cb("Метка JourneyMap переехала на Ctrl+B — B оставили рюкзаку.")
-
         # --- Раскладка 18.07 (решение владельца): главные экраны на удобных
-        # клавишах, конфликты сняты. На G сидели пять чужих биндов (группы
-        # голоса, Curios, джетпак, имена JourneyMap, гайд AE2) — круговое
+        # клавишах, конфликты сняты. На G сидели четыре чужих бинда (группы
+        # голоса, Curios, джетпак и гайд AE2) — круговое
         # меню среди них проигрывало. Перебиваем только умолчания: если
         # игрок ставил клавишу сам, его выбор не трогаем.
         layout = [
@@ -8658,8 +8628,6 @@ def fix_key_conflicts_once(status_cb=None) -> None:
             ("key_key.curios.open.desc", "key.keyboard.unknown",
              ("", "key.keyboard.g")),
             ("key_key.jetpack.toggle_active.description", "key.keyboard.semicolon",
-             ("", "key.keyboard.g")),
-            ("key_key.journeymap.toggle_entity_names", "key.keyboard.unknown",
              ("", "key.keyboard.g")),
             ("key_key.guideme.guide", "key.keyboard.unknown",
              ("", "key.keyboard.g")),
@@ -10498,8 +10466,6 @@ DEFAULT_KEYBIND_SEEDS = (
     ("key_key.curios.open.desc", "key.keyboard.g", "key.keyboard.unknown"),
     ("key_key.jetpack.toggle_active.description",
      "key.keyboard.g", "key.keyboard.semicolon"),
-    ("key_key.journeymap.toggle_entity_names",
-     "key.keyboard.g", "key.keyboard.unknown"),
     ("key_key.guideme.guide", "key.keyboard.g", "key.keyboard.unknown"),
 )
 
@@ -10739,7 +10705,6 @@ def prepare_or_repair_client(
         force_verify=True,
         seed_defaults=seed_configpack_defaults,
     )
-    install_minimal_ui_defaults_script(config_status)
     actions["configpack_checked"] = True
 
     progress_out(100)
@@ -11371,10 +11336,11 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
                 pack_progress(100)
 
         remove_blocked_mods(extras_status)
-        harvest_optional_mods(extras_status)
-        restore_no_longer_optional_mods(extras_status)
-        apply_optional_mods(
-            extras_status, _progress_slice(extras_progress, 0, 15))
+        if CONFIG.get("OPTIONAL_MODS"):
+            harvest_optional_mods(extras_status)
+            restore_no_longer_optional_mods(extras_status)
+            apply_optional_mods(
+                extras_status, _progress_slice(extras_progress, 0, 15))
         extras_progress(15)
 
     # The modpack baseline must be installed first so restored nested config
@@ -11439,13 +11405,9 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
         _progress_slice(configpack_progress, 0, 90),
         seed_defaults=seed_configpack_defaults,
     )
-    install_minimal_ui_defaults_script(configpack_status)
-    install_ultimine_sticky(configpack_status)
     # После configpack: install_modpack() при обновлении сборки стирает
     # config/ целиком, а здесь конфиг уже никто не перезапишет.
     install_toast_config(configpack_status)
-    fix_early_loading_provider(configpack_status)
-    select_loading_bar_variant(configpack_status)
     validate_client_before_launch(
         configpack_status, _progress_slice(configpack_progress, 90, 100))
 

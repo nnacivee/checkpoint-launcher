@@ -288,9 +288,20 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path deploy | Out-Null
+          $version = "${{ steps.version.outputs.version }}"
+          $versionedInstaller = "CheckpointSetup-$version.exe"
           Copy-Item "installer_out\CheckpointSetup.exe" "deploy\CheckpointSetup.exe" -Force
           Copy-Item "installer_out\CheckpointSetup.exe.sha256" "deploy\CheckpointSetup.exe.sha256" -Force
-          "${{ steps.version.outputs.version }}" | Out-File -FilePath "deploy\launcher_version.txt" -Encoding ascii -NoNewline
+          Copy-Item "installer_out\CheckpointSetup.exe" "deploy\$versionedInstaller" -Force
+          $sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath "installer_out\CheckpointSetup.exe").Hash.ToLowerInvariant()
+          "$sha256  $versionedInstaller" | Out-File `
+            -FilePath "deploy\$versionedInstaller.sha256" `
+            -Encoding ascii -NoNewline
+          $published = ((Get-Content -LiteralPath "deploy\$versionedInstaller.sha256" -Raw).Split()[0]).ToLowerInvariant()
+          if ($published -ne $sha256) {
+            throw "invalid versioned installer SHA-256"
+          }
+          $version | Out-File -FilePath "deploy\launcher_version.txt" -Encoding ascii -NoNewline
           Get-ChildItem deploy
 
       - name: Upload build artifact for the deploy job
@@ -343,6 +354,7 @@ jobs:
 
       - name: Upload to mirror over SFTP (lftp)
         env:
+          VERSION: ${{ needs.build.outputs.version }}
           SRV: ${{ secrets.MIRROR_SFTP_SERVER }}
           PRT: ${{ secrets.MIRROR_SFTP_PORT }}
           USR: ${{ secrets.MIRROR_SFTP_USER }}
@@ -356,10 +368,12 @@ jobs:
           sudo apt-get update -y >/dev/null && sudo apt-get install -y lftp >/dev/null
           PORT="${PRT:-2022}"
           REMOTE="${DIR:-/}"
-          echo "Заливаю CheckpointSetup.exe, SHA-256 и launcher_version.txt на $SRV:$PORT$REMOTE"
-          # Номер версии — последним: клиенты не увидят новый релиз,
-          # пока его установщик и контрольная сумма не доехали до зеркала.
-          lftp -c "set sftp:auto-confirm yes; set net:timeout 20; set net:max-retries 2; open -u '$USR','$PW' -p $PORT sftp://$SRV; cd '$REMOTE'; put deploy/CheckpointSetup.exe; put deploy/CheckpointSetup.exe.sha256; put deploy/launcher_version.txt; bye"
+          VERSIONED="CheckpointSetup-${VERSION}.exe"
+          echo "Заливаю versioned и generic installer, SHA-256 и launcher_version.txt на $SRV:$PORT$REMOTE"
+          # Immutable payload first, mutable aliases second, version marker
+          # strictly last. Launcher 1.66.27 requests VERSIONED, not the generic
+          # alias, so omitting this pair makes every future update invisible.
+          lftp -c "set sftp:auto-confirm yes; set net:timeout 20; set net:max-retries 2; open -u '$USR','$PW' -p $PORT sftp://$SRV; cd '$REMOTE'; put deploy/$VERSIONED; put deploy/$VERSIONED.sha256; put deploy/CheckpointSetup.exe; put deploy/CheckpointSetup.exe.sha256; put deploy/launcher_version.txt; bye"
           echo "Готово: зеркало обновлено."
 
       - name: Verify the public mirror byte-for-byte
@@ -367,20 +381,22 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
-          BASE="https://industrialhorizon.dynmap.xyz"
+          BASE="https://industrialhorizon.b-cdn.net/stable"
+          VERSIONED="CheckpointSetup-${VERSION}.exe"
           EXPECTED="$(awk '{print tolower($1)}' deploy/CheckpointSetup.exe.sha256)"
-          CACHE="$(date +%s)"
           REMOTE_VERSION="$(curl --fail --silent --show-error --retry 4 \
-            "$BASE/launcher_version.txt?t=$CACHE" | tr -d '\r\n ')"
+            -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+            "$BASE/launcher_version.txt" | tr -d '\r\n ')"
           if [ "$REMOTE_VERSION" != "$VERSION" ]; then
             echo "::error::Mirror version mismatch: expected $VERSION, got $REMOTE_VERSION"
             exit 1
           fi
           curl --fail --location --silent --show-error --retry 4 \
-            "$BASE/CheckpointSetup.exe?v=${VERSION//./}-$CACHE" \
+            "$BASE/$VERSIONED" \
             --output /tmp/CheckpointSetup.exe
           REMOTE_SHA="$(curl --fail --silent --show-error --retry 4 \
-            "$BASE/CheckpointSetup.exe.sha256?v=${VERSION//./}-$CACHE" | \
+            -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+            "$BASE/$VERSIONED.sha256" | \
             awk '{print tolower($1)}')"
           ACTUAL="$(sha256sum /tmp/CheckpointSetup.exe | awk '{print tolower($1)}')"
           if [ "$REMOTE_SHA" != "$EXPECTED" ] || [ "$ACTUAL" != "$EXPECTED" ]; then

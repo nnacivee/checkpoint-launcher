@@ -23,7 +23,7 @@ class ChatHeadsReleaseTests(unittest.TestCase):
     def test_exact_neoforge_chat_heads_release_is_managed(self):
         entries = {
             item.get("slug"): item
-            for item in launcher.CONFIG["EXTRA_CLIENT_MODS"]
+            for item in launcher.LEGACY_EXTRA_CLIENT_MODS
         }
         entry = entries["chat-heads"]
         self.assertEqual(

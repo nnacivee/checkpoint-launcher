@@ -62,7 +62,7 @@ class Launcher16625ClientAdditionsTests(unittest.TestCase):
     def test_versions_urls_and_optional_contract_are_pinned(self):
         entries = {
             entry["slug"]: entry
-            for entry in launcher.CONFIG["EXTRA_CLIENT_MODS"]
+            for entry in launcher.LEGACY_EXTRA_CLIENT_MODS
             if entry.get("slug") in PINNED_CLIENT_ADDITIONS
         }
 
@@ -93,7 +93,7 @@ class Launcher16625ClientAdditionsTests(unittest.TestCase):
 
     def test_emi_tabs_is_removed_when_player_disables_emi(self):
         entry = next(
-            item for item in launcher.CONFIG["EXTRA_CLIENT_MODS"]
+            item for item in launcher.LEGACY_EXTRA_CLIENT_MODS
             if item.get("slug") == "emi-tabs-1-0-0"
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -142,7 +142,7 @@ class Launcher16625ClientAdditionsTests(unittest.TestCase):
 
     def test_incomplete_animation_pair_is_removed_without_blocking_launch(self):
         entries = [
-            item for item in launcher.CONFIG["EXTRA_CLIENT_MODS"]
+            item for item in launcher.LEGACY_EXTRA_CLIENT_MODS
             if item.get("atomic_group") == "vintage-animations"
         ]
         player = next(
