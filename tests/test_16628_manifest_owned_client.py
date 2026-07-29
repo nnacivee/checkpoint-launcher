@@ -23,14 +23,32 @@ SPEC.loader.exec_module(launcher)
 
 class ManifestOwnedClientReleaseTests(unittest.TestCase):
     def test_release_and_modpack_fallback_are_current(self):
-        self.assertEqual(launcher.CONFIG["LAUNCHER_VERSION"], "1.66.31")
+        self.assertEqual(launcher.CONFIG["LAUNCHER_VERSION"], "1.66.32")
         self.assertEqual(
-            launcher.CONFIG["LAUNCHER_CHANGELOG"][0]["version"], "1.66.31"
+            launcher.CONFIG["LAUNCHER_CHANGELOG"][0]["version"], "1.66.32"
         )
         self.assertEqual(launcher.CONFIG["MODPACK_VERSION"], 15)
 
-    def test_manifest_remains_the_only_mandatory_jar_source(self):
-        self.assertEqual(launcher.CONFIG["EXTRA_CLIENT_MODS"], [])
+    def test_manifest_has_only_the_pinned_jei_compatibility_exception(self):
+        extras = launcher.CONFIG["EXTRA_CLIENT_MODS"]
+        self.assertEqual(len(extras), 1)
+        jei = extras[0]
+        self.assertEqual(
+            jei["filename"],
+            "jei-1.21.1-neoforge-19.39.0.369.jar",
+        )
+        self.assertTrue(jei["required"])
+        self.assertEqual(jei["size"], 1635413)
+        self.assertEqual(
+            jei["sha256"].lower(),
+            "79b6d034fa233cc87c5fe486387f69cdb"
+            "54078e1262b440b5c7e7853a0254adf",
+        )
+        self.assertTrue(
+            jei["url"].startswith(
+                "https://industrialhorizon.b-cdn.net/stable/mods/"
+            )
+        )
         optional = launcher.CONFIG["OPTIONAL_MODS"]
         self.assertTrue(optional)
         self.assertTrue(all(mod.get("default") is False for mod in optional))
@@ -84,6 +102,10 @@ class ManifestOwnedClientReleaseTests(unittest.TestCase):
             with (
                 mock.patch.object(launcher, "INSTANCE_DIR", instance),
                 mock.patch.object(launcher, "APP_DATA_DIR", root / "app"),
+                mock.patch.dict(
+                    launcher.CONFIG,
+                    {"EXTRA_CLIENT_MODS": []},
+                ),
                 mock.patch.object(
                     launcher, "_find_modrinth_download"
                 ) as find_download,

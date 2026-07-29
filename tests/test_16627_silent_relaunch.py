@@ -17,9 +17,9 @@ WORKFLOW = (
 
 class SilentRelaunchReleaseTests(unittest.TestCase):
     def test_release_version_and_changelog_are_current(self):
-        self.assertEqual(launcher.CONFIG["LAUNCHER_VERSION"], "1.66.31")
+        self.assertEqual(launcher.CONFIG["LAUNCHER_VERSION"], "1.66.32")
         self.assertEqual(
-            launcher.CONFIG["LAUNCHER_CHANGELOG"][0]["version"], "1.66.31"
+            launcher.CONFIG["LAUNCHER_CHANGELOG"][0]["version"], "1.66.32"
         )
 
     def test_silent_update_launches_new_launcher(self):

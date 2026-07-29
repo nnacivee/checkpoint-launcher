@@ -401,7 +401,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.31",
+    "LAUNCHER_VERSION": "1.66.32",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -413,6 +413,17 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.32",
+            "date": "29 июля 2026",
+            "changes": [
+                "Возвращён обязательный JEI-движок для интеграции Create с EMI: "
+                "снова отображаются нанесение предметов, смешивание, механический "
+                "крафт и другие специальные рецепты Create.",
+                "JEI автоматически восстанавливается после проверки сборки и "
+                "не включает второй список предметов — игрок продолжает пользоваться EMI.",
+            ],
+        },
         {
             "version": "1.66.31",
             "date": "28 июля 2026",
@@ -3303,12 +3314,42 @@ CONFIG = {
     ],
 }
 
-# 1.66.28: the tested client manifest is now the only source of JAR files.
-# Keep the historical catalogue available to focused regression tests, but do
-# not let normal launches download, harvest, restore or toggle mods around the
-# exact 136-JAR baseline.
+# 1.66.28: the tested client manifest became the normal source of JAR files.
+# Keep the historical catalogue available to focused regression tests.  The
+# single pinned JEI exception below is an emergency compatibility bridge for
+# public manifest v16: that manifest accidentally removes JEI, while Create
+# exposes its special recipe categories to EMI through JEI/JEMI.  Keeping the
+# exact hash here repairs both existing and clean clients without reviving the
+# retired legacy catalogue.  A future manifest that owns the same JAR may keep
+# this idempotent safeguard or remove it in a dedicated launcher release.
 LEGACY_EXTRA_CLIENT_MODS = tuple(CONFIG["EXTRA_CLIENT_MODS"])
-CONFIG["EXTRA_CLIENT_MODS"] = []
+CONFIG["EXTRA_CLIENT_MODS"] = [
+    {
+        "slug": "jei-create-emi-bridge",
+        "url": (
+            "https://industrialhorizon.b-cdn.net/stable/mods/"
+            "jei-1.21.1-neoforge-19.39.0.369.jar"
+        ),
+        "filename": "jei-1.21.1-neoforge-19.39.0.369.jar",
+        "sha256": (
+            "79B6D034FA233CC87C5FE486387F69CDB"
+            "54078E1262B440B5C7E7853A0254ADF"
+        ),
+        "size": 1635413,
+        "fallback_url": (
+            "https://cdn.modrinth.com/data/u6dRKJwZ/versions/5lWKlj9s/"
+            "jei-1.21.1-neoforge-19.39.0.369.jar"
+        ),
+        "fallback_filename": "jei-1.21.1-neoforge-19.39.0.369.jar",
+        "fallback_sha256": (
+            "79B6D034FA233CC87C5FE486387F69CDB"
+            "54078E1262B440B5C7E7853A0254ADF"
+        ),
+        "fallback_size": 1635413,
+        "required": True,
+        "label": "JEI (движок рецептов Create для EMI)",
+    },
+]
 CONFIG["OPTIONAL_MODS"] = [
     # Служебные зависимости скрыты из каталога и включаются только вместе
     # с тем модом, которому они нужны.
