@@ -611,6 +611,7 @@ class Api:
             "install_dir": str(L.INSTANCE_DIR),
             "ui_settings": self._ui_settings(),
             "client_mods": L.get_optional_mods_selection(),
+            "bedrock_mode": L.get_bedrock_mode_state(),
             "skin_choice": L.get_skin_choice("skins"),
             "status": "Готово к запуску",
         }
@@ -1016,6 +1017,11 @@ class Api:
             return {"ok": False, "error": str(exc), "mods": [], "selection": {}}
 
     def set_client_mod(self, mod_id, enabled):
+        if self._busy or self._launching:
+            return {
+                "ok": False,
+                "error": "Дождитесь окончания текущей операции",
+            }
         mod_id = str(mod_id or "").strip()
         allowed = {
             str(mod.get("id"))
@@ -1031,7 +1037,7 @@ class Api:
                 selection = L.normalise_optional_mods_selection(
                     selection, preferred_id=mod_id
                 )
-                L.save_optional_mods_selection(selection)
+                selection = L.save_optional_mods_selection(selection)
             return {
                 "ok": True,
                 "id": mod_id,
@@ -1042,6 +1048,11 @@ class Api:
             return {"ok": False, "error": str(exc), "id": mod_id}
 
     def set_client_mods(self, values):
+        if self._busy or self._launching:
+            return {
+                "ok": False,
+                "error": "Дождитесь окончания текущей операции",
+            }
         if isinstance(values, str):
             try:
                 values = json.loads(values)
@@ -1073,7 +1084,7 @@ class Api:
                 selection = L.normalise_optional_mods_selection(
                     selection, preferred_id=preferred_id
                 )
-                L.save_optional_mods_selection(selection)
+                selection = L.save_optional_mods_selection(selection)
             return {"ok": True, "selection": selection}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
@@ -1088,6 +1099,113 @@ class Api:
     def toggle_client_mod(self, mod_id, enabled):
         """Compatibility name used by the approved center-control page."""
         return self.set_client_mod(mod_id, enabled)
+
+    # ================= РЕЖИМ BEDROCK =================
+    def get_bedrock_mode(self):
+        return {"ok": True, **L.get_bedrock_mode_state()}
+
+    def set_bedrock_mode(self, enabled):
+        if self._busy or self._launching:
+            return {
+                "ok": False,
+                "started": False,
+                "error": "Дождитесь окончания текущей операции",
+            }
+        if L.get_active_game_session():
+            return {
+                "ok": False,
+                "started": False,
+                "error": "Закройте Minecraft перед переключением режима Bedrock",
+            }
+        requested = _as_bool(enabled)
+        self._busy = True
+
+        def notify(state, text="", progress=0, payload=None):
+            message = {
+                "state": state,
+                "enabled": requested,
+                "text": str(text or ""),
+                "progress": int(progress or 0),
+            }
+            if isinstance(payload, dict):
+                message.update(payload)
+            self._js(
+                "window.onBedrockModeState && "
+                "window.onBedrockModeState(%s)" % _q(message)
+            )
+
+        def worker():
+            latest = {"text": "", "progress": 0}
+
+            def status_cb(text):
+                latest["text"] = str(text)
+                notify(
+                    "applying",
+                    latest["text"],
+                    latest["progress"],
+                )
+
+            def progress_cb(value):
+                latest["progress"] = max(0, min(100, int(value)))
+                notify(
+                    "applying",
+                    latest["text"],
+                    latest["progress"],
+                )
+
+            try:
+                result = L.set_bedrock_mode(
+                    requested,
+                    status_cb=status_cb,
+                    progress_cb=progress_cb,
+                )
+                notify(
+                    "ready",
+                    (
+                        "Режим Bedrock включён"
+                        if requested else "Обычный режим восстановлен"
+                    ),
+                    100,
+                    result,
+                )
+                self._toast(
+                    (
+                        "Режим Bedrock включён. Изменения применятся "
+                        "при следующем запуске Minecraft."
+                        if requested
+                        else "Режим Bedrock выключен. Прежнее оформление восстановлено."
+                    ),
+                    "ok",
+                )
+                self._js(
+                    "window.refreshClientMods && "
+                    "window.refreshClientMods()"
+                )
+                self._js(
+                    "window.refreshResources && "
+                    "window.refreshResources()"
+                )
+            except Exception as exc:  # noqa: BLE001
+                notify(
+                    "error",
+                    exc,
+                    latest["progress"],
+                    L.get_bedrock_mode_state(),
+                )
+                self._toast(
+                    "Не удалось переключить режим Bedrock: %s" % exc,
+                    "err",
+                )
+            finally:
+                self._busy = False
+
+        notify("applying", "Подготовка режима Bedrock", 0)
+        threading.Thread(target=worker, daemon=True).start()
+        return {
+            "ok": True,
+            "started": True,
+            "enabled": requested,
+        }
 
     # ================= НАСТРОЙКИ =================
     def set_memory(self, mb):
@@ -1475,6 +1593,11 @@ class Api:
         return {"installed": installed, "recommended": rec}
 
     def toggle_resource(self, name, enabled):
+        if self._busy or self._launching:
+            self._toast(
+                "Дождитесь окончания текущей операции", "err"
+            )
+            return False
         try:
             for p in L.list_resource_packs():
                 if p.get("name") == name:
@@ -1486,6 +1609,12 @@ class Api:
 
     def install_resource(self, slug):
         slug = str(slug or "")
+        if self._busy or self._launching:
+            return {
+                "ok": False,
+                "started": False,
+                "error": "Дождитесь окончания текущей операции",
+            }
         cfg = next((c for c in L.CONFIG.get("RECOMMENDED_RESOURCE_PACKS", [])
                     if c.get("slug") == slug), None)
         if not cfg:

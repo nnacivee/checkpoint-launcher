@@ -342,7 +342,9 @@ jobs:
   deploy-mirror:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_legacy }}
     runs-on: ubuntu-latest
-    needs: build
+    # GitHub is the independent fallback channel. Publish it first so a
+    # missing/expired Bunny secret cannot suppress the whole release.
+    needs: [build, release]
     steps:
       - name: Download built files
         uses: actions/download-artifact@v4
@@ -457,7 +459,7 @@ jobs:
   release:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_legacy }}
     runs-on: ubuntu-latest
-    needs: [build, deploy-mirror]
+    needs: build
     steps:
       - uses: actions/checkout@v4
 
@@ -465,7 +467,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Download verified release files
+      - name: Download tested release files
         uses: actions/download-artifact@v4
         with:
           name: mirror-files

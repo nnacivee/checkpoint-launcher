@@ -25,7 +25,7 @@ class OptionalVisualModsTests(unittest.TestCase):
             entry["id"] for entry in entries if entry.get("visible", True)
         }
 
-        self.assertEqual(len(visible), 16)
+        self.assertEqual(len(visible), 20)
         self.assertNotIn("shulker_box_tooltip", visible)
         self.assertIn("smooth_swapping", visible)
         self.assertTrue(all(entry.get("default") is False for entry in entries))

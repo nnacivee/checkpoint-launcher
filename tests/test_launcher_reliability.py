@@ -11,8 +11,8 @@ import webui
 
 
 class LauncherReliabilityTests(unittest.TestCase):
-    def test_configpack_offline_fallback_matches_live_v51(self):
-        self.assertEqual(launcher.CONFIG["CONFIGPACK_VERSION"], 51)
+    def test_configpack_offline_fallback_matches_candidate_v57(self):
+        self.assertEqual(launcher.CONFIG["CONFIGPACK_VERSION"], 57)
 
     def test_modpack_version_policy_never_downgrades(self):
         with mock.patch.object(launcher, "runtime_log") as runtime_log:

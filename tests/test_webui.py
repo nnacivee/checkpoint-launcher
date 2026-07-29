@@ -92,7 +92,8 @@ class ApiTests(unittest.TestCase):
             mock.patch.object(webui.L, "get_optional_mods_selection",
                               return_value={"emi": True}),
             mock.patch.object(webui.L, "save_optional_mods_selection",
-                              side_effect=lambda value: saved.update(value)),
+                              side_effect=lambda value:
+                              (saved.update(value) or value)),
             mock.patch.object(self.api, "_pack_icons",
                               return_value={"emi": "https://example.invalid/icon.webp"}),
         ):
@@ -145,7 +146,7 @@ class ApiTests(unittest.TestCase):
             ),
             mock.patch.object(
                 webui.L, "save_optional_mods_selection",
-                side_effect=lambda value: saved.update(value),
+                side_effect=lambda value: (saved.update(value) or value),
             ),
             mock.patch.object(self.api, "_pack_icons", return_value={}),
         ):

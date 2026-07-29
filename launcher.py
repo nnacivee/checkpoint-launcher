@@ -14,6 +14,7 @@
 Больше нигде в коде ничего менять не нужно.
 """
 
+import copy
 import ctypes
 import hashlib
 import io
@@ -278,7 +279,7 @@ CONFIG = {
     # Это число теперь запасное: MODPACK_VERSION_URL ниже заполнена, и версия
     # берётся из неё. Сюда лаунчер откатится, только если интернета нет —
     # и тогда он ничего переустанавливать не станет, что и правильно.
-    "MODPACK_VERSION": 15,
+    "MODPACK_VERSION": 17,
 
     # ВНИМАНИЕ: список REMOVED_MODS живёт НИЖЕ, в разделе «УДАЛЕНИЕ МОДОВ У
     # ИГРОКОВ» (ищи "REMOVED_MODS"). Здесь его больше НЕТ намеренно: до
@@ -355,7 +356,7 @@ CONFIG = {
     # Запасное значение для нового чистого клиента, если все маленькие
     # version-файлы временно недоступны. Должно совпадать с подготовленным
     # локальным релизом; опубликованный Bunny-маркер всё равно главный.
-    "CONFIGPACK_VERSION": 51,
+    "CONFIGPACK_VERSION": 57,
 
     # Текстовый файл с одним числом — версией пака настроек. Пока он указан,
     # обновление меню/квестов выглядит так: перезалить configpack.zip,
@@ -401,7 +402,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.32",
+    "LAUNCHER_VERSION": "1.66.33",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -413,6 +414,20 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.33",
+            "date": "29 июля 2026",
+            "changes": [
+                "Добавлен обратимый «Режим Bedrock»: лаунчер одним переключателем "
+                "ставит Bedrock HUD, интерфейс, курсоры, текстуры, воду, камеру и анимации, "
+                "а при выключении возвращает прежний набор игрока.",
+                "Исправлен UUID офлайн-профиля: клиент и сервер теперь одинаково "
+                "определяют игрока, поэтому командные данные FTB Teams не расходятся.",
+                "Дельта-обновление использует закреплённый относительный путь JAR "
+                "из манифеста и отклоняет небезопасные адреса.",
+                "Запасные версии синхронизированы со сборкой 17 и паком настроек 57.",
+            ],
+        },
         {
             "version": "1.66.32",
             "date": "29 июля 2026",
@@ -3005,6 +3020,66 @@ CONFIG = {
             "name": "Fusion Block Transitions",
             "description": "Добавляет плавные переходы между травой, песком, грязью и другими природными блоками",
         },
+        {
+            "slug": "bedrock-parity",
+            "name": "Bedrock Parity",
+            "description": "Небольшие текстурные отличия Bedrock Edition: частицы, карты, поршни и другие детали",
+            "url": "https://cdn.modrinth.com/data/J3bsWjDt/versions/Brb8nAIv/%C2%A78Bedrock%20%C2%A77Parity.zip",
+            "filename": "IH-Bedrock-Parity-1.0.zip",
+            "size": 13082,
+            "hashes": {
+                "sha1": "00b88863cb2e57f19ceebfed7ca1ae3f7d234ee8",
+                "sha512": "5f328b0e7c81edc068cde90e1a2b805da0b8ba62488db5e4a86354421895d9172f2c71aad7131b3a0911df6d3c3b62b0840e194407a349e3593dd8c9da9049d0",
+            },
+        },
+        {
+            "slug": "gui-overhaul-bedrock-dark",
+            "name": "GUI Overhaul — Bedrock Dark",
+            "description": "Тёмный интерфейс Bedrock Edition с поддержкой AppleSkin, Jade, JEI, Sodium, Voice Chat и Icons",
+            "url": "https://cdn.modrinth.com/data/AsUvHjwh/versions/lFP6OUFm/GUI%20Overhaul%20v2.1%20Dark.zip",
+            "filename": "IH-GUI-Overhaul-Bedrock-Dark-2.1.zip",
+            "size": 597850,
+            "hashes": {
+                "sha1": "6505bbd1365f90d3d8c08e068abbd4b8e43e40a2",
+                "sha512": "0ae829560538208028409b3b26ec51a86950c736d6e615b5f78e9f2bb33ee6b428636cb498bc0112e86f6a9977f07ee4db90a7604c064c5fd9251c9a084a4263",
+            },
+        },
+        {
+            "slug": "bedrock-style-cursors",
+            "name": "Bedrock-Style Cursors",
+            "description": "Курсоры меню и контейнеров в стиле Bedrock Edition; используется вместе с Cursors Extended",
+            "url": "https://cdn.modrinth.com/data/dUA5FyFq/versions/q44839P0/BedrockStyleCursors_v1.0.0.zip",
+            "filename": "IH-Bedrock-Style-Cursors-1.0.0.zip",
+            "size": 13308,
+            "hashes": {
+                "sha1": "754f06cd2c954a7c6035838c0f99e79a1901f6f5",
+                "sha512": "9155b69bf3d64987dd81aa8db735340ba9b3ee1f4c5f75c20ddabf7bcad70a9d1c01a72fb7e619499304a837bd0bdc1a39613aa404c05ae465d7a36f86c797fb",
+            },
+        },
+        {
+            "slug": "bedrock-waters",
+            "name": "Bedrock Water",
+            "description": "Цвет и анимация воды в стиле Bedrock Edition",
+            "url": "https://cdn.modrinth.com/data/OQ2MRcra/versions/a3YTYs4u/Bedrock%20water%20V1.1.zip",
+            "filename": "IH-Bedrock-Water-1.1.zip",
+            "size": 21750,
+            "hashes": {
+                "sha1": "a7cfd6f61b1ad6187223da02da9422c3afc41135",
+                "sha512": "5ec78dbf79f99b46cce291454b58ea4a26b3f8932786ba791a33b0d976d537677756062ac92e535f19151f1e8c1163e989039416129186525a137ca6888b1568",
+            },
+        },
+        {
+            "slug": "bedrock-ore-ui-je",
+            "name": "Bedrock OreUI",
+            "description": "Полный тёмный интерфейс Bedrock: HUD, инвентари, контейнеры, меню и экраны загрузки",
+            "url": "https://cdn.modrinth.com/data/Y1DuDB3Q/versions/h1C6K7L4/Bedrock%20Ore%20UI%20JE%20Beta%200.4.zip",
+            "filename": "IH-Bedrock-OreUI-0.4.zip",
+            "size": 420798,
+            "hashes": {
+                "sha1": "a1ffaca820543e9f773e4bd3b17a10fa43f03ed5",
+                "sha512": "ea9a47381081859f86f982cdc8c058c26b6414c40f108e03c069bdbc2c7030363149a747d55c0d4592acd79620905c6bbbe8784eb82fc7ff77d471f858fca274",
+            },
+        },
     ],
 
     # ------------------- РЕСУРС-ПАКИ (АВТОДОСТАВКА) -------------------
@@ -3689,6 +3764,66 @@ CONFIG["OPTIONAL_MODS"] = [
         "default": False,
     },
     {
+        "id": "bedrock_hotbar",
+        "name": "Bedrock Hotbar",
+        "slug": "bedrock-hotbar",
+        "category": "Bedrock",
+        "description": "Поднимает и оформляет панель быстрого доступа как в Bedrock Edition; совместим с AppleSkin.",
+        "filename": "bedrock-hotbar-neoforge-1.10+1.21.jar",
+        "url": "https://cdn.modrinth.com/data/X1OsYLs1/versions/X2HA1AU5/bedrock-hotbar-neoforge-1.10%2B1.21.jar",
+        "size": 36728,
+        "hashes": {
+            "sha1": "2a088264ee11da46e4fd894dfc06b41042de5435",
+            "sha512": "34bbc52c421d05a6effa652147d24c3d3397592ef6a402ebd5365e1e5963c53d309dc099e6d6f2700f58cfe04faa232fb324035634e647ea30bc0a5e2e39ee10",
+        },
+        "default": False,
+    },
+    {
+        "id": "third_person_death",
+        "name": "Third Person Death Effect",
+        "slug": "third-person-death-effect",
+        "category": "Bedrock",
+        "description": "Кинематографичная камера смерти от третьего лица, как в Bedrock Edition.",
+        "filename": "third_person_death_effect-1.0.2.jar",
+        "url": "https://cdn.modrinth.com/data/e0s4hn5G/versions/DOjcgypm/third_person_death_effect-1.0.2.jar",
+        "size": 92039,
+        "hashes": {
+            "sha1": "55d0c3e81d179849dbead9a6d38833d14a594a49",
+            "sha512": "63885622d7700f5601f0bf37a8fe2e230d1ac19a69046536abc55d9e7d4d7f0fb4bab8102738c0458a60db8e29180f780c1f70afc9033b64305670f78c9c3866",
+        },
+        "default": False,
+    },
+    {
+        "id": "smooth_gui",
+        "name": "Smooth Gui",
+        "slug": "smooth-gui",
+        "category": "Bedrock",
+        "description": "Плавно открывает и закрывает игровые экраны и контейнеры в стиле Bedrock Edition.",
+        "filename": "smoothgui-neoforge-2.0.1+mc1.21.jar",
+        "url": "https://cdn.modrinth.com/data/j6yrZogB/versions/41wQBB9A/smoothgui-neoforge-2.0.1%2Bmc1.21.jar",
+        "size": 695696,
+        "hashes": {
+            "sha1": "6a33eb9f6aeb38695004b330a1ff55f7773b99d7",
+            "sha512": "d6ab61ffb8e0a113010779ab701c1f313377c9ebcf32f891a21d3ca22c95270c26b8c01f7deb4d51954764a9db7be2e8d2e07cd32fd907870f1799e55360ff87",
+        },
+        "default": False,
+    },
+    {
+        "id": "cursors_extended",
+        "name": "Cursors Extended",
+        "slug": "minecraft-cursor",
+        "category": "Bedrock",
+        "description": "Добавляет настраиваемые курсоры; режим Bedrock подключает к нему отдельный официальный ресурс-пак.",
+        "filename": "minecraft-cursor-neoforge-3.11.3+1.21.1.jar",
+        "url": "https://cdn.modrinth.com/data/o5fhgLeQ/versions/hOGb4sKV/minecraft-cursor-neoforge-3.11.3%2B1.21.1.jar",
+        "size": 289244,
+        "hashes": {
+            "sha1": "4bfe5b677b18bc610ff1e381f3abb4f5953b7eba",
+            "sha512": "68442a28f3b79fd000b8155a6ac45318f8f0b105a96973665ba2707a221d1324899703000dd93175b4b3ab2c32e9ba759c491b55258f2e09a44d7bebb24afd40",
+        },
+        "default": False,
+    },
+    {
         "id": "smooth_swapping",
         "name": "Smooth Swapping",
         "slug": "smooth-swapping",
@@ -3716,6 +3851,31 @@ CONFIG["OPTIONAL_MODS"] = [
         "default": False,
     },
 ]
+CONFIG["BEDROCK_MODE"] = {
+    # Порядок ресурс-паков важен: последний находится выше остальных и
+    # отвечает за курсоры, а GUI Overhaul остаётся выше мира и воды.
+    "resource_packs": [
+        "bedrock-parity",
+        "bedrock-waters",
+        "gui-overhaul-bedrock-dark",
+        "bedrock-style-cursors",
+    ],
+    "disable_resource_packs": [
+        "default-dark-mode",
+        "bedrock-ore-ui-je",
+    ],
+    "optional_mods": [
+        "bedrock_hotbar",
+        "third_person_death",
+        "smooth_gui",
+        "cursors_extended",
+        "chat_animation",
+        "chunks_fade_in",
+        "not_enough_animations",
+        "model_gap_fix",
+        "smooth_swapping",
+    ],
+}
 CONFIG["SET_GAME_WINDOW_ICON"] = False
 CONFIG["MOD_SHOWCASE"] = {}
 # ================================================================
@@ -4084,6 +4244,9 @@ _RUNTIME_LOGGER.propagate = False
 _RUNTIME_HOOKS_INSTALLED = False
 _SETTINGS_LOCK = threading.RLock()
 OPTIONAL_MODS_LOCK = threading.RLock()
+BEDROCK_MODE_LOCK = threading.RLock()
+RESOURCE_PACKS_LOCK = threading.RLock()
+OPTIONS_LOCK = threading.RLock()
 
 
 def _atomic_write_text(path, text: str, encoding="utf-8", keep_backup=False) -> None:
@@ -4740,8 +4903,18 @@ def ping_server(host: str, port: int, timeout: float = 3.0) -> dict:
 
 
 def offline_uuid(username: str) -> str:
-    """Генерирует стабильный UUID для офлайн-ника (как это делает ванильный клиент)."""
-    return str(uuid.uuid3(uuid.NAMESPACE_OID, "OfflinePlayer:%s" % username))
+    """Return the exact UUID used by an offline-mode Minecraft server.
+
+    Java's ``UUID.nameUUIDFromBytes`` hashes only the supplied bytes.  Python's
+    ``uuid.uuid3`` also prepends an RFC namespace, so using it here gives the
+    client a different UUID from the one the server assigns to the same name.
+    That mismatch breaks client-side team lookups such as FTB Teams.
+    """
+    digest = hashlib.md5(
+        ("OfflinePlayer:%s" % username).encode("utf-8"),
+        usedforsecurity=False,
+    ).digest()
+    return str(uuid.UUID(bytes=digest, version=3))
 
 
 _CONTENT_RANGE_RE = re.compile(
@@ -6268,6 +6441,59 @@ def _fetch_modpack_manifest():
     return None
 
 
+_MODPACK_FILE_URL_PREFIX = "files/mods/"
+_MODPACK_UNSAFE_BASENAME_CHARS = frozenset('<>:"/\\|?*%#')
+
+
+def _is_simple_jar_basename(value: str) -> bool:
+    """Return whether *value* is a plain, portable JAR basename."""
+    return bool(
+        value
+        and value == value.strip()
+        and value.lower().endswith(".jar")
+        and ".." not in value
+        and not any(
+            ord(char) < 32
+            or ord(char) == 127
+            or char in _MODPACK_UNSAFE_BASENAME_CHARS
+            for char in value
+        )
+    )
+
+
+def _normalise_modpack_relative_url(value) -> str | None:
+    """Validate a manifest-owned relative URL without resolving it.
+
+    Delta payloads are served below ``files/mods/``.  The URL is deliberately
+    kept relative so a manifest cannot select another host.  Validation is
+    performed after percent-decoding too, which closes encoded and
+    double-encoded traversal/separator tricks.
+    """
+    if not isinstance(value, str) or not value or value != value.strip():
+        return None
+    parsed = urllib.parse.urlsplit(value)
+    if (
+        parsed.scheme
+        or parsed.netloc
+        or parsed.query
+        or parsed.fragment
+        or parsed.path != value
+        or "\\" in value
+        or not value.startswith(_MODPACK_FILE_URL_PREFIX)
+    ):
+        return None
+    encoded_name = value[len(_MODPACK_FILE_URL_PREFIX):]
+    if not encoded_name or "/" in encoded_name:
+        return None
+    try:
+        decoded_name = urllib.parse.unquote(encoded_name, errors="strict")
+    except UnicodeError:
+        return None
+    if not _is_simple_jar_basename(decoded_name):
+        return None
+    return value
+
+
 def _normalise_modpack_manifest(manifest) -> list:
     """Validate and normalize the mods-only integrity manifest."""
     if not isinstance(manifest, dict) or not manifest.get("modsOnly"):
@@ -6288,17 +6514,32 @@ def _normalise_modpack_manifest(manifest) -> list:
         except (TypeError, ValueError):
             return []
         if (
-            not name
-            or "/" in name
-            or ".." in name
-            or not name.lower().endswith(".jar")
+            not _is_simple_jar_basename(name)
             or size <= 0
             or not re.fullmatch(r"[0-9a-f]{64}", sha)
             or name.lower() in names
         ):
             return []
+        if "url" in item:
+            relative_url = _normalise_modpack_relative_url(item.get("url"))
+        else:
+            relative_url = _normalise_modpack_relative_url(
+                _MODPACK_FILE_URL_PREFIX
+                + urllib.parse.quote(name, safe="")
+            )
+        # A present but unsafe URL invalidates the whole manifest.  Silently
+        # replacing it with a canonical filename could hide a broken release
+        # (for example Kotlin's versioned CDN object) and force a huge ZIP
+        # fallback on every client.
+        if relative_url is None:
+            return []
         names.add(name.lower())
-        result.append({"name": name, "size": size, "sha": sha})
+        result.append({
+            "name": name,
+            "size": size,
+            "sha": sha,
+            "url": relative_url,
+        })
     # A real pack contains hundreds of mods.  Refuse truncated/error payloads.
     return result if len(result) >= 20 else []
 
@@ -6516,16 +6757,16 @@ def install_modpack_delta(status_cb, progress_cb) -> bool:
             status_cb("дельта-обновление: %d файлов, %.1f МБ"
                       % (len(need), total_bytes / 1048576.0))
             mirror = CONFIG["MODPACK_MIRROR_URL"].rsplit("/", 1)[0]
-            roots = [mirror + "/files/mods/"]
+            roots = [mirror.rstrip("/") + "/"]
             if "95.216.30.64:25980" in mirror:
                 roots.append(mirror.replace(
                     "http://95.216.30.64:25980",
-                    "https://industrialhorizon.dynmap.xyz") + "/files/mods/")
+                    "https://industrialhorizon.dynmap.xyz").rstrip("/") + "/")
 
             # One fast preflight avoids retrying every missing JAR when a new
             # CDN has the archive/manifest but its per-file tree has not been
             # published yet.  In that case go straight to the proven full ZIP.
-            sample_url = roots[0] + urllib.parse.quote(need[0]["name"])
+            sample_url = roots[0] + need[0]["url"]
             try:
                 request = urllib.request.Request(
                     sample_url, method="HEAD",
@@ -6546,11 +6787,10 @@ def install_modpack_delta(status_cb, progress_cb) -> bool:
             done = [0]
 
             def fetch_one(f):
-                quoted = urllib.parse.quote(f["name"])
                 tmp = staged_mods / (f["name"] + ".download")
                 for _attempt in range(3):
                     try:
-                        _download_first([r + quoted for r in roots], tmp,
+                        _download_first([r + f["url"] for r in roots], tmp,
                                         retries=2, allow_resume=True,
                                         expected_size=f["size"],
                                         expected_sha256=f["sha"],
@@ -7027,6 +7267,7 @@ CONFIGPACK_IMMUTABLE_PREFIXES = (
     "resourcepacks/checkpoint_quest_art/",
 )
 CONFIGPACK_IMMUTABLE_FILES = {
+    "config/almostunified/unification/materials.json",
     "config/ezactions/menu.json",
     "config/simple-custom-early-loading/background.png",
 }
@@ -7789,16 +8030,59 @@ def normalise_optional_mods_selection(
     return result
 
 
+def _bedrock_mode_config() -> dict:
+    value = CONFIG.get("BEDROCK_MODE", {})
+    return value if isinstance(value, dict) else {}
+
+
+def _bedrock_mode_mod_ids() -> list:
+    known = {
+        str(mod.get("id"))
+        for mod in CONFIG.get("OPTIONAL_MODS", [])
+        if mod.get("id")
+    }
+    result = []
+    for value in _bedrock_mode_config().get("optional_mods", []):
+        mod_id = str(value or "")
+        if mod_id and mod_id in known and mod_id not in result:
+            result.append(mod_id)
+    return result
+
+
+def _read_bedrock_mode_state(settings=None) -> dict:
+    source = settings if isinstance(settings, dict) else load_settings()
+    value = source.get("bedrock_mode", {})
+    if isinstance(value, bool):
+        return {"enabled": value}
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def is_bedrock_mode_enabled(settings=None) -> bool:
+    return bool(_read_bedrock_mode_state(settings).get("enabled"))
+
+
+def _force_bedrock_mode_mods(selection: dict, settings=None) -> dict:
+    result = dict(selection)
+    if is_bedrock_mode_enabled(settings):
+        for mod_id in _bedrock_mode_mod_ids():
+            result[mod_id] = True
+        result = normalise_optional_mods_selection(result)
+    return result
+
+
 def get_optional_mods_selection() -> dict:
     """Return the effective enabled state for every optional catalogue entry."""
     settings = load_settings()
     saved = settings.get("optional_mods", {})
-    return normalise_optional_mods_selection(saved)
+    return _force_bedrock_mode_mods(
+        normalise_optional_mods_selection(saved), settings
+    )
 
 
 def save_optional_mods_selection(
         selection: dict, preferred_id: str = "") -> dict:
     normalised = normalise_optional_mods_selection(selection, preferred_id)
+    normalised = _force_bedrock_mode_mods(normalised)
     update_settings(optional_mods=normalised)
     return normalised
 
@@ -8247,38 +8531,42 @@ def apply_optional_mods(status_cb=None, progress_cb=None) -> list:
 
 def _read_options_value(key: str, default: str = "") -> str:
     """Читает одну строку из options.txt (файл настроек Minecraft)."""
-    path = INSTANCE_DIR / "options.txt"
-    if not path.exists():
-        return default
-    try:
-        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-            name, _, value = line.partition(":")
-            if name == key:
-                return value
-    except OSError:
-        pass
+    with OPTIONS_LOCK:
+        path = INSTANCE_DIR / "options.txt"
+        if not path.exists():
+            return default
+        try:
+            for line in path.read_text(
+                    encoding="utf-8", errors="ignore").splitlines():
+                name, _, value = line.partition(":")
+                if name == key:
+                    return value
+        except OSError:
+            pass
     return default
 
 
 def _write_options_value(key: str, value: str) -> None:
     """Меняет одну строку в options.txt, не трогая остальные настройки игрока."""
-    path = INSTANCE_DIR / "options.txt"
-    lines = []
-    if path.exists():
-        try:
-            lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
-        except OSError:
-            lines = []
-    replaced = False
-    for index, line in enumerate(lines):
-        if line.partition(":")[0] == key:
-            lines[index] = "%s:%s" % (key, value)
-            replaced = True
-            break
-    if not replaced:
-        lines.append("%s:%s" % (key, value))
-    INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with OPTIONS_LOCK:
+        path = INSTANCE_DIR / "options.txt"
+        lines = []
+        if path.exists():
+            try:
+                lines = path.read_text(
+                    encoding="utf-8", errors="ignore").splitlines()
+            except OSError:
+                lines = []
+        replaced = False
+        for index, line in enumerate(lines):
+            if line.partition(":")[0] == key:
+                lines[index] = "%s:%s" % (key, value)
+                replaced = True
+                break
+        if not replaced:
+            lines.append("%s:%s" % (key, value))
+        INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
+        _atomic_write_text(path, "\n".join(lines) + "\n")
 
 
 def load_pack_preview(pack_path, size: int = 64):
@@ -8429,78 +8717,107 @@ def get_resourcepacks_dir() -> Path:
 
 
 def get_enabled_resource_packs() -> list:
-    raw = _read_options_value("resourcePacks", "[]")
-    try:
-        value = json.loads(raw)
-        return value if isinstance(value, list) else []
-    except Exception:
-        return []
+    with RESOURCE_PACKS_LOCK:
+        raw = _read_options_value("resourcePacks", "[]")
+        try:
+            value = json.loads(raw)
+            return value if isinstance(value, list) else []
+        except Exception:
+            return []
 
 
 def set_enabled_resource_packs(items: list) -> None:
-    _write_options_value("resourcePacks", json.dumps(items, ensure_ascii=False))
+    with RESOURCE_PACKS_LOCK:
+        _write_options_value(
+            "resourcePacks", json.dumps(items, ensure_ascii=False)
+        )
 
 
 def list_resource_packs() -> list:
     """Список установленных ресурс-паков с признаком "включён"."""
-    enabled = get_enabled_resource_packs()
-    packs = []
-    for path in _list_packs_in(get_resourcepacks_dir()):
-        entry = "file/%s" % path.name
-        packs.append({
-            "name": path.stem if path.is_file() else path.name,
-            "path": path,
-            "entry": entry,
-            "enabled": entry in enabled,
-            "description": read_pack_description(path),
-        })
-    return packs
+    with RESOURCE_PACKS_LOCK:
+        enabled = get_enabled_resource_packs()
+        packs = []
+        for path in _list_packs_in(get_resourcepacks_dir()):
+            entry = "file/%s" % path.name
+            packs.append({
+                "name": path.stem if path.is_file() else path.name,
+                "path": path,
+                "entry": entry,
+                "enabled": entry in enabled,
+                "description": read_pack_description(path),
+            })
+        return packs
 
 
 def set_resource_pack_enabled(pack: dict, enabled: bool) -> None:
-    items = get_enabled_resource_packs()
-    if not items:
-        items = ["vanilla"]  # ванильные ресурсы всегда должны быть в списке
-    entry = pack["entry"]
-    if enabled:
-        if entry not in items:
-            items.append(entry)
-    else:
-        items = [item for item in items if item != entry]
-    set_enabled_resource_packs(items)
+    with RESOURCE_PACKS_LOCK:
+        items = get_enabled_resource_packs()
+        if not items:
+            items = ["vanilla"]
+        entry = pack["entry"]
+        if enabled:
+            if entry not in items:
+                items.append(entry)
+        else:
+            items = [item for item in items if item != entry]
+        set_enabled_resource_packs(items)
 
 
 def install_resource_pack(zip_path) -> str:
     """Ставит ресурс-пак из ZIP. Возвращает имя установленного файла.
     Если пак с таким именем уже есть — заменяет его."""
-    src = Path(zip_path)
-    if not zipfile.is_zipfile(src):
-        raise RuntimeError("Это не ZIP-архив: %s" % src.name)
-    with zipfile.ZipFile(src) as zf:
-        if not any(n.endswith("pack.mcmeta") for n in zf.namelist()):
-            raise RuntimeError(
-                "В архиве нет pack.mcmeta — похоже, это не ресурс-пак:\n%s" % src.name)
-    dst_dir = get_resourcepacks_dir()
-    dst_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst_dir / src.name)
-    return src.name
+    with RESOURCE_PACKS_LOCK:
+        src = Path(zip_path)
+        if not zipfile.is_zipfile(src):
+            raise RuntimeError("Это не ZIP-архив: %s" % src.name)
+        with zipfile.ZipFile(src) as zf:
+            if not any(n.endswith("pack.mcmeta") for n in zf.namelist()):
+                raise RuntimeError(
+                    "В архиве нет pack.mcmeta — похоже, это не ресурс-пак:\n%s"
+                    % src.name
+                )
+        dst_dir = get_resourcepacks_dir()
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst_dir / src.name)
+        return src.name
 
 
 def _remember_recommended_pack(slug: str, filename: str) -> None:
     """Запоминаем, каким файлом лёг готовый пак: имя файла с Modrinth заранее
     неизвестно, а нам потом надо его найти (например, для слабого режима)."""
-    data = load_settings().get("recommended_packs", {})
-    data[slug] = filename
-    update_settings(recommended_packs=data)
+    with _SETTINGS_LOCK:
+        saved = load_settings().get("recommended_packs", {})
+        data = dict(saved) if isinstance(saved, dict) else {}
+        data[slug] = filename
+        update_settings(recommended_packs=data)
 
 
 def _recommended_pack_filename(slug: str):
-    return load_settings().get("recommended_packs", {}).get(slug)
+    saved = load_settings().get("recommended_packs", {})
+    return saved.get(slug) if isinstance(saved, dict) else None
 
 
 def is_recommended_pack_installed(pack_cfg: dict) -> bool:
     filename = _recommended_pack_filename(pack_cfg["slug"])
     return bool(filename) and (get_resourcepacks_dir() / filename).exists()
+
+
+def _recommended_pack_file_is_valid(path: Path, pack_cfg: dict) -> bool:
+    """Validate an exact catalogue pack when Modrinth supplied digests."""
+    target = Path(path)
+    try:
+        if not target.is_file() or not zipfile.is_zipfile(target):
+            return False
+        expected_size = int(pack_cfg.get("size", 0) or 0)
+        if expected_size and target.stat().st_size != expected_size:
+            return False
+        hashes = dict(pack_cfg.get("hashes") or {})
+        if hashes and not _verify_modrinth_hashes(target, hashes):
+            return False
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
 
 
 def _install_recommended_pack(pack_cfg: dict, dst_dir: Path, loaders: list,
@@ -8525,21 +8842,436 @@ def _install_recommended_pack(pack_cfg: dict, dst_dir: Path, loaders: list,
                            % (pack_cfg["name"], CONFIG["MC_VERSION"]))
     dst_dir.mkdir(parents=True, exist_ok=True)
     target = dst_dir / (filename or (pack_cfg.get("slug") or "pack") + ".zip")
-    download_file(url, target)
+    if not _recommended_pack_file_is_valid(target, pack_cfg):
+        target.unlink(missing_ok=True)
+        download_file(
+            url,
+            target,
+            expected_size=int(pack_cfg.get("size", 0) or 0),
+        )
+    if not _recommended_pack_file_is_valid(target, pack_cfg):
+        target.unlink(missing_ok=True)
+        raise RuntimeError(
+            "Ресурс-пак «%s» не прошёл проверку целостности"
+            % pack_cfg["name"]
+        )
     _remember_recommended_pack(pack_cfg.get("slug") or target.name, target.name)
     return target.name
 
 
 def install_recommended_resource_pack(pack_cfg: dict, status_cb=None) -> str:
     """Скачивает готовый ресурс-пак с Modrinth по slug и кладёт в resourcepacks."""
-    return _install_recommended_pack(
-        pack_cfg, get_resourcepacks_dir(), ["minecraft"], status_cb)
+    with RESOURCE_PACKS_LOCK:
+        return _install_recommended_pack(
+            pack_cfg, get_resourcepacks_dir(), ["minecraft"], status_cb
+        )
 
 
 def install_recommended_shader_pack(pack_cfg: dict, status_cb=None) -> str:
     """Скачивает готовый шейдер с Modrinth по slug и кладёт в shaderpacks."""
     return _install_recommended_pack(
         pack_cfg, get_shaderpacks_dir(), ["iris"], status_cb)
+
+
+def _bedrock_mode_pack_configs() -> list:
+    by_slug = {
+        str(pack.get("slug")): pack
+        for pack in CONFIG.get("RECOMMENDED_RESOURCE_PACKS", [])
+        if pack.get("slug")
+    }
+    result = []
+    for value in _bedrock_mode_config().get("resource_packs", []):
+        slug = str(value or "")
+        if slug in by_slug and by_slug[slug] not in result:
+            result.append(by_slug[slug])
+    return result
+
+
+def _bedrock_mode_pack_entries(filenames: list) -> list:
+    return ["file/%s" % Path(name).name for name in filenames if name]
+
+
+def _bedrock_mode_disabled_pack_entries(settings=None) -> list:
+    """Resolve resource packs that must be suspended while the preset is on."""
+    source = settings if isinstance(settings, dict) else load_settings()
+    remembered = source.get("recommended_packs", {})
+    if not isinstance(remembered, dict):
+        remembered = {}
+    catalogue = {
+        str(pack.get("slug")): pack
+        for pack in CONFIG.get("RECOMMENDED_RESOURCE_PACKS", [])
+        if pack.get("slug")
+    }
+    result = []
+    for value in _bedrock_mode_config().get(
+            "disable_resource_packs", []):
+        slug = str(value or "")
+        pack_cfg = catalogue.get(slug, {})
+        filename = remembered.get(slug) or pack_cfg.get("filename")
+        if not filename:
+            continue
+        entry = "file/%s" % Path(str(filename)).name
+        if entry not in result:
+            result.append(entry)
+    return result
+
+
+def _restore_bedrock_recommended_packs(old_settings: dict) -> None:
+    """Restore only preset-owned catalogue keys, preserving concurrent jobs."""
+    with _SETTINGS_LOCK:
+        latest = load_settings()
+        current = latest.get("recommended_packs", {})
+        current = dict(current) if isinstance(current, dict) else {}
+        old = old_settings.get("recommended_packs", {})
+        old = old if isinstance(old, dict) else {}
+        for value in _bedrock_mode_config().get("resource_packs", []):
+            slug = str(value or "")
+            if not slug:
+                continue
+            if slug in old:
+                current[slug] = old[slug]
+            else:
+                current.pop(slug, None)
+        update_settings(recommended_packs=current)
+
+
+def _enable_bedrock_pack_entries(current: list, managed: list) -> list:
+    result = [str(value) for value in current if str(value) not in managed]
+    if not result:
+        result = ["vanilla"]
+    elif "vanilla" not in result:
+        result.insert(0, "vanilla")
+    result.extend(entry for entry in managed if entry not in result)
+    return result
+
+
+def _restore_bedrock_pack_entries(
+        current: list, original: list, managed: list) -> list:
+    """Restore the pre-mode order while retaining packs added meanwhile."""
+    result = [str(value) for value in original]
+    for entry in current:
+        entry = str(entry)
+        if entry not in managed and entry not in result:
+            result.append(entry)
+    if not result:
+        result = ["vanilla"]
+    elif "vanilla" not in result:
+        result.insert(0, "vanilla")
+    return result
+
+
+def _install_bedrock_mode_packs(status_cb=None, progress_cb=None) -> list:
+    configs = _bedrock_mode_pack_configs()
+    filenames = []
+    total = len(configs) or 1
+    for index, pack_cfg in enumerate(configs, start=1):
+        if status_cb:
+            status_cb("Bedrock: %s" % pack_cfg["name"])
+        filename = install_recommended_resource_pack(pack_cfg, status_cb)
+        target = get_resourcepacks_dir() / filename
+        if not _recommended_pack_file_is_valid(target, pack_cfg):
+            raise RuntimeError(
+                "Ресурс-пак «%s» повреждён" % pack_cfg["name"]
+            )
+        filenames.append(filename)
+        if progress_cb:
+            progress_cb(int(index * 100 / total))
+    return filenames
+
+
+def _existing_bedrock_mode_pack_entries(
+        settings: dict, state: dict) -> list:
+    """Return valid current packs plus still-present files from an older preset."""
+    remembered = settings.get("recommended_packs", {})
+    if not isinstance(remembered, dict):
+        remembered = {}
+    entries = []
+    for pack_cfg in _bedrock_mode_pack_configs():
+        filename = (
+            remembered.get(str(pack_cfg.get("slug")))
+            or pack_cfg.get("filename")
+        )
+        if not filename:
+            continue
+        target = get_resourcepacks_dir() / Path(str(filename)).name
+        if _recommended_pack_file_is_valid(target, pack_cfg):
+            entry = "file/%s" % target.name
+            if entry not in entries:
+                entries.append(entry)
+    for value in state.get("managed_resource_packs", []):
+        entry = str(value)
+        if not entry.startswith("file/"):
+            continue
+        target = get_resourcepacks_dir() / Path(entry[5:]).name
+        if target.is_file() and zipfile.is_zipfile(target):
+            if entry not in entries:
+                entries.append(entry)
+    return entries
+
+
+def _apply_bedrock_mode_mod_files(
+        selection: dict, status_cb=None, progress_cb=None) -> None:
+    by_id = {
+        str(mod.get("id")): mod
+        for mod in CONFIG.get("OPTIONAL_MODS", [])
+        if mod.get("id")
+    }
+    mod_ids = _bedrock_mode_mod_ids()
+    no_sodium = bool(load_settings().get("no_sodium"))
+    total = len(mod_ids) or 1
+    for index, mod_id in enumerate(mod_ids, start=1):
+        mod = by_id[mod_id]
+        enabled = bool(selection.get(mod_id, False))
+        if enabled and no_sodium and mod.get("requires_sodium"):
+            enabled = False
+            if status_cb:
+                status_cb(
+                    "Bedrock: %s пропущен в режиме старой видеокарты"
+                    % mod["name"]
+                )
+        error = _apply_one_optional_mod(mod, enabled, status_cb)
+        if error:
+            raise RuntimeError(error)
+        if enabled:
+            _seed_optional_mod_configs(mod)
+        if progress_cb:
+            progress_cb(int(index * 100 / total))
+
+
+def get_bedrock_mode_state() -> dict:
+    state = _read_bedrock_mode_state()
+    return {
+        "enabled": bool(state.get("enabled")),
+        "mods": _bedrock_mode_mod_ids(),
+        "resource_packs": [
+            str(pack.get("slug")) for pack in _bedrock_mode_pack_configs()
+        ],
+    }
+
+
+def ensure_bedrock_mode_applied(
+        status_cb=None, progress_cb=None) -> dict:
+    """Repair the active preset after config/player-settings restoration."""
+    settings = load_settings()
+    state = _read_bedrock_mode_state(settings)
+    if not state.get("enabled"):
+        return get_bedrock_mode_state()
+    with BEDROCK_MODE_LOCK, RESOURCE_PACKS_LOCK:
+        settings = load_settings()
+        state = _read_bedrock_mode_state(settings)
+        if not state.get("enabled"):
+            return get_bedrock_mode_state()
+        old_managed_entries = [
+            str(value)
+            for value in state.get("managed_resource_packs", [])
+        ]
+        install_error = None
+        try:
+            filenames = _install_bedrock_mode_packs(
+                status_cb, progress_cb
+            )
+            entries = _bedrock_mode_pack_entries(filenames)
+        except Exception as exc:  # noqa: BLE001
+            install_error = exc
+            runtime_log(
+                "bedrock_mode_pack_repair_deferred: %s",
+                exc,
+                level=logging.WARNING,
+            )
+            if status_cb:
+                status_cb(
+                    "Bedrock: часть оформления временно недоступна, "
+                    "запускаю с сохранёнными файлами"
+                )
+            entries = []
+        # Pack installation records exact filenames through update_settings().
+        # Reload instead of writing an old settings snapshot over those keys.
+        settings = load_settings()
+        state = _read_bedrock_mode_state(settings)
+        if install_error is not None:
+            entries = _existing_bedrock_mode_pack_entries(
+                settings, state
+            )
+            if not entries:
+                return get_bedrock_mode_state()
+        disabled_entries = list(
+            state.get("disabled_resource_packs", [])
+        )
+        for entry in _bedrock_mode_disabled_pack_entries(settings):
+            if entry not in disabled_entries:
+                disabled_entries.append(entry)
+        current_packs = [
+            entry for entry in get_enabled_resource_packs()
+            if (
+                entry not in disabled_entries
+                and entry not in old_managed_entries
+            )
+        ]
+        set_enabled_resource_packs(
+            _enable_bedrock_pack_entries(
+                current_packs, entries
+            )
+        )
+        if (
+            entries != list(state.get("managed_resource_packs", []))
+            or disabled_entries
+            != list(state.get("disabled_resource_packs", []))
+        ):
+            state["managed_resource_packs"] = entries
+            state["disabled_resource_packs"] = disabled_entries
+            update_settings(bedrock_mode=state)
+    return get_bedrock_mode_state()
+
+
+def set_bedrock_mode(
+        enabled: bool, status_cb=None, progress_cb=None) -> dict:
+    """Atomically enable or disable the reversible Bedrock visual preset."""
+    if get_active_game_session():
+        raise GameAlreadyRunning(
+            "Закройте Minecraft перед переключением режима Bedrock."
+        )
+    enabled = bool(enabled)
+    with (
+        BEDROCK_MODE_LOCK,
+        OPTIONAL_MODS_LOCK,
+        RESOURCE_PACKS_LOCK,
+    ):
+        settings = load_settings()
+        old_settings = copy.deepcopy(settings)
+        state = _read_bedrock_mode_state(settings)
+        was_enabled = bool(state.get("enabled"))
+        saved_selection = normalise_optional_mods_selection(
+            settings.get("optional_mods", {})
+        )
+        current_packs = get_enabled_resource_packs()
+
+        if enabled:
+            try:
+                filenames = _install_bedrock_mode_packs(
+                    status_cb,
+                    (
+                        (lambda value: progress_cb(int(value * 0.45)))
+                        if progress_cb else None
+                    ),
+                )
+            except Exception:
+                # Preserve unrelated settings written by the UI while only
+                # returning the recommended-pack catalogue to its old state.
+                _restore_bedrock_recommended_packs(old_settings)
+                raise
+            latest_settings = load_settings()
+            managed_entries = _bedrock_mode_pack_entries(filenames)
+            disabled_entries = _bedrock_mode_disabled_pack_entries(
+                latest_settings
+            )
+            old_managed_entries = [
+                str(value)
+                for value in state.get("managed_resource_packs", [])
+            ]
+            if was_enabled:
+                restore = dict(state.get("restore") or {})
+            else:
+                restore = {
+                    "mods": {
+                        mod_id: bool(saved_selection.get(mod_id, False))
+                        for mod_id in _bedrock_mode_mod_ids()
+                    },
+                    "resource_packs": list(current_packs),
+                }
+            target_selection = dict(saved_selection)
+            for mod_id in _bedrock_mode_mod_ids():
+                target_selection[mod_id] = True
+            target_selection = normalise_optional_mods_selection(
+                target_selection
+            )
+            target_packs = _enable_bedrock_pack_entries(
+                [
+                    entry for entry in current_packs
+                    if (
+                        entry not in disabled_entries
+                        and entry not in old_managed_entries
+                    )
+                ],
+                managed_entries,
+            )
+            target_state = {
+                "enabled": True,
+                "restore": restore,
+                "managed_resource_packs": managed_entries,
+                "disabled_resource_packs": disabled_entries,
+            }
+        else:
+            if not was_enabled:
+                return get_bedrock_mode_state()
+            restore = dict(state.get("restore") or {})
+            previous_mods = dict(restore.get("mods") or {})
+            target_selection = dict(saved_selection)
+            for mod_id in _bedrock_mode_mod_ids():
+                target_selection[mod_id] = bool(
+                    previous_mods.get(mod_id, False)
+                )
+            target_selection = normalise_optional_mods_selection(
+                target_selection
+            )
+            managed_entries = [
+                str(value)
+                for value in state.get("managed_resource_packs", [])
+            ]
+            disabled_entries = [
+                str(value)
+                for value in state.get("disabled_resource_packs", [])
+            ]
+            target_packs = _restore_bedrock_pack_entries(
+                current_packs,
+                list(restore.get("resource_packs") or ["vanilla"]),
+                managed_entries + disabled_entries,
+            )
+            target_state = {"enabled": False}
+
+        try:
+            _apply_bedrock_mode_mod_files(
+                target_selection,
+                status_cb,
+                (
+                    (lambda value: progress_cb(45 + int(value * 0.45)))
+                    if progress_cb else None
+                ),
+            )
+            set_enabled_resource_packs(target_packs)
+            update_settings(
+                optional_mods=target_selection,
+                bedrock_mode=target_state,
+            )
+            if progress_cb:
+                progress_cb(100)
+            if status_cb:
+                status_cb(
+                    "Режим Bedrock включён"
+                    if enabled else "Обычный режим восстановлен"
+                )
+        except Exception:
+            try:
+                _apply_bedrock_mode_mod_files(
+                    saved_selection, status_cb
+                )
+                set_enabled_resource_packs(current_packs)
+                update_settings(
+                    optional_mods=copy.deepcopy(
+                        old_settings.get("optional_mods", {})
+                    ),
+                    bedrock_mode=copy.deepcopy(
+                        old_settings.get("bedrock_mode", {})
+                    ),
+                )
+                _restore_bedrock_recommended_packs(old_settings)
+            except Exception as rollback_error:  # noqa: BLE001
+                runtime_log(
+                    "bedrock_mode_rollback_failed: %s",
+                    rollback_error,
+                    level=logging.ERROR,
+                )
+            raise
+    return get_bedrock_mode_state()
 
 
 def _apply_low_end_resource_pack(enabled: bool, status_cb=None) -> None:
@@ -11628,6 +12360,7 @@ def prepare_or_repair_client(
         seed_defaults=seed_configpack_defaults,
     )
     install_ui_config_migration_v54(config_status)
+    ensure_bedrock_mode_applied(config_status)
     _reconcile_legendary_tooltip_if_configured()
     actions["configpack_checked"] = True
 
@@ -12299,6 +13032,7 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     install_auto_resource_packs(
         extras_status, _progress_slice(extras_progress, 30, 45))
     extras_progress(45)
+    ensure_bedrock_mode_applied(extras_status)
     disable_shaders_once(extras_status)
     set_russian_once(extras_status)
     fix_key_conflicts_once(extras_status)

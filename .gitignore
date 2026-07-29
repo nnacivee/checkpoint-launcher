@@ -9,6 +9,9 @@ build-test-*/
 dist-test-*/
 *.spec
 version_info.txt
+.build-tools/
+installer_out/
+deploy/
 
 # Служебное превью дизайна — не для репозитория.
 _preview.png

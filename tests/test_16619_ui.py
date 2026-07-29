@@ -123,7 +123,7 @@ class Launcher16619UiTests(unittest.TestCase):
         )
 
     def test_static_version_and_player_friendly_progress_copy_are_current(self):
-        self.assertIn("data-boot-launcher>1.66.32</b>", HTML)
+        self.assertIn("data-boot-launcher>1.66.33</b>", HTML)
         compact = HTML.split(
             "function compactLaunchPhase", 1
         )[1].split("function parseLaunchStage", 1)[0]
