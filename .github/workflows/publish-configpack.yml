@@ -1,0 +1,221 @@
+name: Publish Configpack Bunny Mirror
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Integer configpack version already uploaded to the configpack GitHub release"
+        required: true
+        type: string
+      expected_sha256:
+        description: "Expected SHA-256 of configpack.zip"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-configpack
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
+      EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
+      GH_TOKEN: ${{ github.token }}
+      BUNNY_STORAGE_ACCESS_KEY: ${{ secrets.BUNNY_STORAGE_ACCESS_KEY }}
+      BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+    steps:
+      - name: Download and validate the GitHub payload
+        run: |
+          set -euo pipefail
+          EXPECTED_SHA256="${EXPECTED_SHA256,,}"
+          if ! [[ "$VERSION" =~ ^[0-9]+$ ]] || [ "$VERSION" -le 0 ]; then
+            echo "::error::Invalid configpack version: $VERSION"
+            exit 1
+          fi
+          if ! [[ "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Invalid expected SHA-256."
+            exit 1
+          fi
+          if [ -z "$BUNNY_STORAGE_ACCESS_KEY" ] || [ -z "$BUNNY_API_KEY" ]; then
+            echo "::error::Bunny credentials are not configured."
+            exit 1
+          fi
+
+          mkdir deploy
+          gh release download configpack \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "configpack.zip" \
+            --pattern "configpack.zip.sha256" \
+            --dir deploy
+
+          SIDECAR_SHA="$(awk '{print tolower($1)}' deploy/configpack.zip.sha256)"
+          ACTUAL_SHA="$(sha256sum deploy/configpack.zip | awk '{print tolower($1)}')"
+          if [ "$SIDECAR_SHA" != "$EXPECTED_SHA256" ] || [ "$ACTUAL_SHA" != "$EXPECTED_SHA256" ]; then
+            echo "::error::GitHub configpack payload or sidecar SHA-256 mismatch."
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import zipfile
+
+          version = int(os.environ["VERSION"])
+          with zipfile.ZipFile("deploy/configpack.zip") as archive:
+              bad_paths = []
+              for info in archive.infolist():
+                  path = pathlib.PurePosixPath(info.filename)
+                  if path.is_absolute() or ".." in path.parts:
+                      bad_paths.append(info.filename)
+                  with archive.open(info) as stream:
+                      while stream.read(1024 * 1024):
+                          pass
+              if bad_paths:
+                  raise SystemExit(f"Unsafe ZIP paths: {bad_paths}")
+
+              manifest = json.loads(archive.read("configpack.json"))
+              if int(manifest["version"]) != version:
+                  raise SystemExit("Embedded configpack version does not match the requested version")
+              owned = {str(path) for path in manifest.get("owns", [])}
+              target = "config/immediatelyfast.json"
+              if target not in owned:
+                  raise SystemExit("ImmediatelyFast config is not launcher-owned")
+              config = json.loads(archive.read(target))
+              if config.get("hud_batching") is not False:
+                  raise SystemExit("ImmediatelyFast hud_batching must be false")
+              if config.get("experimental_screen_batching") is not False:
+                  raise SystemExit("ImmediatelyFast experimental_screen_batching must remain false")
+          PY
+
+          printf '%s\n' "$VERSION" >deploy/configpack_version.txt
+
+      - name: Refuse an accidental downgrade
+        run: |
+          set -euo pipefail
+          CURRENT="$(curl --fail --silent --show-error --retry 4 \
+            "https://industrialhorizon.b-cdn.net/stable/configpack_version.txt?preflight=${GITHUB_RUN_ID}")"
+          CURRENT="${CURRENT//$'\r'/}"
+          CURRENT="${CURRENT//$'\n'/}"
+          CURRENT="${CURRENT// /}"
+          if ! [[ "$CURRENT" =~ ^[0-9]+$ ]]; then
+            echo "::error::Current Bunny configpack marker is invalid: $CURRENT"
+            exit 1
+          fi
+          if [ "$CURRENT" -gt "$VERSION" ]; then
+            echo "::error::Refusing to downgrade configpack from $CURRENT to $VERSION."
+            exit 1
+          fi
+          echo "Current Bunny marker: $CURRENT; requested: $VERSION"
+
+      - name: Upload payload and sidecar to Bunny Storage
+        run: |
+          set -euo pipefail
+          STORAGE="https://storage.bunnycdn.com/industrial-horizon-downloads/stable"
+          upload() {
+            local file="$1"
+            local content_type="$2"
+            local checksum
+            checksum="$(sha256sum "deploy/$file" | awk '{print toupper($1)}')"
+            curl --fail --silent --show-error --retry 4 --retry-all-errors \
+              --request PUT "$STORAGE/$file" \
+              --header "AccessKey: $BUNNY_STORAGE_ACCESS_KEY" \
+              --header "Checksum: $checksum" \
+              --header "Content-Type: $content_type" \
+              --upload-file "deploy/$file"
+          }
+          upload "configpack.zip" "application/zip"
+          upload "configpack.zip.sha256" "text/plain"
+
+      - name: Purge and verify Bunny payload before activation
+        run: |
+          set -euo pipefail
+          BASE="https://industrialhorizon.b-cdn.net/stable"
+          EXPECTED_SHA256="${EXPECTED_SHA256,,}"
+          purge() {
+            curl --fail --silent --show-error --retry 4 --retry-all-errors \
+              --request POST --get "https://api.bunny.net/purge" \
+              --header "AccessKey: $BUNNY_API_KEY" \
+              --data-urlencode "url=$1" \
+              --data-urlencode "async=false" >/dev/null
+          }
+          purge "$BASE/configpack.zip"
+          purge "$BASE/configpack.zip.sha256"
+
+          CACHE_BUSTER="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          curl --fail --location --silent --show-error --retry 4 \
+            "$BASE/configpack.zip?verify=$CACHE_BUSTER" \
+            --output /tmp/configpack.zip
+          REMOTE_SIDECAR_SHA="$(curl --fail --silent --show-error --retry 4 \
+            "$BASE/configpack.zip.sha256?verify=$CACHE_BUSTER" | awk '{print tolower($1)}')"
+          REMOTE_PAYLOAD_SHA="$(sha256sum /tmp/configpack.zip | awk '{print tolower($1)}')"
+          if [ "$REMOTE_SIDECAR_SHA" != "$EXPECTED_SHA256" ] || \
+             [ "$REMOTE_PAYLOAD_SHA" != "$EXPECTED_SHA256" ]; then
+            echo "::error::Public Bunny configpack payload verification failed."
+            exit 1
+          fi
+          echo "Bunny payload verified before activation: $EXPECTED_SHA256"
+
+      - name: Activate the GitHub fallback marker
+        run: |
+          set -euo pipefail
+          gh release upload configpack \
+            --repo "$GITHUB_REPOSITORY" \
+            deploy/configpack_version.txt \
+            --clobber
+          rm -rf /tmp/github-marker
+          mkdir /tmp/github-marker
+          gh release download configpack \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "configpack_version.txt" \
+            --dir /tmp/github-marker
+          REMOTE_VERSION="$(tr -d '\r\n ' </tmp/github-marker/configpack_version.txt)"
+          if [ "$REMOTE_VERSION" != "$VERSION" ]; then
+            echo "::error::GitHub configpack marker did not activate."
+            exit 1
+          fi
+
+      - name: Activate the Bunny marker last
+        run: |
+          set -euo pipefail
+          BASE="https://industrialhorizon.b-cdn.net/stable"
+          STORAGE="$BASE"
+          MARKER_CHECKSUM="$(sha256sum deploy/configpack_version.txt | awk '{print toupper($1)}')"
+          curl --fail --silent --show-error --retry 4 --retry-all-errors \
+            --request PUT "https://storage.bunnycdn.com/industrial-horizon-downloads/stable/configpack_version.txt" \
+            --header "AccessKey: $BUNNY_STORAGE_ACCESS_KEY" \
+            --header "Checksum: $MARKER_CHECKSUM" \
+            --header "Content-Type: text/plain" \
+            --upload-file deploy/configpack_version.txt
+          curl --fail --silent --show-error --retry 4 --retry-all-errors \
+            --request POST --get "https://api.bunny.net/purge" \
+            --header "AccessKey: $BUNNY_API_KEY" \
+            --data-urlencode "url=$BASE/configpack_version.txt" \
+            --data-urlencode "async=false" >/dev/null
+
+      - name: Verify the activated public channel
+        run: |
+          set -euo pipefail
+          BASE="https://industrialhorizon.b-cdn.net/stable"
+          EXPECTED_SHA256="${EXPECTED_SHA256,,}"
+          CACHE_BUSTER="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-final"
+          REMOTE_VERSION="$(curl --fail --silent --show-error --retry 4 \
+            "$BASE/configpack_version.txt?verify=$CACHE_BUSTER" | tr -d '\r\n ')"
+          REMOTE_SIDECAR_SHA="$(curl --fail --silent --show-error --retry 4 \
+            "$BASE/configpack.zip.sha256?verify=$CACHE_BUSTER" | awk '{print tolower($1)}')"
+          curl --fail --location --silent --show-error --retry 4 \
+            "$BASE/configpack.zip?verify=$CACHE_BUSTER" \
+            --output /tmp/configpack-final.zip
+          REMOTE_PAYLOAD_SHA="$(sha256sum /tmp/configpack-final.zip | awk '{print tolower($1)}')"
+          if [ "$REMOTE_VERSION" != "$VERSION" ] || \
+             [ "$REMOTE_SIDECAR_SHA" != "$EXPECTED_SHA256" ] || \
+             [ "$REMOTE_PAYLOAD_SHA" != "$EXPECTED_SHA256" ]; then
+            echo "::error::Activated public configpack channel does not match the requested release."
+            exit 1
+          fi
+          echo "Public configpack activated: $VERSION / $EXPECTED_SHA256"
