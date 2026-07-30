@@ -1,0 +1,810 @@
+name: Prepare or activate staged modpack
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "prepare uploads/verifies only; activate flips prepared payloads and markers"
+        required: true
+        type: choice
+        options:
+          - prepare
+          - activate
+      version:
+        description: "Positive version from modpack-v<version>-staging"
+        required: true
+        type: string
+      expected_modpack_sha256:
+        description: "Expected SHA-256 of staged modpack.zip"
+        required: true
+        type: string
+      expected_manifest_sha256:
+        description: "Expected SHA-256 of staged manifest.json"
+        required: true
+        type: string
+      prepared_receipt_sha256:
+        description: "Required only for activate; emitted by prepare"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      mode:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      expected_modpack_sha256:
+        required: true
+        type: string
+      expected_manifest_sha256:
+        required: true
+        type: string
+      prepared_receipt_sha256:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      BUNNY_STORAGE_ACCESS_KEY:
+        required: false
+      BUNNY_API_KEY:
+        required: false
+      MIRROR_SFTP_SERVER:
+        required: false
+      MIRROR_SFTP_PORT:
+        required: false
+      MIRROR_SFTP_USER:
+        required: false
+      MIRROR_SFTP_PASSWORD:
+        required: false
+      MIRROR_REMOTE_DIR:
+        required: false
+      REMOTE_DIR:
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-modpack
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      MODE: ${{ inputs.mode }}
+      VERSION: ${{ inputs.version }}
+      EXPECTED_MODPACK_SHA256: ${{ inputs.expected_modpack_sha256 }}
+      EXPECTED_MANIFEST_SHA256: ${{ inputs.expected_manifest_sha256 }}
+      PREPARED_RECEIPT_SHA256: ${{ inputs.prepared_receipt_sha256 }}
+      GH_TOKEN: ${{ github.token }}
+      PUBLIC_BASE: https://industrialhorizon.b-cdn.net/stable
+      STORAGE_ROOT: https://storage.bunnycdn.com/industrial-horizon-downloads/stable
+      BUNNY_STORAGE_ACCESS_KEY: ${{ secrets.BUNNY_STORAGE_ACCESS_KEY }}
+      BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+      MIRROR_SFTP_SERVER: ${{ secrets.MIRROR_SFTP_SERVER }}
+      MIRROR_SFTP_PORT: ${{ secrets.MIRROR_SFTP_PORT }}
+      MIRROR_SFTP_USER: ${{ secrets.MIRROR_SFTP_USER }}
+      MIRROR_SFTP_PASSWORD: ${{ secrets.MIRROR_SFTP_PASSWORD }}
+      MIRROR_REMOTE_DIR: ${{ secrets.MIRROR_REMOTE_DIR || secrets.REMOTE_DIR }}
+
+    steps:
+      - name: Check out publisher code
+        uses: actions/checkout@v4
+
+      - name: Validate inputs and select mirror backend
+        id: backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_MODPACK_SHA256="${EXPECTED_MODPACK_SHA256,,}"
+          EXPECTED_MANIFEST_SHA256="${EXPECTED_MANIFEST_SHA256,,}"
+          PREPARED_RECEIPT_SHA256="${PREPARED_RECEIPT_SHA256,,}"
+          if [ "$MODE" != prepare ] && [ "$MODE" != activate ]; then
+            echo "::error::mode must be prepare or activate"
+            exit 1
+          fi
+          if ! [[ "$VERSION" =~ ^[0-9]+$ ]] || [ "$VERSION" -le 0 ]; then
+            echo "::error::version must be a positive integer"
+            exit 1
+          fi
+          if ! [[ "$EXPECTED_MODPACK_SHA256" =~ ^[0-9a-f]{64}$ ]] || \
+             ! [[ "$EXPECTED_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::expected payload hashes are invalid"
+            exit 1
+          fi
+          if [ "$MODE" = activate ] && \
+             ! [[ "$PREPARED_RECEIPT_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::activate requires prepared_receipt_sha256"
+            exit 1
+          fi
+
+          bunny_count=0
+          [ -n "$BUNNY_STORAGE_ACCESS_KEY" ] && bunny_count=$((bunny_count + 1))
+          [ -n "$BUNNY_API_KEY" ] && bunny_count=$((bunny_count + 1))
+          sftp_count=0
+          for value in \
+            "$MIRROR_SFTP_SERVER" "$MIRROR_SFTP_PORT" \
+            "$MIRROR_SFTP_USER" "$MIRROR_SFTP_PASSWORD" "$MIRROR_REMOTE_DIR"; do
+            [ -n "$value" ] && sftp_count=$((sftp_count + 1))
+          done
+          if [ "$bunny_count" -eq 2 ]; then
+            backend=bunny
+          elif [ "$bunny_count" -ne 0 ]; then
+            echo "::error::Both Bunny secrets are required when either is set"
+            exit 1
+          elif [ "$sftp_count" -eq 5 ]; then
+            if ! [[ "$MIRROR_SFTP_PORT" =~ ^[0-9]+$ ]] || \
+               [ "$MIRROR_SFTP_PORT" -lt 1 ] || \
+               [ "$MIRROR_SFTP_PORT" -gt 65535 ]; then
+              echo "::error::MIRROR_SFTP_PORT is invalid"
+              exit 1
+            fi
+            backend=sftp
+            echo "::warning::SFTP mode has no Bunny purge. Verification is fail-closed, but query cache-busting may be ignored by the pull zone."
+          else
+            echo "::error::Configure both Bunny secrets or all five SFTP secrets"
+            exit 1
+          fi
+          staging_name="modpack-v${VERSION}-${EXPECTED_MANIFEST_SHA256:0:16}"
+          rollback_name="modpack-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "backend=$backend" >>"$GITHUB_OUTPUT"
+          echo "staging_name=$staging_name" >>"$GITHUB_OUTPUT"
+          echo "rollback_name=$rollback_name" >>"$GITHUB_OUTPUT"
+          echo "Selected $MODE mode with $backend backend."
+
+      - name: Download and validate canonical staging assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          STAGING_TAG="modpack-v${VERSION}-staging"
+          mkdir -p deploy
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/releases/tags/${STAGING_TAG}" \
+            >deploy/staging-release.json
+          python .github/scripts/modpack_release.py snapshot-release \
+            --release-json deploy/staging-release.json \
+            --output deploy/staging-assets.json \
+            --expected-tag "$STAGING_TAG"
+          gh release download "$STAGING_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "modpack.zip" \
+            --pattern "modpack.zip.sha256" \
+            --pattern "manifest.json" \
+            --pattern "manifest.json.sha256" \
+            --dir deploy
+          python .github/scripts/modpack_release.py validate \
+            --deploy deploy \
+            --version "$VERSION" \
+            --expected-modpack-sha "$EXPECTED_MODPACK_SHA256" \
+            --expected-manifest-sha "$EXPECTED_MANIFEST_SHA256"
+
+      - name: Install SFTP client
+        if: steps.backend.outputs.backend == 'sftp'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends sshpass
+
+      # PREPARE snapshots the current channels, uploads only immutable JAR
+      # URLs to live storage and writes mutable payloads below _staging/.
+      # It never mutates live GitHub fallback assets or any version marker.
+      - name: PREPARE - snapshot active CDN and GitHub fallback
+        if: inputs.mode == 'prepare'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p active-public rollback/github
+          curl --fail --location --silent --show-error --retry 4 \
+            --header "Cache-Control: no-cache" \
+            --header "Pragma: no-cache" \
+            "$PUBLIC_BASE/modpack_version.txt" \
+            --output active-public/modpack_version.txt
+          curl --fail --location --silent --show-error --retry 4 \
+            --header "Cache-Control: no-cache" \
+            --header "Pragma: no-cache" \
+            "$PUBLIC_BASE/manifest.json" \
+            --output active-public/manifest.json
+          CURRENT_VERSION="$(tr -d '\r\n ' <active-public/modpack_version.txt)"
+          if ! [[ "$CURRENT_VERSION" =~ ^[0-9]+$ ]]; then
+            echo "::error::Active public marker is invalid"
+            exit 1
+          fi
+
+          gh release download modpack \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "modpack.zip" \
+            --pattern "modpack.zip.sha256" \
+            --pattern "manifest.json" \
+            --pattern "manifest.json.sha256" \
+            --pattern "modpack_version.txt" \
+            --dir rollback/github
+          GITHUB_VERSION="$(tr -d '\r\n ' <rollback/github/modpack_version.txt)"
+          if ! [[ "$GITHUB_VERSION" =~ ^[0-9]+$ ]]; then
+            echo "::error::GitHub fallback marker is invalid"
+            exit 1
+          fi
+          echo "::warning::GitHub fallback is snapshotted byte-for-byte for emergency rollback. CDN v${CURRENT_VERSION} remains the authoritative downgrade/race guard because the existing fallback may already be incoherent."
+
+          python .github/scripts/modpack_release.py preflight-active \
+            --marker active-public/modpack_version.txt \
+            --active-manifest active-public/manifest.json \
+            --new-manifest deploy/manifest.json \
+            --version "$VERSION" \
+            --expected-manifest-sha "$EXPECTED_MANIFEST_SHA256" \
+            --output deploy/channel-snapshot.json
+
+      - name: PREPARE - upload immutable JAR URLs and staged Bunny payload
+        if: inputs.mode == 'prepare' && steps.backend.outputs.backend == 'bunny'
+        shell: bash
+        env:
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+        run: |
+          set -euo pipefail
+          upload() {
+            local source="$1"
+            local remote="$2"
+            local content_type="$3"
+            local checksum
+            checksum="$(sha256sum "$source" | awk '{print toupper($1)}')"
+            curl --fail --silent --show-error --retry 4 --retry-all-errors \
+              --request PUT --path-as-is "$STORAGE_ROOT/$remote" \
+              --header "AccessKey: $BUNNY_STORAGE_ACCESS_KEY" \
+              --header "Checksum: $checksum" \
+              --header "Content-Type: $content_type" \
+              --upload-file "$source"
+          }
+          while IFS=$'\t' read -r name url; do
+            upload "deploy/extracted/mods/$name" "$url" \
+              application/java-archive
+            upload "deploy/jar-sidecars/$name.sha256" "$url.sha256" \
+              text/plain
+          done < <(
+            python - <<'PY'
+          import json
+          for item in json.load(open("deploy/validated.json", encoding="utf-8"))["jars"]:
+              print(f"{item['name']}\t{item['url']}")
+          PY
+          )
+          for name in \
+            modpack.zip modpack.zip.sha256 manifest.json \
+            manifest.json.sha256 modpack_version.txt; do
+            case "$name" in
+              *.zip) content_type=application/zip ;;
+              *.json) content_type=application/json ;;
+              *) content_type=text/plain ;;
+            esac
+            upload "deploy/$name" "_staging/$STAGING_NAME/$name" \
+              "$content_type"
+          done
+
+      - name: PREPARE - upload immutable JAR URLs and staged SFTP payload
+        if: inputs.mode == 'prepare' && steps.backend.outputs.backend == 'sftp'
+        shell: bash
+        env:
+          SSHPASS: ${{ secrets.MIRROR_SFTP_PASSWORD }}
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+          ROLLBACK_NAME: ${{ steps.backend.outputs.rollback_name }}
+        run: |
+          set -euo pipefail
+          run_sftp() {
+            sshpass -e sftp -q \
+              -oBatchMode=no \
+              -oStrictHostKeyChecking=accept-new \
+              -oConnectTimeout=20 \
+              -P "$MIRROR_SFTP_PORT" -b "$1" \
+              "$MIRROR_SFTP_USER@$MIRROR_SFTP_SERVER"
+          }
+          python .github/scripts/modpack_release.py make-sftp-batch \
+            --metadata deploy/validated.json \
+            --remote-root "$MIRROR_REMOTE_DIR" \
+            --output deploy/sftp-jars.batch \
+            --kind jars \
+            --staging-name "$STAGING_NAME" \
+            --rollback-name "$ROLLBACK_NAME"
+          run_sftp deploy/sftp-jars.batch
+          python .github/scripts/modpack_release.py make-sftp-batch \
+            --metadata deploy/validated.json \
+            --remote-root "$MIRROR_REMOTE_DIR" \
+            --output deploy/sftp-payload.batch \
+            --kind payload \
+            --staging-name "$STAGING_NAME" \
+            --rollback-name "$ROLLBACK_NAME"
+          run_sftp deploy/sftp-payload.batch
+          rm -f deploy/sftp-*.batch
+
+      - name: PREPARE - purge immutable Bunny JAR URLs and staging URLs
+        if: inputs.mode == 'prepare' && steps.backend.outputs.backend == 'bunny'
+        shell: bash
+        env:
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+        run: |
+          set -euo pipefail
+          purge() {
+            curl --fail --silent --show-error --retry 4 --retry-all-errors \
+              --request POST --get "https://api.bunny.net/purge" \
+              --header "AccessKey: $BUNNY_API_KEY" \
+              --data-urlencode "url=$1" \
+              --data-urlencode "async=false" >/dev/null
+          }
+          while IFS= read -r url; do
+            purge "$PUBLIC_BASE/$url"
+            purge "$PUBLIC_BASE/$url.sha256"
+          done < <(
+            python - <<'PY'
+          import json
+          for item in json.load(open("deploy/validated.json", encoding="utf-8"))["jars"]:
+              print(item["url"])
+          PY
+          )
+          for name in \
+            modpack.zip modpack.zip.sha256 manifest.json \
+            manifest.json.sha256 modpack_version.txt; do
+            purge "$PUBLIC_BASE/_staging/$STAGING_NAME/$name"
+          done
+
+      - name: PREPARE - verify every live immutable JAR
+        if: inputs.mode == 'prepare'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/scripts/modpack_release.py verify-public-jars \
+            --metadata deploy/validated.json \
+            --extracted-root deploy/extracted/mods \
+            --public-base "$PUBLIC_BASE" \
+            --token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-jars" \
+            --workers 4
+
+      - name: PREPARE - verify staged payload without touching live payload
+        if: inputs.mode == 'prepare'
+        shell: bash
+        env:
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.backend.outputs.backend }}" = sftp ]; then
+            attempts=30
+            interval=20
+          else
+            attempts=3
+            interval=10
+          fi
+          python .github/scripts/modpack_release.py verify-public-payload \
+            --metadata deploy/validated.json \
+            --public-base "$PUBLIC_BASE/_staging/$STAGING_NAME" \
+            --token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-staged" \
+            --attempts "$attempts" \
+            --interval "$interval" \
+            --include-zip
+
+      - name: PREPARE - pin source snapshot and publish prepared receipt
+        if: inputs.mode == 'prepare'
+        id: receipt
+        shell: bash
+        env:
+          BACKEND: ${{ steps.backend.outputs.backend }}
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+        run: |
+          set -euo pipefail
+          STAGING_TAG="modpack-v${VERSION}-staging"
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/releases/tags/${STAGING_TAG}" \
+            >deploy/staging-release-final.json
+          python .github/scripts/modpack_release.py snapshot-release \
+            --release-json deploy/staging-release-final.json \
+            --output deploy/staging-assets-final.json \
+            --expected-tag "$STAGING_TAG"
+          python .github/scripts/modpack_release.py compare-snapshots \
+            --first deploy/staging-assets.json \
+            --second deploy/staging-assets-final.json
+          CURRENT_VERSION="$(
+            python -c 'import json;print(json.load(open("deploy/channel-snapshot.json"))["current_version"])'
+          )"
+          python .github/scripts/modpack_release.py read-public-marker \
+            --public-base "$PUBLIC_BASE" \
+            --token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-race" \
+            --expected "$CURRENT_VERSION"
+          receipt_sha="$(
+            python .github/scripts/modpack_release.py make-receipt \
+              --metadata deploy/validated.json \
+              --staging-snapshot deploy/staging-assets.json \
+              --channel-snapshot deploy/channel-snapshot.json \
+              --fallback-root rollback/github \
+              --backend "$BACKEND" \
+              --run-id "$GITHUB_RUN_ID" \
+              --staging-name "$STAGING_NAME" \
+              --output deploy/prepared-receipt.json
+          )"
+          gh release upload "$STAGING_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            deploy/prepared-receipt.json \
+            deploy/prepared-receipt.json.sha256 \
+            --clobber
+          echo "receipt_sha256=$receipt_sha" >>"$GITHUB_OUTPUT"
+          {
+            echo "### Modpack PREPARE complete"
+            echo
+            echo "No live payload or version marker was changed."
+            echo
+            echo "Activate with receipt SHA-256:"
+            echo
+            echo "\`$receipt_sha\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      # ACTIVATE downloads the pinned receipt, revalidates staged public bytes
+      # and race guards, then performs only the short live swap.
+      - name: ACTIVATE - download and validate prepared receipt
+        if: inputs.mode == 'activate'
+        shell: bash
+        env:
+          BACKEND: ${{ steps.backend.outputs.backend }}
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+        run: |
+          set -euo pipefail
+          STAGING_TAG="modpack-v${VERSION}-staging"
+          gh release download "$STAGING_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "prepared-receipt.json" \
+            --pattern "prepared-receipt.json.sha256" \
+            --dir deploy
+          python .github/scripts/modpack_release.py validate-receipt \
+            --receipt deploy/prepared-receipt.json \
+            --sidecar deploy/prepared-receipt.json.sha256 \
+            --expected-sha "$PREPARED_RECEIPT_SHA256" \
+            --metadata deploy/validated.json \
+            --staging-snapshot deploy/staging-assets.json \
+            --backend "$BACKEND" \
+            --staging-name "$STAGING_NAME"
+
+      - name: ACTIVATE - revalidate staged public payload and old marker
+        if: inputs.mode == 'activate'
+        shell: bash
+        env:
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+        run: |
+          set -euo pipefail
+          previous="$(
+            python -c 'import json;print(json.load(open("deploy/prepared-receipt.json"))["previous_version"])'
+          )"
+          python .github/scripts/modpack_release.py read-public-marker \
+            --public-base "$PUBLIC_BASE" \
+            --token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-old-marker" \
+            --expected "$previous"
+          if [ "${{ steps.backend.outputs.backend }}" = sftp ]; then
+            attempts=10
+            interval=15
+          else
+            attempts=3
+            interval=10
+          fi
+          python .github/scripts/modpack_release.py verify-public-payload \
+            --metadata deploy/validated.json \
+            --public-base "$PUBLIC_BASE/_staging/$STAGING_NAME" \
+            --token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-recheck" \
+            --attempts "$attempts" \
+            --interval "$interval" \
+            --include-zip
+
+          mkdir -p rollback/cdn rollback/github
+          for name in \
+            modpack.zip modpack.zip.sha256 manifest.json \
+            manifest.json.sha256 modpack_version.txt; do
+            curl --fail --location --silent --show-error --retry 4 \
+              --header "Cache-Control: no-cache" \
+              --header "Pragma: no-cache" \
+              "$PUBLIC_BASE/$name" \
+              --output "rollback/cdn/$name"
+          done
+          test "$(tr -d '\r\n ' <rollback/cdn/modpack_version.txt)" = "$previous"
+          old_modpack_sha="$(awk '{print tolower($1)}' rollback/cdn/modpack.zip.sha256)"
+          old_manifest_sha="$(awk '{print tolower($1)}' rollback/cdn/manifest.json.sha256)"
+          cp rollback/cdn/modpack_version.txt rollback/cdn/modpack_version.original
+          python .github/scripts/modpack_release.py validate \
+            --deploy rollback/cdn \
+            --version "$previous" \
+            --expected-modpack-sha "$old_modpack_sha" \
+            --expected-manifest-sha "$old_manifest_sha"
+          mv rollback/cdn/modpack_version.original rollback/cdn/modpack_version.txt
+          rm -rf \
+            rollback/cdn/extracted rollback/cdn/jar-sidecars \
+            rollback/cdn/validated.json rollback/cdn/validated-manifest.json
+          expected_old_manifest="$(
+            python -c 'import json;print(json.load(open("deploy/prepared-receipt.json"))["previous_public_manifest_sha256"])'
+          )"
+          test "$(sha256sum rollback/cdn/manifest.json | awk '{print tolower($1)}')" = "$expected_old_manifest"
+
+          gh release download modpack \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "modpack.zip" \
+            --pattern "modpack.zip.sha256" \
+            --pattern "manifest.json" \
+            --pattern "manifest.json.sha256" \
+            --pattern "modpack_version.txt" \
+            --dir rollback/github
+          python .github/scripts/modpack_release.py check-fallback-receipt \
+            --receipt deploy/prepared-receipt.json \
+            --fallback-root rollback/github
+
+      - name: ACTIVATE - promote Bunny staged payload to live
+        if: inputs.mode == 'activate' && steps.backend.outputs.backend == 'bunny'
+        shell: bash
+        run: |
+          set -euo pipefail
+          touch deploy/live-promotion-started
+          upload() {
+            local source="$1"
+            local remote="$2"
+            local content_type="$3"
+            local checksum
+            checksum="$(sha256sum "$source" | awk '{print toupper($1)}')"
+            curl --fail --silent --show-error --retry 4 --retry-all-errors \
+              --request PUT "$STORAGE_ROOT/$remote" \
+              --header "AccessKey: $BUNNY_STORAGE_ACCESS_KEY" \
+              --header "Checksum: $checksum" \
+              --header "Content-Type: $content_type" \
+              --upload-file "$source"
+          }
+          upload deploy/modpack.zip modpack.zip application/zip
+          upload deploy/modpack.zip.sha256 modpack.zip.sha256 text/plain
+          upload deploy/manifest.json manifest.json application/json
+          upload deploy/manifest.json.sha256 manifest.json.sha256 text/plain
+          for name in \
+            modpack.zip modpack.zip.sha256 manifest.json manifest.json.sha256; do
+            curl --fail --silent --show-error --retry 4 --retry-all-errors \
+              --request POST --get "https://api.bunny.net/purge" \
+              --header "AccessKey: $BUNNY_API_KEY" \
+              --data-urlencode "url=$PUBLIC_BASE/$name" \
+              --data-urlencode "async=false" >/dev/null
+          done
+
+      - name: ACTIVATE - atomically promote SFTP staged payload to live
+        if: inputs.mode == 'activate' && steps.backend.outputs.backend == 'sftp'
+        shell: bash
+        env:
+          SSHPASS: ${{ secrets.MIRROR_SFTP_PASSWORD }}
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+          ROLLBACK_NAME: ${{ steps.backend.outputs.rollback_name }}
+        run: |
+          set -euo pipefail
+          touch deploy/live-promotion-started
+          python .github/scripts/modpack_release.py make-sftp-batch \
+            --metadata deploy/validated.json \
+            --remote-root "$MIRROR_REMOTE_DIR" \
+            --output deploy/sftp-activate-payload.batch \
+            --kind activate-payload \
+            --staging-name "$STAGING_NAME" \
+            --rollback-name "$ROLLBACK_NAME"
+          sshpass -e sftp -q \
+            -oBatchMode=no \
+            -oStrictHostKeyChecking=accept-new \
+            -oConnectTimeout=20 \
+            -P "$MIRROR_SFTP_PORT" \
+            -b deploy/sftp-activate-payload.batch \
+            "$MIRROR_SFTP_USER@$MIRROR_SFTP_SERVER"
+          rm -f deploy/sftp-activate-payload.batch
+
+      - name: ACTIVATE - verify live payload before any marker
+        if: inputs.mode == 'activate'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.backend.outputs.backend }}" = sftp ]; then
+            attempts=30
+            interval=20
+          else
+            attempts=4
+            interval=10
+          fi
+          python .github/scripts/modpack_release.py verify-public-payload \
+            --metadata deploy/validated.json \
+            --public-base "$PUBLIC_BASE" \
+            --token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-live" \
+            --attempts "$attempts" \
+            --interval "$interval" \
+            --include-zip
+
+      - name: ACTIVATE - activate GitHub fallback with rollback
+        if: inputs.mode == 'activate'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rollback_fallback() {
+            status=$?
+            trap - ERR
+            set +e
+            echo "::error::Restoring previous GitHub fallback payload and marker."
+            gh release upload modpack \
+              --repo "$GITHUB_REPOSITORY" \
+              rollback/github/modpack.zip \
+              rollback/github/modpack.zip.sha256 \
+              rollback/github/manifest.json \
+              rollback/github/manifest.json.sha256 \
+              rollback/github/modpack_version.txt \
+              --clobber
+            exit "$status"
+          }
+          trap rollback_fallback ERR
+          gh release upload modpack \
+            --repo "$GITHUB_REPOSITORY" \
+            deploy/modpack.zip \
+            deploy/modpack.zip.sha256 \
+            deploy/manifest.json \
+            deploy/manifest.json.sha256 \
+            --clobber
+          rm -rf deploy/github-check
+          mkdir deploy/github-check
+          gh release download modpack \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "modpack.zip" \
+            --pattern "modpack.zip.sha256" \
+            --pattern "manifest.json" \
+            --pattern "manifest.json.sha256" \
+            --dir deploy/github-check
+          python .github/scripts/modpack_release.py validate \
+            --deploy deploy/github-check \
+            --version "$VERSION" \
+            --expected-modpack-sha "$EXPECTED_MODPACK_SHA256" \
+            --expected-manifest-sha "$EXPECTED_MANIFEST_SHA256"
+          gh release upload modpack \
+            --repo "$GITHUB_REPOSITORY" \
+            deploy/modpack_version.txt \
+            --clobber
+          trap - ERR
+
+      - name: ACTIVATE - activate Bunny marker last
+        if: inputs.mode == 'activate' && steps.backend.outputs.backend == 'bunny'
+        shell: bash
+        run: |
+          set -euo pipefail
+          checksum="$(sha256sum deploy/modpack_version.txt | awk '{print toupper($1)}')"
+          curl --fail --silent --show-error --retry 4 --retry-all-errors \
+            --request PUT "$STORAGE_ROOT/modpack_version.txt" \
+            --header "AccessKey: $BUNNY_STORAGE_ACCESS_KEY" \
+            --header "Checksum: $checksum" \
+            --header "Content-Type: text/plain" \
+            --upload-file deploy/modpack_version.txt
+          curl --fail --silent --show-error --retry 4 --retry-all-errors \
+            --request POST --get "https://api.bunny.net/purge" \
+            --header "AccessKey: $BUNNY_API_KEY" \
+            --data-urlencode "url=$PUBLIC_BASE/modpack_version.txt" \
+            --data-urlencode "async=false" >/dev/null
+
+      - name: ACTIVATE - activate SFTP marker last
+        if: inputs.mode == 'activate' && steps.backend.outputs.backend == 'sftp'
+        shell: bash
+        env:
+          SSHPASS: ${{ secrets.MIRROR_SFTP_PASSWORD }}
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+          ROLLBACK_NAME: ${{ steps.backend.outputs.rollback_name }}
+        run: |
+          set -euo pipefail
+          python .github/scripts/modpack_release.py make-sftp-batch \
+            --metadata deploy/validated.json \
+            --remote-root "$MIRROR_REMOTE_DIR" \
+            --output deploy/sftp-activate-marker.batch \
+            --kind activate-marker \
+            --staging-name "$STAGING_NAME" \
+            --rollback-name "$ROLLBACK_NAME"
+          sshpass -e sftp -q \
+            -oBatchMode=no \
+            -oStrictHostKeyChecking=accept-new \
+            -oConnectTimeout=20 \
+            -P "$MIRROR_SFTP_PORT" \
+            -b deploy/sftp-activate-marker.batch \
+            "$MIRROR_SFTP_USER@$MIRROR_SFTP_SERVER"
+
+      - name: ACTIVATE - final public and GitHub verification
+        if: inputs.mode == 'activate'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.backend.outputs.backend }}" = sftp ]; then
+            attempts=30
+            interval=20
+          else
+            attempts=5
+            interval=10
+          fi
+          python .github/scripts/modpack_release.py read-public-marker \
+            --public-base "$PUBLIC_BASE" \
+            --token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-final-marker" \
+            --expected "$VERSION" \
+            --attempts "$attempts" \
+            --interval "$interval"
+          python .github/scripts/modpack_release.py verify-public-payload \
+            --metadata deploy/validated.json \
+            --public-base "$PUBLIC_BASE" \
+            --token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-final" \
+            --attempts 3 \
+            --interval 10 \
+            --include-zip
+          rm -rf deploy/github-final
+          mkdir deploy/github-final
+          gh release download modpack \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "modpack.zip" \
+            --pattern "modpack.zip.sha256" \
+            --pattern "manifest.json" \
+            --pattern "manifest.json.sha256" \
+            --pattern "modpack_version.txt" \
+            --dir deploy/github-final
+          test "$(tr -d '\r\n ' <deploy/github-final/modpack_version.txt)" = "$VERSION"
+          python .github/scripts/modpack_release.py validate \
+            --deploy deploy/github-final \
+            --version "$VERSION" \
+            --expected-modpack-sha "$EXPECTED_MODPACK_SHA256" \
+            --expected-manifest-sha "$EXPECTED_MANIFEST_SHA256"
+          echo "Modpack v${VERSION} activation is coherent." \
+            >>"$GITHUB_STEP_SUMMARY"
+
+      - name: ACTIVATE - recover previous channels after any failed promotion
+        if: failure() && inputs.mode == 'activate'
+        shell: bash
+        env:
+          SSHPASS: ${{ secrets.MIRROR_SFTP_PASSWORD }}
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+          ROLLBACK_NAME: ${{ steps.backend.outputs.rollback_name }}
+        run: |
+          set -euo pipefail
+          if [ ! -f deploy/live-promotion-started ]; then
+            echo "Failure happened before live promotion; no recovery write is needed."
+            exit 0
+          fi
+          echo "::warning::Activation failed after live promotion. Restoring the captured pre-activation channels."
+
+          gh release upload modpack \
+            --repo "$GITHUB_REPOSITORY" \
+            rollback/github/modpack.zip \
+            rollback/github/modpack.zip.sha256 \
+            rollback/github/manifest.json \
+            rollback/github/manifest.json.sha256 \
+            rollback/github/modpack_version.txt \
+            --clobber
+
+          if [ "${{ steps.backend.outputs.backend }}" = bunny ]; then
+            upload_old() {
+              local name="$1"
+              local content_type="$2"
+              local checksum
+              checksum="$(sha256sum "rollback/cdn/$name" | awk '{print toupper($1)}')"
+              curl --fail --silent --show-error --retry 4 --retry-all-errors \
+                --request PUT "$STORAGE_ROOT/$name" \
+                --header "AccessKey: $BUNNY_STORAGE_ACCESS_KEY" \
+                --header "Checksum: $checksum" \
+                --header "Content-Type: $content_type" \
+                --upload-file "rollback/cdn/$name"
+            }
+            upload_old modpack.zip application/zip
+            upload_old modpack.zip.sha256 text/plain
+            upload_old manifest.json application/json
+            upload_old manifest.json.sha256 text/plain
+            upload_old modpack_version.txt text/plain
+            for name in \
+              modpack.zip modpack.zip.sha256 manifest.json \
+              manifest.json.sha256 modpack_version.txt; do
+              curl --fail --silent --show-error --retry 4 --retry-all-errors \
+                --request POST --get "https://api.bunny.net/purge" \
+                --header "AccessKey: $BUNNY_API_KEY" \
+                --data-urlencode "url=$PUBLIC_BASE/$name" \
+                --data-urlencode "async=false" >/dev/null
+            done
+          else
+            python .github/scripts/modpack_release.py make-sftp-batch \
+              --metadata deploy/validated.json \
+              --remote-root "$MIRROR_REMOTE_DIR" \
+              --output deploy/sftp-restore.batch \
+              --kind restore \
+              --staging-name "$STAGING_NAME" \
+              --rollback-name "$ROLLBACK_NAME"
+            sshpass -e sftp -q \
+              -oBatchMode=no \
+              -oStrictHostKeyChecking=accept-new \
+              -oConnectTimeout=20 \
+              -P "$MIRROR_SFTP_PORT" \
+              -b deploy/sftp-restore.batch \
+              "$MIRROR_SFTP_USER@$MIRROR_SFTP_SERVER"
+            echo "::warning::SFTP recovery restored the origin, but stale Bunny edge objects cannot be purged with the configured credentials."
+          fi
