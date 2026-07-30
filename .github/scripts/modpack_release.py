@@ -1103,6 +1103,10 @@ def prepare_sftp_preflight(
         + " "
         + sftp_quote("origin/modpack_version.txt"),
         "get "
+        + sftp_quote(f"{remote_root}/configpack_version.txt")
+        + " "
+        + sftp_quote("origin/configpack_version.txt"),
+        "get "
         + sftp_quote(f"{remote_root}/manifest.json")
         + " "
         + sftp_quote("origin/manifest.json"),
@@ -1114,12 +1118,19 @@ def prepare_sftp_preflight(
         + sftp_quote(f"{remote_root}/modpack.zip.sha256")
         + " "
         + sftp_quote("origin/modpack.zip.sha256"),
+        "get "
+        + sftp_quote(f"{remote_root}/configpack.zip.sha256")
+        + " "
+        + sftp_quote("origin/configpack.zip.sha256"),
     ]
     for index, entry in enumerate(entries):
+        remote_relative = urllib.parse.unquote(
+            entry.url, errors="strict"
+        )
         lines.append(
             "get "
             + sftp_quote(
-                f"{remote_root}/files/mods/{entry.name}.sha256"
+                f"{remote_root}/{remote_relative}.sha256"
             )
             + " "
             + sftp_quote(f"origin/jar-sidecars/{index:04d}.sha256")
@@ -1127,8 +1138,28 @@ def prepare_sftp_preflight(
     output.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def entry_sidecar_digest(
+    payload: bytes, entry: JarEntry, label: str
+) -> str:
+    published_name = urllib.parse.unquote(
+        entry.url.rsplit("/", 1)[-1], errors="strict"
+    )
+    errors = []
+    for expected_name in dict.fromkeys((entry.name, published_name)):
+        try:
+            return parse_sidecar_bytes(payload, expected_name, label)
+        except ValidationError as exc:
+            errors.append(str(exc))
+    fail(
+        f"{label} does not name the local or published JAR: "
+        + "; ".join(errors)
+    )
+
+
 def verify_sftp_preflight(
-    public_dir: pathlib.Path, origin_dir: pathlib.Path
+    public_dir: pathlib.Path,
+    origin_dir: pathlib.Path,
+    public_base: str,
 ) -> None:
     public_marker = (
         public_dir / "modpack_version.txt"
@@ -1150,6 +1181,8 @@ def verify_sftp_preflight(
     if public_manifest != origin_manifest or public_entries != origin_entries:
         fail("SFTP origin and public manifests differ")
     expected_manifest_sha = sha256_file(public_manifest_path)
+    if sha256_file(origin_manifest_path) != expected_manifest_sha:
+        fail("SFTP origin and public manifest bytes differ")
     for directory, label in (
         (public_dir, "public"),
         (origin_dir, "origin"),
@@ -1167,13 +1200,62 @@ def verify_sftp_preflight(
     if public_modpack_sha != origin_modpack_sha:
         fail("SFTP origin and public modpack sidecars differ")
 
+    public_config_marker = (
+        public_dir / "configpack_version.txt"
+    ).read_text(encoding="utf-8-sig").strip()
+    origin_config_marker = (
+        origin_dir / "configpack_version.txt"
+    ).read_text(encoding="utf-8-sig").strip()
+    if (
+        public_config_marker != origin_config_marker
+        or not public_config_marker.isdigit()
+    ):
+        fail("SFTP origin and public configpack markers differ")
+    public_config_sha = parse_sidecar(
+        public_dir / "configpack.zip.sha256", "configpack.zip"
+    )
+    origin_config_sha = parse_sidecar(
+        origin_dir / "configpack.zip.sha256", "configpack.zip"
+    )
+    if public_config_sha != origin_config_sha:
+        fail("SFTP origin and public configpack sidecars differ")
+
+    no_cache = {"Cache-Control": "no-cache", "Pragma": "no-cache"}
     sidecars = sorted((origin_dir / "jar-sidecars").glob("*.sha256"))
     if len(sidecars) != len(public_entries):
         fail("SFTP origin JAR sidecar count does not match manifest")
     for index, (entry, path) in enumerate(zip(public_entries, sidecars)):
-        digest = parse_sidecar(path, entry.name)
+        digest = entry_sidecar_digest(
+            path.read_bytes(),
+            entry,
+            f"SFTP origin JAR sidecar at index {index}",
+        )
         if digest != entry.sha256:
             fail(f"SFTP origin JAR sidecar mismatch at index {index}")
+        public_sidecar = entry_sidecar_digest(
+            fetch_bytes(
+                f"{public_base.rstrip('/')}/{entry.url}.sha256",
+                headers=no_cache,
+                limit=512,
+            ),
+            entry,
+            f"public JAR sidecar at index {index}",
+        )
+        if public_sidecar != entry.sha256:
+            fail(f"public JAR sidecar mismatch at index {index}")
+        with open_url(
+            f"{public_base.rstrip('/')}/{entry.url}",
+            method="HEAD",
+            headers=no_cache,
+        ) as response:
+            try:
+                remote_size = int(response.headers["Content-Length"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValidationError(
+                    f"public JAR HEAD has no size at index {index}"
+                ) from exc
+        if remote_size != entry.size:
+            fail(f"public JAR size mismatch at index {index}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1305,6 +1387,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify_preflight.add_argument(
         "--origin-dir", type=pathlib.Path, required=True
     )
+    verify_preflight.add_argument("--public-base", required=True)
     return parser
 
 
@@ -1401,7 +1484,9 @@ def main(argv: Iterable[str] | None = None) -> int:
                 args.public_manifest, args.remote_root, args.output
             )
         elif args.command == "verify-sftp-preflight":
-            verify_sftp_preflight(args.public_dir, args.origin_dir)
+            verify_sftp_preflight(
+                args.public_dir, args.origin_dir, args.public_base
+            )
         else:  # pragma: no cover - argparse enforces this
             fail(f"unsupported command: {args.command}")
     except ValidationError as exc:

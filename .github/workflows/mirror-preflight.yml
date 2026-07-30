@@ -1,0 +1,121 @@
+name: Verify SFTP origin and public CDN
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      MIRROR_SFTP_SERVER:
+        required: true
+      MIRROR_SFTP_PORT:
+        required: true
+      MIRROR_SFTP_USER:
+        required: true
+      MIRROR_SFTP_PASSWORD:
+        required: true
+      MIRROR_REMOTE_DIR:
+        required: false
+      REMOTE_DIR:
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-preflight
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PUBLIC_BASE: https://industrialhorizon.b-cdn.net/stable
+      MIRROR_SFTP_SERVER: ${{ secrets.MIRROR_SFTP_SERVER }}
+      MIRROR_SFTP_PORT: ${{ secrets.MIRROR_SFTP_PORT }}
+      MIRROR_SFTP_USER: ${{ secrets.MIRROR_SFTP_USER }}
+      MIRROR_SFTP_PASSWORD: ${{ secrets.MIRROR_SFTP_PASSWORD }}
+      MIRROR_REMOTE_DIR: ${{ secrets.MIRROR_REMOTE_DIR || secrets.REMOTE_DIR }}
+
+    steps:
+      - name: Check out verification code
+        uses: actions/checkout@v4
+
+      - name: Validate SFTP settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          for value in \
+            "$MIRROR_SFTP_SERVER" "$MIRROR_SFTP_PORT" \
+            "$MIRROR_SFTP_USER" "$MIRROR_SFTP_PASSWORD" "$MIRROR_REMOTE_DIR"; do
+            if [ -z "$value" ]; then
+              echo "::error::All five SFTP settings are required."
+              exit 1
+            fi
+          done
+          if ! [[ "$MIRROR_SFTP_PORT" =~ ^[0-9]+$ ]] || \
+             [ "$MIRROR_SFTP_PORT" -lt 1 ] || \
+             [ "$MIRROR_SFTP_PORT" -gt 65535 ]; then
+            echo "::error::MIRROR_SFTP_PORT is invalid."
+            exit 1
+          fi
+
+      - name: Install read-only SFTP client
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends sshpass
+
+      - name: Download exact public metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p public origin/jar-sidecars
+          for name in \
+            modpack_version.txt \
+            configpack_version.txt \
+            manifest.json \
+            manifest.json.sha256 \
+            modpack.zip.sha256 \
+            configpack.zip.sha256; do
+            curl --fail --location --silent --show-error \
+              --retry 4 --retry-all-errors \
+              --header "Cache-Control: no-cache" \
+              --header "Pragma: no-cache" \
+              "$PUBLIC_BASE/$name" \
+              --output "public/$name"
+          done
+
+      - name: Download origin metadata without modifying it
+        shell: bash
+        env:
+          SSHPASS: ${{ secrets.MIRROR_SFTP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          python .github/scripts/modpack_release.py prepare-sftp-preflight \
+            --public-manifest public/manifest.json \
+            --remote-root "$MIRROR_REMOTE_DIR" \
+            --output origin-readonly.batch
+          sshpass -e sftp -q \
+            -oBatchMode=no \
+            -oStrictHostKeyChecking=accept-new \
+            -oConnectTimeout=20 \
+            -P "$MIRROR_SFTP_PORT" \
+            -b origin-readonly.batch \
+            "$MIRROR_SFTP_USER@$MIRROR_SFTP_SERVER"
+
+      - name: Compare origin, CDN metadata, and public JAR availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/scripts/modpack_release.py verify-sftp-preflight \
+            --public-dir public \
+            --origin-dir origin \
+            --public-base "$PUBLIC_BASE"
+          {
+            echo "### Mirror preflight passed"
+            echo
+            echo "SFTP origin and exact public CDN metadata are coherent."
+            echo
+            echo "Every manifest JAR has the expected public sidecar and size."
+          } >>"$GITHUB_STEP_SUMMARY"
