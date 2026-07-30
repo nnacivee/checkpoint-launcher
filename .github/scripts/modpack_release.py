@@ -128,8 +128,15 @@ def is_simple_jar_basename(value: object) -> bool:
     )
 
 
-def canonical_jar_url(name: str) -> str:
-    return "files/mods/" + urllib.parse.quote(name, safe="")
+def versioned_jar_basename(name: str, version: int) -> str:
+    if not is_simple_jar_basename(name) or version <= 0:
+        fail("cannot build a versioned JAR URL from unsafe input")
+    return f"{name[:-4]}-v{version}.jar"
+
+
+def canonical_jar_url(name: str, version: int) -> str:
+    published_name = versioned_jar_basename(name, version)
+    return "files/mods/" + urllib.parse.quote(published_name, safe="")
 
 
 def is_safe_jar_url(value: object) -> bool:
@@ -218,7 +225,7 @@ def validate_manifest(
         digest = clean_sha(
             item.get("sha256", ""), f"manifest files[{index}].sha256"
         )
-        expected_url = canonical_jar_url(name)
+        expected_url = canonical_jar_url(name, version)
         url = item.get("url")
         if not is_safe_jar_url(url):
             fail(f"manifest files[{index}] URL is unsafe: {url!r}")
@@ -713,17 +720,20 @@ def make_sftp_batch(
         )
         for item in metadata["jars"]:
             name = item["name"]
+            remote_relative = urllib.parse.unquote(
+                item["url"], errors="strict"
+            )
             lines.append(
                 "put "
                 + sftp_quote(f"deploy/extracted/mods/{name}")
                 + " "
-                + sftp_quote(f"{remote_root}/files/mods/{name}")
+                + sftp_quote(f"{remote_root}/{remote_relative}")
             )
             lines.append(
                 "put "
                 + sftp_quote(f"deploy/jar-sidecars/{name}.sha256")
                 + " "
-                + sftp_quote(f"{remote_root}/files/mods/{name}.sha256")
+                + sftp_quote(f"{remote_root}/{remote_relative}.sha256")
             )
     elif kind == "payload":
         lines.extend(
