@@ -1,16 +1,59 @@
-name: Publish Configpack Bunny Mirror
+name: Prepare or activate staged configpack
 
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: "prepare uploads/verifies only; activate flips prepared payload and markers"
+        required: true
+        type: choice
+        options:
+          - prepare
+          - activate
       version:
-        description: "Integer configpack version already uploaded to the configpack GitHub release"
+        description: "Positive version from configpack-v<version>-staging"
         required: true
         type: string
       expected_sha256:
-        description: "Expected SHA-256 of configpack.zip"
+        description: "Expected SHA-256 of staged configpack.zip"
         required: true
         type: string
+      prepared_receipt_sha256:
+        description: "Required only for activate; emitted by prepare"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      mode:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      expected_sha256:
+        required: true
+        type: string
+      prepared_receipt_sha256:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      BUNNY_STORAGE_ACCESS_KEY:
+        required: false
+      BUNNY_API_KEY:
+        required: false
+      MIRROR_SFTP_SERVER:
+        required: false
+      MIRROR_SFTP_PORT:
+        required: false
+      MIRROR_SFTP_USER:
+        required: false
+      MIRROR_SFTP_PASSWORD:
+        required: false
+      MIRROR_REMOTE_DIR:
+        required: false
+      REMOTE_DIR:
+        required: false
 
 permissions:
   contents: write
@@ -22,200 +65,630 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
+      MODE: ${{ inputs.mode }}
       VERSION: ${{ inputs.version }}
       EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
+      PREPARED_RECEIPT_SHA256: ${{ inputs.prepared_receipt_sha256 }}
       GH_TOKEN: ${{ github.token }}
+      PUBLIC_BASE: https://industrialhorizon.b-cdn.net/stable
+      STORAGE_ROOT: https://storage.bunnycdn.com/industrial-horizon-downloads/stable
       BUNNY_STORAGE_ACCESS_KEY: ${{ secrets.BUNNY_STORAGE_ACCESS_KEY }}
       BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+      MIRROR_SFTP_SERVER: ${{ secrets.MIRROR_SFTP_SERVER }}
+      MIRROR_SFTP_PORT: ${{ secrets.MIRROR_SFTP_PORT }}
+      MIRROR_SFTP_USER: ${{ secrets.MIRROR_SFTP_USER }}
+      MIRROR_SFTP_PASSWORD: ${{ secrets.MIRROR_SFTP_PASSWORD }}
+      MIRROR_REMOTE_DIR: ${{ secrets.MIRROR_REMOTE_DIR || secrets.REMOTE_DIR }}
+
     steps:
-      - name: Download and validate the GitHub payload
+      - name: Check out publisher code
+        uses: actions/checkout@v4
+
+      - name: Validate inputs and select mirror backend
+        id: backend
+        shell: bash
         run: |
           set -euo pipefail
           EXPECTED_SHA256="${EXPECTED_SHA256,,}"
+          PREPARED_RECEIPT_SHA256="${PREPARED_RECEIPT_SHA256,,}"
+          if [ "$MODE" != prepare ] && [ "$MODE" != activate ]; then
+            echo "::error::mode must be prepare or activate"
+            exit 1
+          fi
           if ! [[ "$VERSION" =~ ^[0-9]+$ ]] || [ "$VERSION" -le 0 ]; then
-            echo "::error::Invalid configpack version: $VERSION"
+            echo "::error::version must be a positive integer"
             exit 1
           fi
           if ! [[ "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "::error::Invalid expected SHA-256."
+            echo "::error::expected_sha256 is invalid"
             exit 1
           fi
-          if [ -z "$BUNNY_STORAGE_ACCESS_KEY" ] || [ -z "$BUNNY_API_KEY" ]; then
-            echo "::error::Bunny credentials are not configured."
+          if [ "$MODE" = activate ] && \
+             ! [[ "$PREPARED_RECEIPT_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::activate requires prepared_receipt_sha256"
             exit 1
           fi
 
-          mkdir deploy
-          gh release download configpack \
+          bunny_count=0
+          [ -n "$BUNNY_STORAGE_ACCESS_KEY" ] && bunny_count=$((bunny_count + 1))
+          [ -n "$BUNNY_API_KEY" ] && bunny_count=$((bunny_count + 1))
+          sftp_count=0
+          for value in \
+            "$MIRROR_SFTP_SERVER" "$MIRROR_SFTP_PORT" \
+            "$MIRROR_SFTP_USER" "$MIRROR_SFTP_PASSWORD" "$MIRROR_REMOTE_DIR"; do
+            [ -n "$value" ] && sftp_count=$((sftp_count + 1))
+          done
+          if [ "$bunny_count" -eq 2 ]; then
+            backend=bunny
+          elif [ "$bunny_count" -ne 0 ]; then
+            echo "::error::Both Bunny secrets are required when either is set"
+            exit 1
+          elif [ "$sftp_count" -eq 5 ]; then
+            if ! [[ "$MIRROR_SFTP_PORT" =~ ^[0-9]+$ ]] || \
+               [ "$MIRROR_SFTP_PORT" -lt 1 ] || \
+               [ "$MIRROR_SFTP_PORT" -gt 65535 ]; then
+              echo "::error::MIRROR_SFTP_PORT is invalid"
+              exit 1
+            fi
+            backend=sftp
+            echo "::warning::SFTP mode has no Bunny purge. Exact public URLs are polled fail-closed, but stale pull-zone cache can delay or abort activation."
+          else
+            echo "::error::Configure both Bunny secrets or all five SFTP secrets"
+            exit 1
+          fi
+          staging_name="configpack-v${VERSION}-${EXPECTED_SHA256:0:16}"
+          rollback_name="configpack-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "backend=$backend" >>"$GITHUB_OUTPUT"
+          echo "staging_name=$staging_name" >>"$GITHUB_OUTPUT"
+          echo "rollback_name=$rollback_name" >>"$GITHUB_OUTPUT"
+
+      - name: Download and validate canonical staging assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          STAGING_TAG="configpack-v${VERSION}-staging"
+          mkdir -p deploy
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/releases/tags/${STAGING_TAG}" \
+            >deploy/staging-release.json
+          python .github/scripts/configpack_release.py snapshot-release \
+            --release-json deploy/staging-release.json \
+            --expected-tag "$STAGING_TAG" \
+            --output deploy/staging-assets.json
+          gh release download "$STAGING_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --pattern "configpack.zip" \
             --pattern "configpack.zip.sha256" \
             --dir deploy
+          python .github/scripts/configpack_release.py validate \
+            --deploy deploy \
+            --version "$VERSION" \
+            --expected-sha "$EXPECTED_SHA256"
 
-          SIDECAR_SHA="$(awk '{print tolower($1)}' deploy/configpack.zip.sha256)"
-          ACTUAL_SHA="$(sha256sum deploy/configpack.zip | awk '{print tolower($1)}')"
-          if [ "$SIDECAR_SHA" != "$EXPECTED_SHA256" ] || [ "$ACTUAL_SHA" != "$EXPECTED_SHA256" ]; then
-            echo "::error::GitHub configpack payload or sidecar SHA-256 mismatch."
-            exit 1
-          fi
-
-          python - <<'PY'
-          import json
-          import os
-          import pathlib
-          import zipfile
-
-          version = int(os.environ["VERSION"])
-          with zipfile.ZipFile("deploy/configpack.zip") as archive:
-              bad_paths = []
-              for info in archive.infolist():
-                  path = pathlib.PurePosixPath(info.filename)
-                  if path.is_absolute() or ".." in path.parts:
-                      bad_paths.append(info.filename)
-                  with archive.open(info) as stream:
-                      while stream.read(1024 * 1024):
-                          pass
-              if bad_paths:
-                  raise SystemExit(f"Unsafe ZIP paths: {bad_paths}")
-
-              manifest = json.loads(archive.read("configpack.json"))
-              if int(manifest["version"]) != version:
-                  raise SystemExit("Embedded configpack version does not match the requested version")
-              owned = {str(path) for path in manifest.get("owns", [])}
-              target = "config/immediatelyfast.json"
-              if target not in owned:
-                  raise SystemExit("ImmediatelyFast config is not launcher-owned")
-              config = json.loads(archive.read(target))
-              if config.get("hud_batching") is not False:
-                  raise SystemExit("ImmediatelyFast hud_batching must be false")
-              if config.get("experimental_screen_batching") is not False:
-                  raise SystemExit("ImmediatelyFast experimental_screen_batching must remain false")
-          PY
-
-          printf '%s\n' "$VERSION" >deploy/configpack_version.txt
-
-      - name: Refuse an accidental downgrade
+      - name: Install SFTP client
+        if: steps.backend.outputs.backend == 'sftp'
+        shell: bash
         run: |
           set -euo pipefail
-          CURRENT="$(curl --fail --silent --show-error --retry 4 \
-            "https://industrialhorizon.b-cdn.net/stable/configpack_version.txt?preflight=${GITHUB_RUN_ID}")"
-          CURRENT="${CURRENT//$'\r'/}"
-          CURRENT="${CURRENT//$'\n'/}"
-          CURRENT="${CURRENT// /}"
-          if ! [[ "$CURRENT" =~ ^[0-9]+$ ]]; then
-            echo "::error::Current Bunny configpack marker is invalid: $CURRENT"
-            exit 1
-          fi
-          if [ "$CURRENT" -gt "$VERSION" ]; then
-            echo "::error::Refusing to downgrade configpack from $CURRENT to $VERSION."
-            exit 1
-          fi
-          echo "Current Bunny marker: $CURRENT; requested: $VERSION"
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends sshpass
 
-      - name: Upload payload and sidecar to Bunny Storage
+      - name: PREPARE - snapshot active CDN and GitHub fallback
+        if: inputs.mode == 'prepare'
+        shell: bash
         run: |
           set -euo pipefail
-          STORAGE="https://storage.bunnycdn.com/industrial-horizon-downloads/stable"
+          mkdir -p active-public rollback/github
+          for name in \
+            configpack.zip configpack.zip.sha256 configpack_version.txt; do
+            curl --fail --location --silent --show-error --retry 4 \
+              --header "Cache-Control: no-cache" \
+              --header "Pragma: no-cache" \
+              "$PUBLIC_BASE/$name" \
+              --output "active-public/$name"
+          done
+          CURRENT_VERSION="$(tr -d '\r\n ' <active-public/configpack_version.txt)"
+          if ! [[ "$CURRENT_VERSION" =~ ^[0-9]+$ ]]; then
+            echo "::error::Active configpack marker is invalid"
+            exit 1
+          fi
+          current_sha="$(awk '{print tolower($1)}' active-public/configpack.zip.sha256)"
+          cp active-public/configpack_version.txt active-public/configpack_version.original
+          python .github/scripts/configpack_release.py validate \
+            --deploy active-public \
+            --version "$CURRENT_VERSION" \
+            --expected-sha "$current_sha"
+          mv active-public/configpack_version.original active-public/configpack_version.txt
+          rm -rf active-public/validated-configpack active-public/validated-configpack.json
+          python .github/scripts/configpack_release.py preflight-active \
+            --marker active-public/configpack_version.txt \
+            --active-root active-public \
+            --version "$VERSION" \
+            --expected-sha "$EXPECTED_SHA256" \
+            --output deploy/channel-snapshot.json
+
+          gh release download configpack \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "configpack.zip" \
+            --pattern "configpack.zip.sha256" \
+            --pattern "configpack_version.txt" \
+            --dir rollback/github
+          github_version="$(tr -d '\r\n ' <rollback/github/configpack_version.txt)"
+          if [[ "$github_version" =~ ^[0-9]+$ ]]; then
+            github_sha="$(awk '{print tolower($1)}' rollback/github/configpack.zip.sha256)"
+            cp rollback/github/configpack_version.txt rollback/github/configpack_version.original
+            python .github/scripts/configpack_release.py validate \
+              --deploy rollback/github \
+              --version "$github_version" \
+              --expected-sha "$github_sha"
+            mv rollback/github/configpack_version.original rollback/github/configpack_version.txt
+            rm -rf \
+              rollback/github/validated-configpack \
+              rollback/github/validated-configpack.json
+          else
+            echo "::warning::Existing GitHub configpack fallback marker is invalid; bytes are still snapshotted for emergency rollback."
+          fi
+
+      - name: PREPARE - upload staged configpack through Bunny Storage
+        if: inputs.mode == 'prepare' && steps.backend.outputs.backend == 'bunny'
+        shell: bash
+        env:
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+        run: |
+          set -euo pipefail
           upload() {
-            local file="$1"
-            local content_type="$2"
+            local source="$1"
+            local remote="$2"
+            local content_type="$3"
             local checksum
-            checksum="$(sha256sum "deploy/$file" | awk '{print toupper($1)}')"
+            checksum="$(sha256sum "$source" | awk '{print toupper($1)}')"
             curl --fail --silent --show-error --retry 4 --retry-all-errors \
-              --request PUT "$STORAGE/$file" \
+              --request PUT "$STORAGE_ROOT/$remote" \
               --header "AccessKey: $BUNNY_STORAGE_ACCESS_KEY" \
               --header "Checksum: $checksum" \
               --header "Content-Type: $content_type" \
-              --upload-file "deploy/$file"
+              --upload-file "$source"
           }
-          upload "configpack.zip" "application/zip"
-          upload "configpack.zip.sha256" "text/plain"
-
-      - name: Purge and verify Bunny payload before activation
-        run: |
-          set -euo pipefail
-          BASE="https://industrialhorizon.b-cdn.net/stable"
-          EXPECTED_SHA256="${EXPECTED_SHA256,,}"
-          purge() {
+          upload deploy/configpack.zip \
+            "_staging/$STAGING_NAME/configpack.zip" application/zip
+          upload deploy/configpack.zip.sha256 \
+            "_staging/$STAGING_NAME/configpack.zip.sha256" text/plain
+          upload deploy/configpack_version.txt \
+            "_staging/$STAGING_NAME/configpack_version.txt" text/plain
+          for name in \
+            configpack.zip configpack.zip.sha256 configpack_version.txt; do
             curl --fail --silent --show-error --retry 4 --retry-all-errors \
               --request POST --get "https://api.bunny.net/purge" \
               --header "AccessKey: $BUNNY_API_KEY" \
-              --data-urlencode "url=$1" \
+              --data-urlencode "url=$PUBLIC_BASE/_staging/$STAGING_NAME/$name" \
               --data-urlencode "async=false" >/dev/null
-          }
-          purge "$BASE/configpack.zip"
-          purge "$BASE/configpack.zip.sha256"
+          done
 
-          CACHE_BUSTER="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          curl --fail --location --silent --show-error --retry 4 \
-            "$BASE/configpack.zip?verify=$CACHE_BUSTER" \
-            --output /tmp/configpack.zip
-          REMOTE_SIDECAR_SHA="$(curl --fail --silent --show-error --retry 4 \
-            "$BASE/configpack.zip.sha256?verify=$CACHE_BUSTER" | awk '{print tolower($1)}')"
-          REMOTE_PAYLOAD_SHA="$(sha256sum /tmp/configpack.zip | awk '{print tolower($1)}')"
-          if [ "$REMOTE_SIDECAR_SHA" != "$EXPECTED_SHA256" ] || \
-             [ "$REMOTE_PAYLOAD_SHA" != "$EXPECTED_SHA256" ]; then
-            echo "::error::Public Bunny configpack payload verification failed."
-            exit 1
-          fi
-          echo "Bunny payload verified before activation: $EXPECTED_SHA256"
-
-      - name: Activate the GitHub fallback marker
+      - name: PREPARE - upload staged configpack through SFTP
+        if: inputs.mode == 'prepare' && steps.backend.outputs.backend == 'sftp'
+        shell: bash
+        env:
+          SSHPASS: ${{ secrets.MIRROR_SFTP_PASSWORD }}
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+          ROLLBACK_NAME: ${{ steps.backend.outputs.rollback_name }}
         run: |
           set -euo pipefail
+          python .github/scripts/configpack_release.py make-sftp-batch \
+            --remote-root "$MIRROR_REMOTE_DIR" \
+            --output deploy/sftp-payload.batch \
+            --kind payload \
+            --staging-name "$STAGING_NAME" \
+            --rollback-name "$ROLLBACK_NAME"
+          sshpass -e sftp -q \
+            -oBatchMode=no \
+            -oStrictHostKeyChecking=accept-new \
+            -oConnectTimeout=20 \
+            -P "$MIRROR_SFTP_PORT" \
+            -b deploy/sftp-payload.batch \
+            "$MIRROR_SFTP_USER@$MIRROR_SFTP_SERVER"
+
+      - name: PREPARE - verify staged configpack and publish receipt
+        if: inputs.mode == 'prepare'
+        id: receipt
+        shell: bash
+        env:
+          BACKEND: ${{ steps.backend.outputs.backend }}
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+        run: |
+          set -euo pipefail
+          if [ "$BACKEND" = sftp ]; then
+            attempts=30
+            interval=20
+          else
+            attempts=3
+            interval=10
+          fi
+          python .github/scripts/configpack_release.py verify-public \
+            --metadata deploy/validated-configpack.json \
+            --public-base "$PUBLIC_BASE/_staging/$STAGING_NAME" \
+            --token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-staged" \
+            --attempts "$attempts" \
+            --interval "$interval" \
+            --expected-marker "$VERSION"
+
+          STAGING_TAG="configpack-v${VERSION}-staging"
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/releases/tags/${STAGING_TAG}" \
+            >deploy/staging-release-final.json
+          python .github/scripts/configpack_release.py snapshot-release \
+            --release-json deploy/staging-release-final.json \
+            --expected-tag "$STAGING_TAG" \
+            --output deploy/staging-assets-final.json
+          cmp --silent deploy/staging-assets.json deploy/staging-assets-final.json
+          receipt_sha="$(
+            python .github/scripts/configpack_release.py make-receipt \
+              --metadata deploy/validated-configpack.json \
+              --staging-snapshot deploy/staging-assets.json \
+              --channel-snapshot deploy/channel-snapshot.json \
+              --fallback-root rollback/github \
+              --backend "$BACKEND" \
+              --run-id "$GITHUB_RUN_ID" \
+              --staging-name "$STAGING_NAME" \
+              --output deploy/prepared-configpack-receipt.json
+          )"
+          gh release upload "$STAGING_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            deploy/prepared-configpack-receipt.json \
+            deploy/prepared-configpack-receipt.json.sha256 \
+            --clobber
+          echo "receipt_sha256=$receipt_sha" >>"$GITHUB_OUTPUT"
+          {
+            echo "### Configpack PREPARE complete"
+            echo
+            echo "No live configpack payload or marker was changed."
+            echo
+            echo "Activate with receipt SHA-256:"
+            echo
+            echo "\`$receipt_sha\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: ACTIVATE - download and validate prepared receipt
+        if: inputs.mode == 'activate'
+        shell: bash
+        env:
+          BACKEND: ${{ steps.backend.outputs.backend }}
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+        run: |
+          set -euo pipefail
+          STAGING_TAG="configpack-v${VERSION}-staging"
+          gh release download "$STAGING_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "prepared-configpack-receipt.json" \
+            --pattern "prepared-configpack-receipt.json.sha256" \
+            --dir deploy
+          python .github/scripts/configpack_release.py validate-receipt \
+            --receipt deploy/prepared-configpack-receipt.json \
+            --sidecar deploy/prepared-configpack-receipt.json.sha256 \
+            --expected-sha "$PREPARED_RECEIPT_SHA256" \
+            --metadata deploy/validated-configpack.json \
+            --staging-snapshot deploy/staging-assets.json \
+            --backend "$BACKEND" \
+            --staging-name "$STAGING_NAME"
+
+      - name: ACTIVATE - revalidate staging and capture rollback payloads
+        if: inputs.mode == 'activate'
+        shell: bash
+        env:
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+        run: |
+          set -euo pipefail
+          previous="$(
+            python -c 'import json;print(json.load(open("deploy/prepared-configpack-receipt.json"))["previous_version"])'
+          )"
+          expected_previous_sha="$(
+            python -c 'import json;print(json.load(open("deploy/prepared-configpack-receipt.json"))["previous_configpack_sha256"])'
+          )"
+          python .github/scripts/configpack_release.py verify-public \
+            --metadata deploy/validated-configpack.json \
+            --public-base "$PUBLIC_BASE/_staging/$STAGING_NAME" \
+            --token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-recheck" \
+            --attempts 10 \
+            --interval 15 \
+            --expected-marker "$VERSION"
+
+          mkdir -p rollback/cdn rollback/github
+          for name in \
+            configpack.zip configpack.zip.sha256 configpack_version.txt; do
+            curl --fail --location --silent --show-error --retry 4 \
+              --header "Cache-Control: no-cache" \
+              --header "Pragma: no-cache" \
+              "$PUBLIC_BASE/$name" \
+              --output "rollback/cdn/$name"
+          done
+          test "$(tr -d '\r\n ' <rollback/cdn/configpack_version.txt)" = "$previous"
+          test "$(awk '{print tolower($1)}' rollback/cdn/configpack.zip.sha256)" = "$expected_previous_sha"
+          cp rollback/cdn/configpack_version.txt rollback/cdn/configpack_version.original
+          python .github/scripts/configpack_release.py validate \
+            --deploy rollback/cdn \
+            --version "$previous" \
+            --expected-sha "$expected_previous_sha"
+          mv rollback/cdn/configpack_version.original rollback/cdn/configpack_version.txt
+          rm -rf rollback/cdn/validated-configpack rollback/cdn/validated-configpack.json
+
+          gh release download configpack \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "configpack.zip" \
+            --pattern "configpack.zip.sha256" \
+            --pattern "configpack_version.txt" \
+            --dir rollback/github
+          python .github/scripts/configpack_release.py check-fallback \
+            --receipt deploy/prepared-configpack-receipt.json \
+            --fallback-root rollback/github
+
+      - name: ACTIVATE - promote Bunny payload to live
+        if: inputs.mode == 'activate' && steps.backend.outputs.backend == 'bunny'
+        shell: bash
+        run: |
+          set -euo pipefail
+          touch deploy/live-promotion-started
+          upload() {
+            local source="$1"
+            local remote="$2"
+            local content_type="$3"
+            local checksum
+            checksum="$(sha256sum "$source" | awk '{print toupper($1)}')"
+            curl --fail --silent --show-error --retry 4 --retry-all-errors \
+              --request PUT "$STORAGE_ROOT/$remote" \
+              --header "AccessKey: $BUNNY_STORAGE_ACCESS_KEY" \
+              --header "Checksum: $checksum" \
+              --header "Content-Type: $content_type" \
+              --upload-file "$source"
+          }
+          upload deploy/configpack.zip configpack.zip application/zip
+          upload deploy/configpack.zip.sha256 configpack.zip.sha256 text/plain
+          for name in configpack.zip configpack.zip.sha256; do
+            curl --fail --silent --show-error --retry 4 --retry-all-errors \
+              --request POST --get "https://api.bunny.net/purge" \
+              --header "AccessKey: $BUNNY_API_KEY" \
+              --data-urlencode "url=$PUBLIC_BASE/$name" \
+              --data-urlencode "async=false" >/dev/null
+          done
+
+      - name: ACTIVATE - atomically promote SFTP payload to live
+        if: inputs.mode == 'activate' && steps.backend.outputs.backend == 'sftp'
+        shell: bash
+        env:
+          SSHPASS: ${{ secrets.MIRROR_SFTP_PASSWORD }}
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+          ROLLBACK_NAME: ${{ steps.backend.outputs.rollback_name }}
+        run: |
+          set -euo pipefail
+          touch deploy/live-promotion-started
+          python .github/scripts/configpack_release.py make-sftp-batch \
+            --remote-root "$MIRROR_REMOTE_DIR" \
+            --output deploy/sftp-activate-payload.batch \
+            --kind activate-payload \
+            --staging-name "$STAGING_NAME" \
+            --rollback-name "$ROLLBACK_NAME"
+          sshpass -e sftp -q \
+            -oBatchMode=no \
+            -oStrictHostKeyChecking=accept-new \
+            -oConnectTimeout=20 \
+            -P "$MIRROR_SFTP_PORT" \
+            -b deploy/sftp-activate-payload.batch \
+            "$MIRROR_SFTP_USER@$MIRROR_SFTP_SERVER"
+
+      - name: ACTIVATE - verify live payload before markers
+        if: inputs.mode == 'activate'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.backend.outputs.backend }}" = sftp ]; then
+            attempts=30
+            interval=20
+          else
+            attempts=4
+            interval=10
+          fi
+          python .github/scripts/configpack_release.py verify-public \
+            --metadata deploy/validated-configpack.json \
+            --public-base "$PUBLIC_BASE" \
+            --token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-live" \
+            --attempts "$attempts" \
+            --interval "$interval"
+
+      - name: ACTIVATE - activate GitHub fallback with rollback
+        if: inputs.mode == 'activate'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rollback_fallback() {
+            status=$?
+            trap - ERR
+            set +e
+            gh release upload configpack \
+              --repo "$GITHUB_REPOSITORY" \
+              rollback/github/configpack.zip \
+              rollback/github/configpack.zip.sha256 \
+              rollback/github/configpack_version.txt \
+              --clobber
+            exit "$status"
+          }
+          trap rollback_fallback ERR
+          gh release upload configpack \
+            --repo "$GITHUB_REPOSITORY" \
+            deploy/configpack.zip \
+            deploy/configpack.zip.sha256 \
+            --clobber
+          rm -rf deploy/github-check
+          mkdir deploy/github-check
+          gh release download configpack \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "configpack.zip" \
+            --pattern "configpack.zip.sha256" \
+            --dir deploy/github-check
+          python .github/scripts/configpack_release.py validate \
+            --deploy deploy/github-check \
+            --version "$VERSION" \
+            --expected-sha "$EXPECTED_SHA256"
           gh release upload configpack \
             --repo "$GITHUB_REPOSITORY" \
             deploy/configpack_version.txt \
             --clobber
-          rm -rf /tmp/github-marker
-          mkdir /tmp/github-marker
-          gh release download configpack \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern "configpack_version.txt" \
-            --dir /tmp/github-marker
-          REMOTE_VERSION="$(tr -d '\r\n ' </tmp/github-marker/configpack_version.txt)"
-          if [ "$REMOTE_VERSION" != "$VERSION" ]; then
-            echo "::error::GitHub configpack marker did not activate."
-            exit 1
-          fi
+          trap - ERR
 
-      - name: Activate the Bunny marker last
+      - name: ACTIVATE - activate Bunny marker last
+        if: inputs.mode == 'activate' && steps.backend.outputs.backend == 'bunny'
+        shell: bash
         run: |
           set -euo pipefail
-          BASE="https://industrialhorizon.b-cdn.net/stable"
-          STORAGE="$BASE"
-          MARKER_CHECKSUM="$(sha256sum deploy/configpack_version.txt | awk '{print toupper($1)}')"
+          checksum="$(sha256sum deploy/configpack_version.txt | awk '{print toupper($1)}')"
           curl --fail --silent --show-error --retry 4 --retry-all-errors \
-            --request PUT "https://storage.bunnycdn.com/industrial-horizon-downloads/stable/configpack_version.txt" \
+            --request PUT "$STORAGE_ROOT/configpack_version.txt" \
             --header "AccessKey: $BUNNY_STORAGE_ACCESS_KEY" \
-            --header "Checksum: $MARKER_CHECKSUM" \
+            --header "Checksum: $checksum" \
             --header "Content-Type: text/plain" \
             --upload-file deploy/configpack_version.txt
           curl --fail --silent --show-error --retry 4 --retry-all-errors \
             --request POST --get "https://api.bunny.net/purge" \
             --header "AccessKey: $BUNNY_API_KEY" \
-            --data-urlencode "url=$BASE/configpack_version.txt" \
+            --data-urlencode "url=$PUBLIC_BASE/configpack_version.txt" \
             --data-urlencode "async=false" >/dev/null
 
-      - name: Verify the activated public channel
+      - name: ACTIVATE - activate SFTP marker last
+        if: inputs.mode == 'activate' && steps.backend.outputs.backend == 'sftp'
+        shell: bash
+        env:
+          SSHPASS: ${{ secrets.MIRROR_SFTP_PASSWORD }}
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+          ROLLBACK_NAME: ${{ steps.backend.outputs.rollback_name }}
         run: |
           set -euo pipefail
-          BASE="https://industrialhorizon.b-cdn.net/stable"
-          EXPECTED_SHA256="${EXPECTED_SHA256,,}"
-          CACHE_BUSTER="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-final"
-          REMOTE_VERSION="$(curl --fail --silent --show-error --retry 4 \
-            "$BASE/configpack_version.txt?verify=$CACHE_BUSTER" | tr -d '\r\n ')"
-          REMOTE_SIDECAR_SHA="$(curl --fail --silent --show-error --retry 4 \
-            "$BASE/configpack.zip.sha256?verify=$CACHE_BUSTER" | awk '{print tolower($1)}')"
-          curl --fail --location --silent --show-error --retry 4 \
-            "$BASE/configpack.zip?verify=$CACHE_BUSTER" \
-            --output /tmp/configpack-final.zip
-          REMOTE_PAYLOAD_SHA="$(sha256sum /tmp/configpack-final.zip | awk '{print tolower($1)}')"
-          if [ "$REMOTE_VERSION" != "$VERSION" ] || \
-             [ "$REMOTE_SIDECAR_SHA" != "$EXPECTED_SHA256" ] || \
-             [ "$REMOTE_PAYLOAD_SHA" != "$EXPECTED_SHA256" ]; then
-            echo "::error::Activated public configpack channel does not match the requested release."
+          python .github/scripts/configpack_release.py make-sftp-batch \
+            --remote-root "$MIRROR_REMOTE_DIR" \
+            --output deploy/sftp-activate-marker.batch \
+            --kind activate-marker \
+            --staging-name "$STAGING_NAME" \
+            --rollback-name "$ROLLBACK_NAME"
+          sshpass -e sftp -q \
+            -oBatchMode=no \
+            -oStrictHostKeyChecking=accept-new \
+            -oConnectTimeout=20 \
+            -P "$MIRROR_SFTP_PORT" \
+            -b deploy/sftp-activate-marker.batch \
+            "$MIRROR_SFTP_USER@$MIRROR_SFTP_SERVER"
+
+      - name: ACTIVATE - final public and GitHub verification
+        if: inputs.mode == 'activate'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.backend.outputs.backend }}" = sftp ]; then
+            attempts=30
+            interval=20
+          else
+            attempts=5
+            interval=10
+          fi
+          python .github/scripts/configpack_release.py verify-public \
+            --metadata deploy/validated-configpack.json \
+            --public-base "$PUBLIC_BASE" \
+            --token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-final" \
+            --attempts "$attempts" \
+            --interval "$interval" \
+            --expected-marker "$VERSION"
+          rm -rf deploy/github-final
+          mkdir deploy/github-final
+          gh release download configpack \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "configpack.zip" \
+            --pattern "configpack.zip.sha256" \
+            --pattern "configpack_version.txt" \
+            --dir deploy/github-final
+          test "$(tr -d '\r\n ' <deploy/github-final/configpack_version.txt)" = "$VERSION"
+          python .github/scripts/configpack_release.py validate \
+            --deploy deploy/github-final \
+            --version "$VERSION" \
+            --expected-sha "$EXPECTED_SHA256"
+          echo "Configpack v${VERSION} activation is coherent." \
+            >>"$GITHUB_STEP_SUMMARY"
+
+      - name: ACTIVATE - recover previous channels after any failed promotion
+        if: failure() && inputs.mode == 'activate'
+        shell: bash
+        env:
+          SSHPASS: ${{ secrets.MIRROR_SFTP_PASSWORD }}
+          STAGING_NAME: ${{ steps.backend.outputs.staging_name }}
+          ROLLBACK_NAME: ${{ steps.backend.outputs.rollback_name }}
+        run: |
+          set -uo pipefail
+          if [ ! -f deploy/live-promotion-started ]; then
+            echo "Failure happened before live promotion; no recovery write is needed."
+            exit 0
+          fi
+          echo "::warning::Restoring captured pre-activation configpack channels."
+          recovery_failed=0
+          if gh release upload configpack \
+            --repo "$GITHUB_REPOSITORY" \
+            rollback/github/configpack.zip \
+            rollback/github/configpack.zip.sha256 \
+            --clobber; then
+            gh release upload configpack \
+              --repo "$GITHUB_REPOSITORY" \
+              rollback/github/configpack_version.txt \
+              --clobber || recovery_failed=1
+          else
+            recovery_failed=1
+            echo "::error::GitHub fallback payload restore failed; its marker was left unchanged."
+          fi
+          if [ "${{ steps.backend.outputs.backend }}" = bunny ]; then
+            upload_old() {
+              local name="$1"
+              local content_type="$2"
+              local checksum
+              checksum="$(sha256sum "rollback/cdn/$name" | awk '{print toupper($1)}')"
+              curl --fail --silent --show-error --retry 4 --retry-all-errors \
+                --request PUT "$STORAGE_ROOT/$name" \
+                --header "AccessKey: $BUNNY_STORAGE_ACCESS_KEY" \
+                --header "Checksum: $checksum" \
+                --header "Content-Type: $content_type" \
+                --upload-file "rollback/cdn/$name"
+            }
+            bunny_payload_failed=0
+            upload_old configpack.zip application/zip || bunny_payload_failed=1
+            upload_old configpack.zip.sha256 text/plain || bunny_payload_failed=1
+            for name in configpack.zip configpack.zip.sha256; do
+              curl --fail --silent --show-error --retry 4 --retry-all-errors \
+                --request POST --get "https://api.bunny.net/purge" \
+                --header "AccessKey: $BUNNY_API_KEY" \
+                --data-urlencode "url=$PUBLIC_BASE/$name" \
+                --data-urlencode "async=false" >/dev/null || bunny_payload_failed=1
+            done
+            if [ "$bunny_payload_failed" -eq 0 ]; then
+              upload_old configpack_version.txt text/plain || recovery_failed=1
+              curl --fail --silent --show-error --retry 4 --retry-all-errors \
+                --request POST --get "https://api.bunny.net/purge" \
+                --header "AccessKey: $BUNNY_API_KEY" \
+                --data-urlencode "url=$PUBLIC_BASE/configpack_version.txt" \
+                --data-urlencode "async=false" >/dev/null || recovery_failed=1
+            else
+              recovery_failed=1
+              echo "::error::Bunny payload restore failed; its marker was left unchanged."
+            fi
+          else
+            python .github/scripts/configpack_release.py make-sftp-batch \
+              --remote-root "$MIRROR_REMOTE_DIR" \
+              --output deploy/sftp-restore.batch \
+              --kind restore \
+              --staging-name "$STAGING_NAME" \
+              --rollback-name "$ROLLBACK_NAME"
+            sshpass -e sftp -q \
+              -oBatchMode=no \
+              -oStrictHostKeyChecking=accept-new \
+              -oConnectTimeout=20 \
+              -P "$MIRROR_SFTP_PORT" \
+              -b deploy/sftp-restore.batch \
+              "$MIRROR_SFTP_USER@$MIRROR_SFTP_SERVER" || recovery_failed=1
+            echo "::warning::SFTP recovery restored the origin, but stale Bunny edge objects cannot be purged."
+          fi
+          if [ "$recovery_failed" -ne 0 ]; then
+            echo "::error::One or more recovery writes failed; manual channel repair is required."
             exit 1
           fi
-          echo "Public configpack activated: $VERSION / $EXPECTED_SHA256"
