@@ -65,6 +65,10 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends sshpass
+          python -m pip install \
+            --disable-pip-version-check \
+            --no-input \
+            "paramiko==3.5.1"
 
       - name: Download exact public metadata
         shell: bash
@@ -86,15 +90,45 @@ jobs:
               --output "public/$name"
           done
 
+      - name: Discover the coherent active SFTP root
+        id: root
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_modpack="$(
+            tr -d '\r\n ' <public/modpack_version.txt
+          )"
+          expected_configpack="$(
+            tr -d '\r\n ' <public/configpack_version.txt
+          )"
+          if ! [[ "$expected_modpack" =~ ^[0-9]+$ ]] || \
+             ! [[ "$expected_configpack" =~ ^[0-9]+$ ]]; then
+            echo "::error::Public channel markers are invalid."
+            exit 1
+          fi
+          python .github/scripts/sftp_discover.py \
+            --preferred-root "$MIRROR_REMOTE_DIR" \
+            --expected-modpack "$expected_modpack" \
+            --expected-configpack "$expected_configpack" \
+            --output discovered-root.txt
+          discovered_root="$(tr -d '\r\n' <discovered-root.txt)"
+          echo "root=$discovered_root" >>"$GITHUB_OUTPUT"
+          {
+            echo "### SFTP root discovery"
+            echo
+            echo "Coherent active root: \`$discovered_root\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+
       - name: Download origin metadata without modifying it
         shell: bash
         env:
           SSHPASS: ${{ secrets.MIRROR_SFTP_PASSWORD }}
+          DISCOVERED_REMOTE_DIR: ${{ steps.root.outputs.root }}
         run: |
           set -euo pipefail
           python .github/scripts/modpack_release.py prepare-sftp-preflight \
             --public-manifest public/manifest.json \
-            --remote-root "$MIRROR_REMOTE_DIR" \
+            --remote-root "$DISCOVERED_REMOTE_DIR" \
             --output origin-readonly.batch
           sshpass -e sftp -q \
             -oBatchMode=no \
