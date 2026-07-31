@@ -689,7 +689,14 @@ def validate_remote_root(value: str) -> str:
 def sftp_quote(value: str) -> str:
     if '"' in value or "\r" in value or "\n" in value:
         fail("cannot safely quote SFTP path")
-    return f'"{value}"'
+    # OpenSSH sftp still applies glob(3) matching to quoted pathnames.
+    # Quotes protect whitespace, but glob metacharacters must be escaped
+    # separately or a literal basename such as "[Neoforge ...].jar" is
+    # interpreted as a character-class pattern and is not uploaded.
+    escaped = "".join(
+        "\\" + char if char in "\\*?[]" else char for char in value
+    )
+    return f'"{escaped}"'
 
 
 def make_sftp_batch(
