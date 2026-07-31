@@ -8,6 +8,31 @@ import launcher
 
 
 class ManifestUrlReleaseTests(unittest.TestCase):
+    def test_release_uses_the_synchronised_server_channels(self):
+        self.assertEqual(
+            launcher.CONFIG["MODPACK_VERSION_URL"],
+            "https://industrialhorizon.dynmap.xyz/modpack_version.txt",
+        )
+        self.assertEqual(
+            launcher.CONFIG["CONFIGPACK_VERSION_URL"],
+            "https://industrialhorizon.dynmap.xyz/configpack_version.txt",
+        )
+        self.assertEqual(
+            launcher.CONFIG["MODPACK_MIRROR_URL"],
+            "http://95.216.30.64:25980/modpack.zip",
+        )
+        self.assertEqual(
+            launcher.CONFIG["CONFIGPACK_MIRROR_URL"],
+            "http://95.216.30.64:25980/configpack.zip",
+        )
+        for key in (
+            "MODPACK_VERSION_URL",
+            "CONFIGPACK_VERSION_URL",
+            "MODPACK_MIRROR_URL",
+            "CONFIGPACK_MIRROR_URL",
+        ):
+            self.assertNotIn("industrialhorizon.b-cdn.net", launcher.CONFIG[key])
+
     @staticmethod
     def _manifest(first_url=...):
         payloads = {
@@ -137,7 +162,8 @@ class ManifestUrlReleaseTests(unittest.TestCase):
                 )
 
             expected_url = (
-                "https://industrialhorizon.b-cdn.net/stable/"
+                launcher.CONFIG["MODPACK_MIRROR_URL"].rsplit("/", 1)[0]
+                + "/"
                 + custom_url
             )
             self.assertTrue(applied)
@@ -145,7 +171,10 @@ class ManifestUrlReleaseTests(unittest.TestCase):
                 urlopen.call_args.args[0].full_url,
                 expected_url,
             )
-            self.assertEqual(downloaded, [[expected_url]])
+            self.assertEqual(
+                downloaded,
+                [launcher._mirror_url_variants(expected_url)],
+            )
             self.assertEqual(
                 (mods / target_name).read_bytes(),
                 target_payload,

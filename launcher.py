@@ -267,10 +267,10 @@ CONFIG = {
     # ссылкой на скачивание), собственный сервер и т.д.
     "MODPACK_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/modpack.zip",
 
-    # Основной источник сборки — Bunny CDN: он поддерживает быструю раздачу и
-    # докачку Range. download_with_mirror() пробует этот адрес ПЕРВЫМ, а
-    # MODPACK_URL на GitHub остаётся независимым запасным источником.
-    "MODPACK_MIRROR_URL": "https://industrialhorizon.b-cdn.net/stable/modpack.zip",
+    # Основное зеркало временно обслуживает сам игровой сервер. Bunny CDN
+    # отстал на сборке 16, поэтому его нельзя использовать до синхронизации:
+    # сервер уже требует ProgressiveStages из сборки 17.
+    "MODPACK_MIRROR_URL": "http://95.216.30.64:25980/modpack.zip",
 
     # Версия сборки модов "по умолчанию" — используется, только если ниже
     # НЕ указана MODPACK_VERSION_URL. Если её увеличить, тоже нужно заново
@@ -303,7 +303,7 @@ CONFIG = {
     #
     # Версия на Bunny публикуется ПОСЛЕДНЕЙ, только после архива, SHA и
     # manifest.json. GitHub-маркер остаётся запасным каналом.
-    "MODPACK_VERSION_URL": "https://industrialhorizon.b-cdn.net/stable/modpack_version.txt",
+    "MODPACK_VERSION_URL": "https://industrialhorizon.dynmap.xyz/modpack_version.txt",
     "MODPACK_VERSION_FALLBACK_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/modpack_version.txt",
 
     # ------------------------- ПАК НАСТРОЕК -------------------------
@@ -323,8 +323,9 @@ CONFIG = {
     # Внутри архива должен лежать configpack.json — см. install_configpack().
     "CONFIGPACK_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/configpack/configpack.zip",
 
-    # Bunny CDN пробуется первым, GitHub выше остаётся запасным.
-    "CONFIGPACK_MIRROR_URL": "https://industrialhorizon.b-cdn.net/stable/configpack.zip",
+    # Синхронизированное зеркало сервера пробуется первым, GitHub выше остаётся
+    # запасным. Bunny временно исключён: там всё ещё лежит configpack 58.
+    "CONFIGPACK_MIRROR_URL": "http://95.216.30.64:25980/configpack.zip",
 
     # Запасной источник самого ЛАУНЧЕРА (20.07). Обновление качалось только с
     # GitHub, а он в РФ заблокирован — игроки вроде Dimylechka застревали на
@@ -333,14 +334,14 @@ CONFIG = {
     # CheckpointSetup.exe, а не onefile-файл: onefile распаковывал Python в Temp
     # и падал у игроков с «Failed to load Python DLL python312.dll». Сборка CI
     # кладёт свежий CheckpointSetup.exe на зеркало сама при каждом релизе.
-    "LAUNCHER_EXE_MIRROR_URL": "https://industrialhorizon.b-cdn.net/stable/CheckpointSetup.exe",
+    "LAUNCHER_EXE_MIRROR_URL": "https://industrialhorizon.dynmap.xyz/CheckpointSetup.exe",
 
     # Крошечный текстовый файл с одной строкой — номером последней версии
     # лаунчера (например "1.61.0"). Лежит рядом с Launcher.exe на зеркале.
     # Лаунчер читает его при старте и, если версия там новее текущей, показывает
     # баннер «доступна версия…». Это ОСНОВНОЙ канал обновлений в РФ: работает
     # без GitHub. При релизе: залить Launcher.exe и вписать сюда новый номер.
-    "LAUNCHER_VERSION_MIRROR_URL": "https://industrialhorizon.b-cdn.net/stable/launcher_version.txt",
+    "LAUNCHER_VERSION_MIRROR_URL": "https://industrialhorizon.dynmap.xyz/launcher_version.txt",
 
     # Новости сервера. Лаунчер тянет этот JSON с зеркала и показывает в разделе
     # «Сообщество» → «Новости». Владелец правит файл на зеркале (bluemap/web/
@@ -362,7 +363,7 @@ CONFIG = {
     # обновление меню/квестов выглядит так: перезалить configpack.zip,
     # увеличить число здесь — и всё. Ни пересборки .exe, ни перезаливки
     # сборки модов. Оставьте "" чтобы выключить проверку через интернет.
-    "CONFIGPACK_VERSION_URL": "https://industrialhorizon.b-cdn.net/stable/configpack_version.txt",
+    "CONFIGPACK_VERSION_URL": "https://industrialhorizon.dynmap.xyz/configpack_version.txt",
     "CONFIGPACK_VERSION_FALLBACK_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/configpack/configpack_version.txt",
 
     # Сколько оперативной памяти выделять игре по умолчанию (в мегабайтах).
@@ -402,7 +403,7 @@ CONFIG = {
     # рядом останется вторая копия, которую придётся сносить руками.
     "WINDOW_TITLE": "Industrial Horizon",
 
-    "LAUNCHER_VERSION": "1.66.33",
+    "LAUNCHER_VERSION": "1.66.34",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -414,6 +415,15 @@ CONFIG = {
     "GITHUB_REPO": "nnacivee/checkpoint-launcher",
 
     "LAUNCHER_CHANGELOG": [
+        {
+            "version": "1.66.34",
+            "date": "31 июля 2026",
+            "changes": [
+                "Исправлен вход на сервер: лаунчер больше не получает устаревшую сборку 16 с CDN.",
+                "Клиент автоматически обновляется до сборки 17 и устанавливает ProgressiveStages 3.0.2.",
+                "Пак настроек переключён на синхронизированную версию 59.",
+            ],
+        },
         {
             "version": "1.66.33",
             "date": "29 июля 2026",
