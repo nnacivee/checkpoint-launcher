@@ -20,14 +20,14 @@
 #endif
 
 #define MyAppInternalName "Checkpoint"
-#define MyAppDisplayName "Industrial Horizon"
+#define MyAppDisplayName "GloryCraft"
 #define MyAppExeName "Launcher.exe"
 
 [Setup]
 AppId={{8E4B1F2A-6C3D-4A7E-9B15-2D8F0A3C7E51}
 AppName={#MyAppDisplayName}
 AppVersion={#MyAppVersion}
-AppPublisher=Industrial Horizon
+AppPublisher=GloryCraft
 ; Метаданные САМОГО установщика (CheckpointSetup.exe). Без них у файла пустые
 ; свойства (издатель/описание/версия) — а для неподписанного .exe это один из
 ; поводов для McAfee/Defender считать его подозрительным. Заполняем, чтобы
@@ -35,12 +35,12 @@ AppPublisher=Industrial Horizon
 ; смена завела бы вторую копию установки и сломала обновление поверх. AppName
 ; теперь является только видимой маркой Industrial Horizon.
 VersionInfoVersion={#MyAppVersion}
-VersionInfoCompany=Industrial Horizon
-VersionInfoDescription=Industrial Horizon Launcher Setup
-VersionInfoProductName=Industrial Horizon Launcher
+VersionInfoCompany=GloryCraft
+VersionInfoDescription=GloryCraft Launcher Setup
+VersionInfoProductName=GloryCraft Launcher
 VersionInfoProductVersion={#MyAppVersion}
 VersionInfoOriginalFileName=CheckpointSetup.exe
-VersionInfoCopyright=(c) Industrial Horizon
+VersionInfoCopyright=(c) GloryCraft
 DefaultDirName={localappdata}\{#MyAppInternalName}
 DefaultGroupName={#MyAppDisplayName}
 DisableProgramGroupPage=yes
@@ -75,6 +75,11 @@ Type: filesandordirs; Name: "{app}\_internal"
 Type: files; Name: "{userdesktop}\Checkpoint.lnk"
 Type: files; Name: "{userprograms}\Checkpoint\Checkpoint.lnk"
 Type: files; Name: "{userprograms}\Checkpoint\Удалить Checkpoint.lnk"
+; Смена марки: старые ярлыки Industrial Horizon убираем, иначе у игрока
+; на рабочем столе останутся два значка на один и тот же лаунчер.
+Type: files; Name: "{userdesktop}\Industrial Horizon.lnk"
+Type: files; Name: "{userprograms}\Industrial Horizon\Industrial Horizon.lnk"
+Type: files; Name: "{userprograms}\Industrial Horizon\Удалить Industrial Horizon.lnk"
 
 [Icons]
 Name: "{userdesktop}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"

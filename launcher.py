@@ -235,17 +235,17 @@ class _NBTWriter:
 CONFIG = {
     # Техническое имя уже установленной сборки. Не переименовывать: от него
     # зависят существующие папки и настройки игроков.
-    "PACK_NAME": "Checkpoint",
+    "PACK_NAME": "Monifactory",
 
     # Видимое название модпака и сервера. Его можно менять без создания у
     # игроков второй пустой установки.
-    "DISPLAY_NAME": "Industrial Horizon",
+    "DISPLAY_NAME": "GloryCraft",
 
     # Версия Minecraft, под которую собраны моды
-    "MC_VERSION": "1.21.1",
+    "MC_VERSION": "1.20.1",
 
     # Загрузчик модов. Один из: "neoforge", "forge", "fabric", "quilt"
-    "MOD_LOADER": "neoforge",
+    "MOD_LOADER": "forge",
 
     # Версия загрузчика модов (NeoForge/Forge/Fabric/Quilt). Можно оставить
     # "" — тогда возьмётся последняя доступная для указанной MC_VERSION.
@@ -258,19 +258,30 @@ CONFIG = {
     # поэтому у всех игроков загрузчик сам переустановится на эту версию при
     # следующем запуске — вручную ничего делать не надо. Менять версию — только
     # сознательно и синхронно с ядром сервера в панели.
-    "LOADER_VERSION": "21.1.241",
+    "LOADER_VERSION": "47.4.13",
 
     # Прямая ссылка на zip-архив с вашей сборкой модов.
     # Внутри архива должны лежать папки mods/, config/, resourcepacks/ и т.п.
     # (то есть содержимое, которое нужно положить прямо в папку .minecraft
     # экземпляра). Заливать можно на GitHub Releases, Яндекс.Диск (с прямой
     # ссылкой на скачивание), собственный сервер и т.д.
-    "MODPACK_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/modpack.zip",
+    "MODPACK_URL": "https://industrialhorizon.b-cdn.net/moni/modpack.zip",
 
-    # Основное зеркало временно обслуживает сам игровой сервер. Bunny CDN
-    # отстал на сборке 16, поэтому его нельзя использовать до синхронизации:
-    # сервер уже требует ProgressiveStages из сборки 17.
-    "MODPACK_MIRROR_URL": "http://95.216.30.64:25980/modpack.zip",
+    # Основной источник сборки — Bunny CDN: он поддерживает быструю раздачу и
+    # докачку Range. download_with_mirror() пробует этот адрес ПЕРВЫМ, а
+    # MODPACK_URL на GitHub остаётся независимым запасным источником.
+    "MODPACK_MIRROR_URL": "https://industrialhorizon.b-cdn.net/moni/modpack.zip",
+    # Независимый запасной канал для игроков, у которых Bunny CDN не открывается.
+    # Ссылка drive.usercontent отдаёт файл напрямую, без страницы предпросмотра.
+    "MODPACK_FALLBACK_URLS": [
+        "https://drive.usercontent.google.com/download?id=1Zmm7bEcmQNxxzH6SeVbWE1FZ7pBssFXS&export=download&confirm=t",
+    ],
+    "MODPACK_MIRROR_RETRIES": 2,
+    "MODPACK_MANIFEST_FALLBACK_URL":
+        "https://drive.usercontent.google.com/download?id=1fvFY0rTagmo3SXw1JwzonTM7akgOYo2M&export=download&confirm=t",
+    "MODPACK_SHA256_FALLBACK_URLS": [
+        "https://drive.usercontent.google.com/download?id=1CO3cExY4AkodB_BbxIwmx1RrU6H6XSvZ&export=download&confirm=t",
+    ],
 
     # Версия сборки модов "по умолчанию" — используется, только если ниже
     # НЕ указана MODPACK_VERSION_URL. Если её увеличить, тоже нужно заново
@@ -279,7 +290,7 @@ CONFIG = {
     # Это число теперь запасное: MODPACK_VERSION_URL ниже заполнена, и версия
     # берётся из неё. Сюда лаунчер откатится, только если интернета нет —
     # и тогда он ничего переустанавливать не станет, что и правильно.
-    "MODPACK_VERSION": 17,
+    "MODPACK_VERSION": 1,
 
     # ВНИМАНИЕ: список REMOVED_MODS живёт НИЖЕ, в разделе «УДАЛЕНИЕ МОДОВ У
     # ИГРОКОВ» (ищи "REMOVED_MODS"). Здесь его больше НЕТ намеренно: до
@@ -303,8 +314,9 @@ CONFIG = {
     #
     # Версия на Bunny публикуется ПОСЛЕДНЕЙ, только после архива, SHA и
     # manifest.json. GitHub-маркер остаётся запасным каналом.
-    "MODPACK_VERSION_URL": "https://industrialhorizon.dynmap.xyz/modpack_version.txt",
-    "MODPACK_VERSION_FALLBACK_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/modpack_version.txt",
+    "MODPACK_VERSION_URL": "https://industrialhorizon.b-cdn.net/moni/modpack_version.txt",
+    "MODPACK_VERSION_FALLBACK_URL":
+        "https://drive.usercontent.google.com/download?id=1t-epJZ4EmhQHjUN9lCcYlpqExchiuz1m&export=download&confirm=t",
 
     # ------------------------- ПАК НАСТРОЕК -------------------------
     # Маленький архив (единицы мегабайт) с тем, что делает сборку «нашей»:
@@ -321,11 +333,10 @@ CONFIG = {
     #
     # Пак настроек ставится ПОСЛЕ modpack.zip и переживает его переустановку.
     # Внутри архива должен лежать configpack.json — см. install_configpack().
-    "CONFIGPACK_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/configpack/configpack.zip",
+    "CONFIGPACK_URL": "",
 
-    # Синхронизированное зеркало сервера пробуется первым, GitHub выше остаётся
-    # запасным. Bunny временно исключён: там всё ещё лежит configpack 58.
-    "CONFIGPACK_MIRROR_URL": "http://95.216.30.64:25980/configpack.zip",
+    # Bunny CDN пробуется первым, GitHub выше остаётся запасным.
+    "CONFIGPACK_MIRROR_URL": "",
 
     # Запасной источник самого ЛАУНЧЕРА (20.07). Обновление качалось только с
     # GitHub, а он в РФ заблокирован — игроки вроде Dimylechka застревали на
@@ -334,14 +345,14 @@ CONFIG = {
     # CheckpointSetup.exe, а не onefile-файл: onefile распаковывал Python в Temp
     # и падал у игроков с «Failed to load Python DLL python312.dll». Сборка CI
     # кладёт свежий CheckpointSetup.exe на зеркало сама при каждом релизе.
-    "LAUNCHER_EXE_MIRROR_URL": "https://industrialhorizon.dynmap.xyz/CheckpointSetup.exe",
+    "LAUNCHER_EXE_MIRROR_URL": "https://industrialhorizon.b-cdn.net/moni/CheckpointSetup.exe",
 
     # Крошечный текстовый файл с одной строкой — номером последней версии
     # лаунчера (например "1.61.0"). Лежит рядом с Launcher.exe на зеркале.
     # Лаунчер читает его при старте и, если версия там новее текущей, показывает
     # баннер «доступна версия…». Это ОСНОВНОЙ канал обновлений в РФ: работает
     # без GitHub. При релизе: залить Launcher.exe и вписать сюда новый номер.
-    "LAUNCHER_VERSION_MIRROR_URL": "https://industrialhorizon.dynmap.xyz/launcher_version.txt",
+    "LAUNCHER_VERSION_MIRROR_URL": "https://industrialhorizon.b-cdn.net/moni/launcher_version.txt",
 
     # Новости сервера. Лаунчер тянет этот JSON с зеркала и показывает в разделе
     # «Сообщество» → «Новости». Владелец правит файл на зеркале (bluemap/web/
@@ -350,26 +361,26 @@ CONFIG = {
     #   "category":"server","points":[["Заголовок","Описание"]]}, ...]}.
     # category: launcher | client | content | server; points необязателен.
     # Оставьте "", чтобы убрать пункт «Новости».
-    "NEWS_URL": "https://industrialhorizon.dynmap.xyz/news.json",
+    "NEWS_URL": "",
 
     # Версия пака настроек «по умолчанию» — используется, только если ниже
     # не указана CONFIGPACK_VERSION_URL или её не удалось скачать.
     # Запасное значение для нового чистого клиента, если все маленькие
     # version-файлы временно недоступны. Должно совпадать с подготовленным
     # локальным релизом; опубликованный Bunny-маркер всё равно главный.
-    "CONFIGPACK_VERSION": 57,
+    "CONFIGPACK_VERSION": 0,
 
     # Текстовый файл с одним числом — версией пака настроек. Пока он указан,
     # обновление меню/квестов выглядит так: перезалить configpack.zip,
     # увеличить число здесь — и всё. Ни пересборки .exe, ни перезаливки
     # сборки модов. Оставьте "" чтобы выключить проверку через интернет.
-    "CONFIGPACK_VERSION_URL": "https://industrialhorizon.dynmap.xyz/configpack_version.txt",
-    "CONFIGPACK_VERSION_FALLBACK_URL": "https://github.com/nnacivee/checkpoint-launcher/releases/download/configpack/configpack_version.txt",
+    "CONFIGPACK_VERSION_URL": "",
+    "CONFIGPACK_VERSION_FALLBACK_URL": "",
 
     # Сколько оперативной памяти выделять игре по умолчанию (в мегабайтах).
     # Игрок сможет изменить это значение ползунком в самом лаунчере —
     # выбор запоминается и в следующий раз подставляется автоматически.
-    "MEMORY_MB": 4096,
+    "MEMORY_MB": 6144,
 
     # Минимум и максимум для ползунка ОЗУ (в мегабайтах). Верхняя граница
     # всё равно не может превысить объём ОЗУ, реально установленной на
@@ -389,7 +400,7 @@ CONFIG = {
 
     # Веб-карта мира (BlueMap крутится прямо на сервере, отдельный порт).
     # Оставьте "", чтобы убрать пункт «Карта мира» из категории «Сообщество».
-    "MAP_URL": "http://95.216.30.64:25980",
+    "MAP_URL": "",
 
     # ------------------------- ВЕРСИЯ ЛАУНЧЕРА -------------------------
     # Показывается мелким текстом внизу окна лаунчера, а по клику
@@ -401,9 +412,9 @@ CONFIG = {
     # Заголовок окна. Внутренние имена (папка установки, CheckpointSetup.exe)
     # намеренно остались Checkpoint: переименуешь — у всех, кто уже поставил,
     # рядом останется вторая копия, которую придётся сносить руками.
-    "WINDOW_TITLE": "Industrial Horizon",
+    "WINDOW_TITLE": "GloryCraft",
 
-    "LAUNCHER_VERSION": "1.66.34",
+    "LAUNCHER_VERSION": "2.0.11",
 
     # ------------------- АВТОПРОВЕРКА ОБНОВЛЕНИЙ ЛАУНЧЕРА -------------------
     # Если заполнить это (после того как заведёте GitHub-репозиторий с
@@ -416,12 +427,154 @@ CONFIG = {
 
     "LAUNCHER_CHANGELOG": [
         {
-            "version": "1.66.34",
-            "date": "31 июля 2026",
+            "version": "2.0.11",
+            "date": "6 августа 2026",
             "changes": [
-                "Исправлен вход на сервер: лаунчер больше не получает устаревшую сборку 16 с CDN.",
-                "Клиент автоматически обновляется до сборки 17 и устанавливает ProgressiveStages 3.0.2.",
-                "Пак настроек переключён на синхронизированную версию 59.",
+                "Сборка теперь называется GloryCraft — новое имя и новая "
+                "заставка в окне лаунчера. Папка с игрой и уже установленные "
+                "файлы остались на месте, скачивать заново ничего не нужно.",
+                "Этап «Оформление игры» больше не тянется часами. Ресурсы "
+                "игры — а их около 3600, и почти все крошечные — теперь "
+                "качаются в 16 потоков, а не по одному. Раньше время уходило "
+                "не на передачу, а на ожидание ответа по каждому файлу, "
+                "поэтому на канале с большой задержкой этап растягивался "
+                "на час с лишним при объёме меньше гигабайта.",
+                "Увеличен таймаут рукопожатия с сервером с 40 до 180 секунд. "
+                "При входе сервер присылает реестры всех модов сборки, и на "
+                "медленном канале они не успевали доехать — игрок видел "
+                "«Timed out» вместо захода в игру.",
+            ],
+        },
+        {
+            "version": "2.0.10",
+            "date": "3 августа 2026",
+            "changes": [
+                "Исправлен приоритет ресурспаков: IH Faithful 32x-дополнение "
+                "всегда остаётся выше GregTech Revival 32x, даже если Revival "
+                "был вручную выключен и затем снова включён в Minecraft.",
+                "Пользовательские ресурспаки и ручное отключение управляемых "
+                "паков сохраняются; лаунчер меняет только взаимный порядок уже "
+                "включённых управляемых слоёв.",
+            ],
+        },
+        {
+            "version": "2.0.9",
+            "date": "3 августа 2026",
+            "changes": [
+                "Доработан IH Faithful 32x: слитки больше не выглядят разорванными, олово снова светлое, а 12 похожих микросхем получили читаемые формы и цветовые различия.",
+                "Исправлены русские названия брони NanoMuscle, генератора кристального резонанса и улучшенных сундуков и бочек.",
+                "Ускорена крафтовая станция при серийном крафте без отключения автоподхвата ингредиентов из соседних хранилищ.",
+                "Добавлен Keyset и аккуратный профиль управления: вредные дубли убраны, старые назначения очищаются один раз, а ручные настройки игрока после этого сохраняются.",
+            ],
+        },
+        {
+            "version": "2.0.8",
+            "date": "3 августа 2026",
+            "changes": [
+                "GregTech Revival 32x снова стал основным визуальным слоем GTCEu: "
+                "сохранён его узнаваемый 32x-стиль руд, материалов и механизмов.",
+                "IH Faithful 32x-дополнение теперь работает как небольшой слой поверх Revival: "
+                "он разводит только легко спутываемые материалы и доводит оставшиеся 16x-текстуры до 32x.",
+                "Revival один раз автоматически включится и займёт правильное место в стеке; "
+                "после этой миграции лаунчер снова сохраняет ручной выбор игрока.",
+            ],
+        },
+        {
+            "version": "2.0.7",
+            "date": "3 августа 2026",
+            "changes": [
+                "Добавлено локальное IH Faithful 32x-дополнение: лаунчер собирает "
+                "его из точных версий установленных модов и обновляет только при "
+                "изменении исходных файлов.",
+                "Встроены проверенные 32x-текстуры Faithful для Thermal и "
+                "GTCEuM-индикаторы Monifactory вместе с моделями, авторами и "
+                "лицензиями.",
+                "GregTech Revival 32x теперь выключен по умолчанию: локальное "
+                "IH Faithful-дополнение покрывает GTCEu, сохраняя исходный стиль "
+                "руд, материалов и механизмов.",
+                "GTCEu-текстуры теперь получают собственную обратимую 32x-детализацию "
+                "по типу материала: исходные силуэты и цвета слитков, пластин, руд и "
+                "деталей остаются различимыми без однообразного стиля Revival.",
+                "Для 11 наиболее похожих материалов добавлены отдельные Faithful-формы "
+                "и фактуры слитков, пластин и пыли: цвет, игровые ID, рецепты и "
+                "совместимость с сервером не меняются.",
+                "Исправлена некорректная 16x17-текстура выхода предметов GTCEu, из-за "
+                "которой Minecraft отклонял её 32x-версию при загрузке ресурсов.",
+                "Исправлены 16 иконок Ender IO, которые старый Backport уменьшал "
+                "до 16x; пользовательские ресурспаки и ручное отключение аддона "
+                "по-прежнему имеют приоритет.",
+            ],
+        },
+        {
+            "version": "2.0.6",
+            "date": "3 августа 2026",
+            "changes": [
+                "Faithful 32x обновлён до June 2026 и включается вместе с "
+                "проверенными 32x-дополнениями для GregTech и Applied "
+                "Energistics 2.",
+                "Добавлен официальный патч Faithful для Fresh Animations: "
+                "мобы сохраняют плавные анимации и единый 32x-стиль.",
+                "Лаунчер проверяет размер и контрольные суммы каждого пака, "
+                "безопасно заменяет устаревшие файлы и один раз выставляет "
+                "правильный приоритет, не перекрывая пользовательские паки.",
+            ],
+        },
+        {
+            "version": "2.0.5",
+            "date": "2 августа 2026",
+            "changes": [
+                "Добавлено независимое зеркало Google Диска: если Bunny CDN "
+                "недоступен у провайдера, версия, манифест и полный архив "
+                "сборки автоматически скачиваются с резервного источника.",
+                "Исправлена непонятная ошибка о несинхронизированном манифесте: "
+                "лаунчер теперь пишет, когда не удалось связаться ни с одним "
+                "источником.",
+            ],
+        },
+        {
+            "version": "2.0.4",
+            "date": "1 августа 2026",
+            "changes": [
+                "Во время установки теперь видно, что именно происходит: "
+                "сколько файлов скачано из скольких, сколько мегабайт и с "
+                "какой скоростью. Раньше на медленном интернете подпись не "
+                "менялась часами и всё выглядело зависшим.",
+                "В шапке окна название сборки, а не старое «Industrial "
+                "Horizon».",
+            ],
+        },
+        {
+            "version": "2.0.3",
+            "date": "1 августа 2026",
+            "changes": [
+                "Исправлен вылет при установке верстака: мод Visual Workbench "
+                "не дружит с библиотекой Puzzles Lib и убран из сборки.",
+                "Добавлен Dynamic Lights: факел или другой светящийся предмет "
+                "в руке, а также горящие стрелы теперь освещают всё вокруг.",
+                "Из награды за первое задание убраны торты-телепорты.",
+            ],
+        },
+        {
+            "version": "2.0.1",
+            "date": "1 августа 2026",
+            "changes": [
+                "Исправлен вылет при запуске: лаунчер удалял из сборки мод "
+                "Embeddium, оставшийся в коде со старой сборки. В Monifactory "
+                "это штатный движок отрисовки, без него игра не стартовала.",
+            ],
+        },
+        {
+            "version": "2.0.0",
+            "date": "1 августа 2026",
+            "changes": [
+                "Новая сборка: Monifactory на Minecraft 1.20.1 и Forge 47.4.13 "
+                "вместо Industrial Horizon на 1.21.1. Ставится в отдельную папку, "
+                "старая установка остаётся нетронутой.",
+                "Сборка приезжает одним архивом: 247 модов, конфиги, скрипты, "
+                "ресурс-паки, шейдеры и готовые настройки игры. Лаунчер больше "
+                "ничего не докачивает отдельно.",
+                "Русский перевод модов включён сразу, отдельно включать не нужно.",
+                "Память по умолчанию поднята до 6 ГБ — столько нужно GregTech.",
             ],
         },
         {
@@ -2138,7 +2291,7 @@ CONFIG = {
     # игрок добавил сам, никак не затрагиваются. Оставьте "ip": "" чтобы
     # выключить эту функцию.
     "PINNED_SERVER": {
-        "name": "Industrial Horizon",
+        "name": "GloryCraft",
         "ip": "95.216.30.64:25760",
     },
 
@@ -2186,7 +2339,7 @@ CONFIG = {
     # Отдельные разрешённые к распространению моды идут с Bunny. Старое
     # HTTP-зеркало BlueMap не сообщало размер и ломало Range: обрезанный JAR
     # мог закрепиться в кэше и ронять игру.
-    "MOD_MIRROR_BASE": "https://industrialhorizon.b-cdn.net/stable/mods/",
+    "MOD_MIRROR_BASE": "",
 
     # ------------------- ДОП. КЛИЕНТСКИЕ МОДЫ (АВТО-СКАЧИВАНИЕ) -------------
     # Качественные ЧИСТО КЛИЕНТСКИЕ моды, которые лаунчер сам скачивает с
@@ -2203,593 +2356,23 @@ CONFIG = {
     # physically included or shipped within the pack's files». Пункт 5.1 при
     # этом прямо разрешает то, что делает лаунчер — скачивать мод за игрока с
     # официального Modrinth. Поэтому их не должно быть в modpack.zip.
-    "EXTRA_CLIENT_MODS": [
-        # ВСЕ моды идут прямыми ссылками (19.07): slug-поиск делал два
-        # запроса к api.modrinth.com на каждый мод, и установка заметно
-        # тормозила (жалоба владельца). Версии прибиты; при обновлении
-        # мода менять url и filename руками. slug остаётся ключом кэша —
-        # без нужды не менять, иначе мод перекачается у всех.
-        {"slug": "sound-physics-remastered",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/qyVF9oeo/versions/Dd2tmpsk/sound-physics-remastered-neoforge-1.21.1-1.5.1.jar",
-         "filename": "sound-physics-remastered-neoforge-1.21.1-1.5.1.jar", "label": "Sound Physics Remastered (реалистичное эхо)"},
-        {"slug": "dynamic-fps",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/LQ3K71Q1/versions/T238FZpQ/dynamic-fps-3.11.4%2Bminecraft-1.21.0-neoforge.jar",
-         "filename": "dynamic-fps-3.11.4+minecraft-1.21.0-neoforge.jar", "label": "Dynamic FPS (экономия ресурсов в фоне)"},
-        # Небольшая голова игрока перед его сообщением в чате. Вернули по
-        # решению владельца 27.07. Версия 0.15.3 совместима с Modern UI;
-        # мод полностью клиентский.
-        {"slug": "chat-heads",
-         "mirror": True,
-         "required": False,
-         "url": "https://cdn.modrinth.com/data/Wb5oqrBJ/versions/BBw4KFaY/chat_heads-0.15.3-neoforge-1.21.jar",
-         "filename": "chat_heads-0.15.3-neoforge-1.21.jar",
-         "sha256": "1AA41AA6D8E28D66D9379CCC02197AA540B607D1A7DDEAD3F1CCB72E57118BEB",
-         "replaces": ["chat_heads-0.15.2-neoforge-1.21.jar"],
-         "label": "Chat Heads (головы игроков рядом с сообщениями)"},
-        # Тройка анимаций (решение владельца 18.07). Все — client-only,
-        # сервер о них не знает. EMF+ETF — «движки», без которых ресурспак
-        # Fresh Animations (кнопка в «Текстурах») просто не применяется.
-        {"slug": "entity-model-features",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/4I1XuqiY/versions/PAYgk63v/entity_model_features-3.2.4-1.21-neoforge.jar",
-         "filename": "entity_model_features-3.2.4-1.21-neoforge.jar", "label": "Entity Model Features (движок моделей мобов)"},
-        {"slug": "entitytexturefeatures",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/BVzZfTc1/versions/YEMROAHv/entity_texture_features_1.21-neoforge-7.1.jar",
-         "filename": "entity_texture_features_1.21-neoforge-7.1.jar", "label": "Entity Texture Features (движок текстур мобов)"},
-        {"slug": "not-enough-animations",
-         "url": "https://cdn.modrinth.com/data/MPCX6s5C/versions/eYNogep3/notenoughanimations-neoforge-1.12.4-mc1.21.1.jar",
-         "filename": "notenoughanimations-neoforge-1.12.4-mc1.21.1.jar", "label": "Not Enough Animations (анимации игроков)"},
-        # Плавные анимации действий от первого лица: рубка, копание и
-        # использование инструментов. Оба мода client-only; Vintage
-        # Animations использует Player Animator как библиотеку.
-        {"slug": "playeranimator-2-0-4",
-         "mirror": True,
-         "required": False,
-         "atomic_group": "vintage-animations",
-         "url": "https://cdn.modrinth.com/data/gedNE4y2/versions/HJZB6bmA/player-animation-lib-forge-2.0.4%2B1.21.1.jar",
-         "filename": "player-animation-lib-forge-2.0.4+1.21.1.jar",
-         "sha256": "DBE5DE45F5CD60C0E5E47AF14E6D564534A98456E973CF670CB881F6938EEE92",
-         "label": "Player Animator (движок анимаций игрока)"},
-        {"slug": "vintage-animations-1-4-0",
-         # GPLv3-файл берём напрямую с официального Modrinth; на своё CDN
-         # без полного комплекта исходников его не перезаливаем.
-         "mirror": False,
-         "required": False,
-         "atomic_group": "vintage-animations",
-         "url": "https://cdn.modrinth.com/data/yY9ix3J0/versions/mWrDw9oM/vintage_animations-neoforge-1.4.0.jar",
-         "filename": "vintage_animations-neoforge-1.4.0.jar",
-         "sha256": "8C574E7EFFAC9DC89F7F11891372F6C3526DA9C31B89020A64078897FB89A490",
-         "label": "Vintage Animations (анимации рубки и копания)"},
-        # Компактные вкладки категорий над списком предметов EMI. Ставится
-        # только когда игрок оставил включённым сам EMI: без него дополнение
-        # не нужно и автоматически убирается при следующем запуске.
-        {"slug": "emi-tabs-1-0-0",
-         "mirror": True,
-         "required": False,
-         "enabled_with_optional_mod": "emi",
-         "url": "https://cdn.modrinth.com/data/Rz9g2Db4/versions/q44wR6Jf/EmiTabs-neoforge-1.0.0%2B1.21.1.jar",
-         "filename": "EmiTabs-neoforge-1.0.0+1.21.1.jar",
-         "sha256": "2E5B1C35F7E345BD1620AFA645C570743D295C1F49292E38AFF33C177EA901DA",
-         "label": "EMI Tabs (вкладки категорий предметов)"},
-        # GraveStone УБРАН отсюда (21.07, 1.64.10). Могилы сняты с СЕРВЕРА по
-        # решению владельца, а мод регистрирует сетевой канал
-        # (gravestone:open_obituary) — клиент с ним, сервер без него = кик
-        # «Этот канал отсутствует на стороне сервера, но необходим на
-        # клиенте!». Раз мода нет на сервере, его нельзя ставить и игрокам.
-        # Файл дополнительно вычищается через REMOVED_MODS: он мог приехать
-        # и с modpack.zip, не только отсюда. Если могилы когда-нибудь вернутся
-        # НА СЕРВЕР — верни запись (история в git, версия до 1.64.10) и убери
-        # "gravestone-neoforge" из REMOVED_MODS.
-        # Тишина в углу (просьба владельца 19.07): убрать спам «Открыты новые
-        # рецепты!» при каждом входе на сервер — KubeJS-скрипты сборки
-        # перерегистрируют рецепты, и ванилла честно вопит тостами. Оба мода
-        # MIT, client-only, прямые ссылки на CDN Modrinth. Конфиг пишет
-        # install_toast_config(): рецепты и обучение глушим, достижения
-        # оставляем (по умолчанию мод глушил бы и их).
-        {"slug": "placebo",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/tCkE8p2N/versions/1Ypo4tf4/Placebo-1.21.1-9.9.2.jar",
-         "filename": "Placebo-1.21.1-9.9.2.jar",
-         "replaces": ["Placebo-1.21.1-9.9.1.jar"],
-         "label": "Placebo (библиотека для Toast Control)"},
-        {"slug": "toast-control",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/CnOG2wlS/versions/jXHDAUrd/ToastControl-1.21.1-9.0.1.jar",
-         "filename": "ToastControl-1.21.1-9.0.1.jar",
-         "label": "Toast Control (без спама всплывашек рецептов)"},
-        # Поддержка геймпада и сенсора (просьба владельца): играть
-        # контроллером/пальцами вместо клавиатуры-мыши. Client-only,
-        # сервер о нём не знает. GPL, прямая ссылка на CDN Modrinth,
-        # версия под NeoForge 1.21.1 прибита; настраивается в игре.
-        {"slug": "midnightcontrols",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/bXX9h73M/versions/oz41N6Dp/midnightcontrols-neoforge-1.10.0.1.jar",
-         "filename": "midnightcontrols-neoforge-1.10.0.1.jar",
-         "label": "MidnightControls (геймпад и сенсорное управление)"},
-        # Пакет «Атмосфера» (пункт 49): чисто клиентское.
-        {"slug": "creativecore",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/OsZiaDHq/versions/nLLornod/CreativeCore_NEOFORGE_v2.13.41_mc1.21.1.jar",
-         "filename": "CreativeCore_NEOFORGE_v2.13.41_mc1.21.1.jar", "label": "CreativeCore (библиотека для AmbientSounds)"},
-        {"slug": "ambientsounds",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/fM515JnW/versions/RZyxhsqY/AmbientSounds_NEOFORGE_v6.3.8_mc1.21.1.jar",
-         "filename": "AmbientSounds_NEOFORGE_v6.3.8_mc1.21.1.jar", "label": "AmbientSounds (звуки природы: птицы, ветер, пещеры)"},
-        {"slug": "3dskinlayers",
-         "url": "https://cdn.modrinth.com/data/zV5r3pPn/versions/xPYbAPfz/skinlayers3d-neoforge-1.11.2-mc1.21.1.jar",
-         "filename": "skinlayers3d-neoforge-1.11.2-mc1.21.1.jar", "label": "3D Skin Layers (объёмные слои скина)"},
-        {"slug": "searchables",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/fuuu3xnx/versions/iEE85X0w/Searchables-neoforge-1.21.1-1.0.2.jar",
-         "filename": "Searchables-neoforge-1.21.1-1.0.2.jar", "label": "Searchables (библиотека для Controlling)"},
-        {"slug": "controlling",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/xv94TkTM/versions/FaNppCJJ/Controlling-neoforge-1.21.1-19.0.5.jar",
-         "filename": "Controlling-neoforge-1.21.1-19.0.5.jar", "label": "Controlling (поиск по клавишам управления)"},
-        {"slug": "customskinloader",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/idMHQ4n2/versions/OLaesh5y/CustomSkinLoader_Universal-15.0.1.jar",
-         "filename": "CustomSkinLoader_Universal-15.0.1.jar", "label": "CustomSkinLoader (HD-скины и плащи)"},
-        {"slug": "konkrete",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/J81TRJWm/versions/stJDU839/konkrete_neoforge_1.9.9_MC_1.21.jar",
-         "filename": "konkrete_neoforge_1.9.9_MC_1.21.jar", "label": "Konkrete (библиотека для меню)"},
-        {"slug": "melody",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/CVT4pFB2/versions/efcdRVZP/melody_neoforge_1.0.10_MC_1.21.jar",
-         "filename": "melody_neoforge_1.0.10_MC_1.21.jar", "label": "Melody (библиотека для меню)"},
-        # FancyMenu 3.9.8, а не «последняя с Modrinth». Версия 3.9.7 роняла
-        # игру при включении ресурс-паков: её миксин на тик клиента падал с
-        # NullPointerException внутри перезагрузки ресурсов
-        # (handler$fmi000$fancymenu$head_tick_FancyMenu, краш 17.07).
-        # Ссылка версионная и на официальный CDN Modrinth — лицензия у мода
-        # All Rights Reserved, в архив сборки его класть нельзя.
-        # Старую 3.9.7 лаунчер удалит сам: slug сменился, а выбывшие slug'и
-        # он чистит из mods/ и кэша.
-        {"slug": "fancymenu-3-9-8",
-         "url": "https://cdn.modrinth.com/data/Wq5SjeWM/versions/lvDR4oIj/fancymenu_neoforge_3.9.8_MC_1.21.1.jar",
-         "filename": "fancymenu_neoforge_3.9.8_MC_1.21.1.jar",
-         "label": "FancyMenu (меню Industrial Horizon)"},
-        {"slug": "simple-custom-early-loading",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/Bi8o4aLw/versions/G5bmC36h/SimpleCustomEarlyLoading-2.2-neoforge.jar",
-         "filename": "SimpleCustomEarlyLoading-2.2-neoforge.jar", "label": "Экран загрузки Industrial Horizon"},
-        # Modern UI — свой движок отрисовки текста: буквы рисуются из TrueType
-        # со сглаживанием, а не из битмапа 8x8. Решение владельца от 17.07:
-        # текстур-пак со шрифтом выглядел криво (Minecraft прибивает ttf-глифы
-        # к пиксельной сетке), поэтому шрифт делает мод, а пак снят с раздачи.
-        # Modrinth: client_side=required, server_side=unsupported — сервер о
-        # моде не знает. Лицензия LGPL-3.0.
-        # Версия прибита гвоздями: 3.13.0.1 чинит краш модерновых подсказок
-        # вместе с hud_batching у ImmediatelyFast, а он у нас стоит.
-        {"slug": "modern-ui-3-13-0-1",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/3sjzyvGR/versions/eMf1VSQd/ModernUI-NeoForge-1.21.1-3.13.0.1-universal.jar",
-         "filename": "ModernUI-NeoForge-1.21.1-3.13.0.1-universal.jar",
-         "label": "Modern UI (шрифт и сглаживание текста)"},
-        # KubeJS и его движок Rhino. Нужны обеим сторонам: на сервере скрипты
-        # правят рецепты и заводят «печати эпох», а клиенту эти предметы надо
-        # знать — иначе реестры не сойдутся и на входе будет отказ.
-        # На сервер оба залиты 17.07 через каталог модов панели — порядок
-        # «сначала сервер» соблюдён. Версии совпадают с серверными байт в байт,
-        # ссылки версионные: KubeJS ломает совместимость между сборками.
-        # required=True: без них сервер не пустит. Лицензии LGPL-3.0.
-        # Имена файлов у этих двух НЕ совпадают с именами в релизе намеренно.
-        # У игроков, чья закачка с Modrinth оборвалась, в кэше остались
-        # .part-огрызки под старыми именами; докачка продолжается по HTTP
-        # Range, и продолжение С ДРУГОГО источника склеило бы битый jar —
-        # размеры сборок Modrinth и CurseForge совпадают, байты нет. Новое имя
-        # означает новый .part, огрызки остаются лежать безобидным мусором.
-        {"slug": "rhino-2101-2-7-85",
-         "url": "https://cdn.modrinth.com/data/sk9knFPE/versions/SqkDvOLG/rhino-2101.2.8-build.91.jar",
-         "mirror": True,
-         "filename": "rhino-2101.2.8-build.91.jar",
-         "replaces": [
-             "rhino-2101.2.7-85.jar",
-             "rhino-2101.2.7-build.85.jar",
-         ],
-         "required": True,
-         "label": "Rhino (движок скриптов)"},
-        {"slug": "kubejs-2101-7-2-368",
-         "url": "https://cdn.modrinth.com/data/umyGl7zF/versions/F2nzeC19/kubejs-neoforge-2101.7.2-build.368.jar",
-         "mirror": True,
-         "filename": "kubejs-neoforge-2101.7.2-build.368.jar",
-         "replaces": ["kubejs-2101.7.2-368.jar"],
-         "required": True,
-         "label": "KubeJS (эпохи и рецепты)"},
-        # Единственный в списке, кому нужна пара на сервере: голос ходит между
-        # клиентом и сервером по ОТДЕЛЬНОМУ UDP-порту (по умолчанию 24454), и
-        # без мода на сервере работать не будет. Игрока без сервера он не
-        # ломает — просто покажет «голосовой чат не подключён», зайти на
-        # сервер это не мешает.
-        # В архив сборки его класть нельзя: лицензия All Rights Reserved.
-        # Скачиваем с официального Modrinth, как и моды Keksuccino.
-        # fallback_url (18.07): официальный maven автора (maven.maxhenkel.de) —
-        # это его собственная раздача, не наша копия, лицензия не нарушается.
-        # Используется ТОЛЬКО если Modrinth не ответил или оборвал загрузку.
-        # URL собран по стандартной maven-раскладке; если он окажется битым,
-        # игрок останется ровно там же, где был без запасного пути.
-        {"slug": "simple-voice-chat",
-         "url": "https://cdn.modrinth.com/data/9eGKb6K1/versions/dbzBkplC/voicechat-neoforge-1.21.1-2.6.21.jar",
-         "filename": "voicechat-neoforge-1.21.1-2.6.21.jar",
-         "fallback_url": "https://maven.maxhenkel.de/repository/public/de/maxhenkel/voicechat/voicechat-neoforge-1.21.1/2.6.21/voicechat-neoforge-1.21.1-2.6.21.jar",
-         "fallback_filename": "voicechat-neoforge-1.21.1-2.6.21.jar",
-         "replaces": ["voicechat-neoforge-1.21.1-2.6.20.jar"],
-         "label": "Simple Voice Chat (голосовой чат)"},
-        # Мирит JourneyMap и FTB Chunks. У обоих своя миникарта, и до этого
-        # мода они рисовались друг поверх друга в правом верхнем углу.
-        # Modrinth: client_side=required, server_side=unsupported — сервер об
-        # этом моде вообще не знает, реестры не трогает, рассинхрона быть не
-        # может. Лицензия MIT.
-        # Что делает:
-        #   - сам гасит конфликтующие части FTB Chunks (миникарту, метку
-        #     смерти, луч вейпоинта) — руками в конфиге ничего не надо;
-        #   - рисует границы клеймов прямо на JourneyMap;
-        #   - позволяет клеймить чанки с карты JourneyMap.
-        # Поэтому force_disable_minimap в ftbchunks-world.snbt трогать НЕ надо:
-        # тот выключил бы миникарту у всех принудительно, а этот — только там,
-        # где она дублирует JourneyMap.
-        {"slug": "journeymap-integration",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/M1ZKbfkJ/versions/x1p0RNwd/jmi-neoforge-1.21.1-1.9.jar",
-         "filename": "jmi-neoforge-1.21.1-1.9.jar", "label": "Клеймы на карте JourneyMap"},
-        # Тёмный интерфейс ВЕЗДЕ, включая интерфейсы модов.
-        #
-        # Зачем мод, если есть ресурспак. Ресурспак перекрашивает текстуры, а
-        # текстуры интерфейсов лежат в пространстве имён КАЖДОГО мода:
-        # create:textures/gui/..., mekanism:..., ae2:... Ванильный тёмный пак
-        # знает только про minecraft:textures/gui/* — поэтому сундук темнел, а
-        # механизм Create оставался белым. Перекрасить 166 модов руками нельзя.
-        # Этот мод работает не с текстурами, а с отрисовкой: прогоняет GUI
-        # через шейдер (механизм самой игры с 1.18). Ему всё равно, чей
-        # интерфейс — темнеет всё разом, и обновления модов ничего не ломают.
-        #
-        # Modrinth: client_side=required, server_side=unsupported — на сервере
-        # его быть не должно, рассинхрона каналов, как с ic3, не будет.
-        # Лицензия MIT. Автор Buuz135 — он же написал Industrial Foregoing и
-        # Titanium, которые уже в сборке.
-        #
-        # Титульный экран мод по умолчанию НЕ трогает (TitleScreen стоит в его
-        # METHOD_SHADER_BLACKLIST) — меню Industrial Horizon останется как был.
-        {"slug": "dark-mode-everywhere",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/k3lrwGqk/versions/PEHRE9ut/darkmodeeverywhere-neoforge-1.21.1-1.4.0.jar",
-         "filename": "darkmodeeverywhere-neoforge-1.21.1-1.4.0.jar", "label": "Тёмный интерфейс во всех модах"},
-        # Прочность инструмента в руке и всей брони — прямо на экране, с
-        # ЧИСЛАМИ, а не только полосками. Первый кандидат (armor-durability-hud)
-        # не показывал, сколько прочности осталось, — заменён в 1.26.1.
-        # По умолчанию мод вываливает много панелей; настройка владельца
-        # (только предмет в руке, число прочности) едет в configpack v7.
-        # Modrinth: client_side=required, server_side=unsupported — сервер о
-        # нём не знает, каналов нет. Лицензия ARR, поэтому в архив сборки не
-        # кладём — качаем с официального Modrinth, как FancyMenu и голос.
-        {"slug": "inventoryhudplus",
-         "url": "https://cdn.modrinth.com/data/Kp2uclYl/versions/gOEEnxa6/inventoryhud.neoforged.1.21.1-3.4.28.jar",
-         "filename": "inventoryhud.neoforged.1.21.1-3.4.28.jar", "label": "Прочность брони и инструмента на экране"},
-        # Картинки прямо в игровом чате: вставил ссылку — все с модом видят
-        # картинку. Серверная часть уже лежит в mods/ сервера (server_side=
-        # optional, активируется с его рестартом), клиенты без неё тоже
-        # работают. Лицензия MIT.
-        {"slug": "chatimage",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/zhVN1dvW/versions/hqAoNNVF/ChatImage-1.4.7%2B1.21.0%2Bneoforge.jar",
-         "filename": "ChatImage-1.4.7+1.21.0+neoforge.jar", "label": "ChatImage (картинки в чате)"},
-        # Ad Astra: Луна, Марс, Венера, ракеты. Порт на 1.21.1, которого НЕТ
-        # на Modrinth — качается по прямой ссылке из нашего релиза modpack.
-        # ОБЕ стороны: на сервере уже стоит (порядок «сначала сервер»
-        # соблюдён). Лицензия Terrarium License — распространение в сборках
-        # разрешено. Зависимости resourcefullib/resourcefulconfig уже в паке,
-        # не хватает только common-storage-lib — он строкой ниже.
-        # ОБА обязательные (20.07). Ad Astra стоит на сервере, и без него он
-        # рвёт соединение с «Канал мода отсутствует на стороне клиента» —
-        # ровно тот случай, что уже был с Modern Industrialization. Пока они
-        # числились необязательными, лаунчер молча запускал игру без них, и
-        # человек упирался в непонятное «Соединение потеряно» уже на входе.
-        {"slug": "adastra-github",
-         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/adastra-1.21.1-1.16.14-neoforge.jar",
-         "mirror": True,
-         "required": True,
-         "label": "Ad Astra (космос: Луна, Марс, ракеты)"},
-        {"slug": "common-storage-lib-github",
-         "url": "https://cdn.modrinth.com/data/RgLrNK7l/versions/SCkdlli6/common-storage-lib-neoforge-1.21.1-0.0.10.jar",
-         "mirror": True,
-         "filename": "common-storage-lib-neoforge-1.21.1-0.0.10.jar",
-         "replaces": ["common-storage-lib-neoforge-1.21.1-0.0.9.jar"],
-         "required": True,
-         "label": "Common Storage Lib (библиотека Ad Astra)"},
-        # Modern Industrialization 2.5.3: старая 2.5.2 сидит в modpack.zip,
-        # обновляем поверх без перекачки всего пака — старый jar удаляет
-        # REMOVED_MODS ниже, новый качается по ссылке на ТОЧНУЮ версию.
-        # Ссылка именно версионная, не «последняя»: сервер должен совпадать
-        # с клиентами байт в байт, автообновление тут устроило бы рассинхрон.
-        # required=True: этот мод есть на сервере, и без него он не пустит
-        # («Канал мода отсутствует на стороне клиента»). Не скачался — лаунчер
-        # честно скажет об этом и не станет запускать игру, вместо того чтобы
-        # человек ловил отказ уже на входе.
-        # replaces: старый jar сносим ТОЛЬКО когда новый лежит в mods/. Раньше
-        # 2.5.2 удалялся безусловно через REMOVED_MODS: стоило докачке
-        # сорваться — и у игрока не оставалось ни одной версии мода.
-        # Четыре обязательных мода ниже раздаются с НАШЕГО GitHub-релиза, а не
-        # с Modrinth. Причина (17.07): у игроков лёг доступ к cdn.modrinth.com
-        # — все четыре не скачались, и сервер никого не пускал. GitHub при
-        # этом работал. Лицензии позволяют (MIT/LGPL), а джарки взяты байт в
-        # байт с сервера — клиент и сервер гарантированно совпадают.
-        {"slug": "modern-industrialization-2-5-5",
-         "url": "https://cdn.modrinth.com/data/Gov5Dboq/versions/13aV4b1P/Modern-Industrialization-2.5.5.jar",
-         "mirror": True,
-         "filename": "Modern-Industrialization-2.5.5.jar",
-         "required": True,
-         "replaces": [
-             "Modern-Industrialization-2.5.2.jar",
-             "Modern-Industrialization-2.5.3.jar",
-             "Modern-Industrialization-2.5.4.jar",
-         ],
-         "label": "Modern Industrialization 2.5.5 (обновление)"},
-        # Беспроводные терминалы AE2. ОБЕ стороны (server_side=required):
-        # на сервер jar залит 16.07 — порядок «сначала сервер» соблюдён.
-        # Ссылка версионная (19.5.0), не «последняя»: клиент и сервер должны
-        # совпадать. Совместимость проверена по neoforge.mods.toml:
-        #   - ae2 [19.2.17,20.0.0) — на сервере ровно 19.2.17;
-        #   - ae2wtlib_api 19.5.0 вшит в jar (jarjar) и устраивает
-        #     AdvancedAE (нужна любая) и ExtendedAE (нужна любая);
-        #   - ExtendedAE 2.2.33 вне несовместимого диапазона (,1.1.4].
-        # Лицензия MIT.
-        # JEI. Ставится НЕ ради своего интерфейса, а ради рецептов Create.
-        # Create поставляет совместимость только с JEI (в джарке лежит
-        # com/simibubi/create/compat/jei/), плагина для EMI у него нет. Без JEI
-        # мод EMI не знает ни одной категории Create — ни механического крафта,
-        # ни нанесения, ни смешивания. Отсюда «пропавшие» крафты андезитового
-        # корпуса, буровой установки и ранца: их рецепты имеют типы
-        # create:item_application и create:mechanical_crafting.
-        # У EMI есть встроенный слой JEMI: он забирает рецепты у JEI и рисует
-        # их в своём окне, а интерфейс JEI при этом прячется. Игрок разницы не
-        # заметит, кроме того что рецепты наконец появятся.
-        # Ссылка на наш GitHub-релиз, а не на CDN Modrinth: у части игроков
-        # CDN не открывается (из-за этого выпускали 1.46.0), а мод обязательный.
-        {"slug": "jei-19-27-0-340",
-         "url": "https://cdn.modrinth.com/data/u6dRKJwZ/versions/5lWKlj9s/jei-1.21.1-neoforge-19.39.0.369.jar",
-         "mirror": True,
-         "filename": "jei-1.21.1-neoforge-19.39.0.369.jar",
-         "replaces": ["jei-1.21.1-neoforge-19.27.0.340.jar"],
-         "required": True,
-         "label": "JEI (движок рецептов для EMI)"},
-        # AlmostUnified: сводит одинаковые предметы разных модов к одному.
-        # Сейчас в сборке три «железных пластины» (Create зовёт листом, MI —
-        # пластиной) и две медных, хотя назначение одинаковое. Мод оставляет
-        # по одному предмету на тег и прячет дубли рецептов.
-        {"slug": "almostunified-1-4-2",
-         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/almostunified-neoforge-1.21.1-1.4.2.jar",
-         "mirror": True,
-         "filename": "almostunified-neoforge-1.21.1-1.4.2.jar",
-         "required": True,
-         "label": "AlmostUnified (единые слитки и пластины)"},
-        {"slug": "ae2wtlib-19-5-0",
-         "url": "https://cdn.modrinth.com/data/pNabrMMw/versions/CxSEpEnO/ae2wtlib-19.5.1.jar",
-         "mirror": True,
-         "filename": "ae2wtlib-19.5.1.jar",
-         "replaces": ["ae2wtlib-19.5.0.jar"],
-         "required": True,
-         "label": "Беспроводные терминалы AE2"},
-        # Шесть модов ниже — по списку владельца от 17.07 (скрин чужой
-        # сборки). Все шесть: client_side=required, server_side=unsupported
-        # на Modrinth — сервер о них не знает, лить на него ничего не надо.
-        # Из того списка НЕ взяты: REI (у нас EMI), Rubidium/Oculus/Canary
-        # (форджевые двойники Sodium/Iris/Lithium), The One Probe (есть
-        # Jade), FpsReducer2 (есть Dynamic FPS), InventoryEssentials (есть
-        # Inventory Sorter), Farsight (на 1.21.1 NeoForge не существует).
-        {"slug": "entityculling",
-         "url": "https://cdn.modrinth.com/data/NNAgCjsB/versions/5zRIon6w/entityculling-neoforge-1.10.5-mc1.21.1.jar",
-         "filename": "entityculling-neoforge-1.10.5-mc1.21.1.jar", "label": "Entity Culling (FPS: не рисовать невидимое)"},
-        {"slug": "mouse-tweaks",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/aC3cM3Vq/versions/9I21YYxf/MouseTweaks-neoforge-mc1.21-2.26.1.jar",
-         "filename": "MouseTweaks-neoforge-mc1.21-2.26.1.jar", "label": "Mouse Tweaks (перетаскивание предметов мышью)"},
-        {"slug": "neat",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/Ins7SzzR/versions/kALoScYM/Neat-1.21-47-NEOFORGE.jar",
-         "filename": "Neat-1.21-47-NEOFORGE.jar", "label": "Neat (полоски здоровья над мобами)"},
-        {"slug": "better-third-person",
-         "url": "https://cdn.modrinth.com/data/G1s2WpNo/versions/aG5y4JUQ/BetterThirdPerson-neoforge-1.9.0.jar",
-         "filename": "BetterThirdPerson-neoforge-1.9.0.jar", "label": "Better Third Person (свободная камера)"},
-        # Sodium Options API УБРАН отсюда (21.07, лаунчер 1.64.10). Reese's
-        # Sodium Options 2.2.3 объявляет его несовместимым и роняет игру ещё
-        # на сортировке модов. Просто добавить его в REMOVED_MODS было мало:
-        # install_extra_client_mods() выполняется ПОЗЖЕ remove_blocked_mods()
-        # и каждый запуск возвращал jar в mods/ копией из своего кэша —
-        # поэтому фикс в 1.64.9 не работал. Когда slug исчезает из этого
-        # списка, лаунчер сам удаляет файл и из кэша, и из mods/ у игрока
-        # (см. чистку выбывших slug в install_extra_client_mods) — отдельных
-        # действий не нужно. Sodium Dynamic Lights от него НЕ зависит
-        # (проверено по neoforge.mods.toml), так что динамический свет
-        # остаётся.
-        # Sodium — обязательная основа Iris 1.8.14-beta.1 и Sodium Dynamic Lights.
-        # Раньше он приезжал только внутри modpack.zip. Если игрок однажды
-        # включал режим «без Sodium», strip_render_mods() удалял jar, а после
-        # выключения режима лаунчер не возвращал его до следующей версии
-        # модпака: Iris восстанавливался из опционального кэша и падал с
-        # NoClassDefFoundError VertexSerializer. Теперь Sodium лежит также в
-        # постоянном кэше доп. модов и копируется назад при каждом запуске.
-        # ВНИМАНИЕ (23.07.2026): пин ДОЛЖЕН быть 0.8.12+ — новый стек сервера
-        # требует его жёстко: Sable 2.0.3/Veil 4.1.4 объявляют несовместимость
-        # с sodium <0.8.12-alpha.2, Reese's Sodium Options 2.2.3 требует
-        # [0.8.12,). Ночной откат на 0.6.13 (коммит 77902d4) ломал запуск
-        # клиента после доставки Sable 2.0.3 — не повторять. Понижать пин
-        # можно только вместе с откатом Sable/Veil/Iris/Reese's на старый стек.
-        {"slug": "sodium-0-8-12-mc1-21-1",
-         "url": "https://cdn.modrinth.com/data/AANobbMI/versions/S3DUMfBo/sodium-neoforge-0.8.12%2Bmc1.21.1.jar",
-         "filename": "sodium-neoforge-0.8.12+mc1.21.1.jar",
-         "required": True,
-         "replaces": ["sodium-neoforge-0.6.13+mc1.21.1.jar"],
-         "label": "Sodium 0.8.12 (основа графики и шейдеров)"},
-        {"slug": "sodium-dynamic-lights",
-         "mirror": True,
-         "url": "https://cdn.modrinth.com/data/PxQSWIcD/versions/XI0WLXdn/sodiumdynamiclights-neoforge-1.0.10-1.21.1.jar",
-         "filename": "sodiumdynamiclights-neoforge-1.0.10-1.21.1.jar", "label": "Динамический свет (факел светит в руке)"},
-        # Круговое меню быстрого доступа (карта, /home, /spawn и т.д. — на
-        # клавишу). Одобрено владельцем 17.07 после теста. Чисто клиентский
-        # (server_side=unsupported на Modrinth), сервер не трогаем. Ссылка
-        # версионная — у всех одна и та же сборка мода. Преднастроенное меню
-        # и внешний вид (крупное стеклянное кольцо, анимации) едут в
-        # configpack v14: config/ezactions/*. Лицензия MIT.
-        # 18.07: ссылка переведена с cdn.modrinth на наш GitHub-релиз. У части
-        # игроков CDN Modrinth закрыт провайдером, и меню просто не ставилось.
-        # Лицензия MIT — перекладывать jar к себе можно.
-        {"slug": "ez-actions-2-0-3-5",
-         "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/ezactions-neoforge-1.21.1-2.0.3.5.jar",
-         "mirror": True,
-         "filename": "ezactions-neoforge-1.21.1-2.0.3.5.jar",
-         "label": "Круговое меню быстрого доступа"},
-    ],
+    # Пусто: сборка Monifactory приезжает целиком одним modpack.zip.
+    # Здесь лежали 43 мода под NeoForge 1.21.1 — в Forge 1.20.1 они
+    # ломали запуск игры. Ничего докачивать отдельно больше не нужно.
+    "EXTRA_CLIENT_MODS": [],
 
-    # ------------------- УДАЛЕНИЕ МОДОВ У ИГРОКОВ -------------------
-    # Файлы из этого списка лаунчер удаляет из mods/ игрока при каждом
-    # запуске. Это единственный способ убрать мод, приехавший с modpack.zip,
-    # не заставляя всех перекачивать 400 МБ: модпак ставится только при
-    # смене версии, и выброшенный из него мод сам собой не исчезнет.
-    # Это ЕДИНСТВЕННЫЙ список REMOVED_MODS (с 1.64.10). Раньше выше в CONFIG
-    # был второй такой же ключ — Python молча брал только этот, нижний, а
-    # записи верхнего терялись. "xaeroworldmap" переехал сюда оттуда.
-    "REMOVED_MODS": [
-        # Убран владельцем 27.07: отдельный Create Jetpack. Короткий шаблон
-        # чистит любую его версию, точное имя нужно дельта-обновлению v14.
-        "create_jetpack",
-        "create_jetpack-forge-5.1.2.jar",
-        # Убраны владельцем 25.07: пять аддонов Create. Короткие шаблоны
-        # чистят любую версию при обычном запуске, точные имена нужны
-        # дельта-обновлению, которое удаляет только конкретные файлы.
-        "create_winery",
-        "create_winery-2.0.2-neoforge-1.21.1.jar",
-        "create-confectionery",
-        "create-confectionery1.21.1_v1.1.3.jar",
-        "create_power_loader",
-        "create_power_loader-2.0.5-mc1.21.1.jar",
-        "create_power_loader-2.0.3-mc1.21.1.jar",
-        "createdieselgenerators",
-        "createdieselgenerators-1.21.1-1.3.14.jar",
-        "createdieselgenerators-1.21.1-1.3.11.jar",
-        "create-central-kitchen",
-        "create-central-kitchen-2.5.0.jar",
-        "create-central-kitchen-2.4.0.jar",
-        # Эти две копии не управляются EXTRA_CLIENT_MODS/replaces.
-        # Остальные старые обязательные версии удаляются только ПОСЛЕ
-        # успешного получения новых, чтобы сетевой сбой не оставил клиент
-        # вообще без обязательного мода.
-        "ih_russian-1.3.4.jar",
-        "iris-neoforge-1.8.12+mc1.21.1.jar",
-        # Убран владельцем 26.07: числовой пинг перегружал TAB. Запись удалена
-        # и из EXTRA_CLIENT_MODS, а этот шаблон вычистит копию из старого
-        # modpack.zip. После удаления Minecraft снова показывает обычные
-        # ванильные полоски качества соединения.
-        "pingintablist",
-        # Удалён владельцем 22.07: мод добавлял кнопку «P» в главное меню и
-        # требовал одинаковую установку на клиенте и сервере. Запись нужна,
-        # чтобы вычистить jar, уже приехавший игрокам со старым modpack.zip.
-        "nedologin-3.0.0-rc3-1.21.1-fabric-neoforge.jar",
-        # sodiumoptionsapi + sodiumextras: Reese's Sodium Options 2.2.3 с ними
-        # несовместима и роняет игру ("reeses_sodium_options is incompatible
-        # with sodiumoptionsapi"). Новая Reese's заменяет их собой. После
-        # обновления модов эти jar остаются лежать в mods/ у игроков, поэтому
-        # вырезать их из сборки мало — удаляем принудительно при каждом запуске.
-        # ВАЖНО (урок 1.64.9): одного этого списка мало, если мод ещё и в
-        # EXTRA_CLIENT_MODS — установка доп. модов идёт ПОСЛЕ удаления и
-        # вернёт файл из кэша. Убирать надо из обоих мест.
-        "sodiumoptionsapi",
-        "sodiumextras",
-        # Ревизия сборки 21.07 (решение владельца, опрос): сырые альфы,
-        # дубли и первоапрельский Garnished. Обычный Garnished 2.1.9.1
-        # приезжает с modpack.zip. ВНИМАНИЕ: блоки chisel и трубы pipez,
-        # уже поставленные в мире, исчезнут из построек.
-        "create_hypertube",
-        "create-enchantment-industry",
-        "chisel-neoforge",
-        "pipez-neoforge",
-        "create_easy_structures",
-        "create_rustic_structures",
-        # Вайп 22.07: Create Structures Arise убран вместе с генерируемым
-        # лутом, FTB Ultimine заменён серверным вейн-майнером на 32 блока.
-        "create_structures_arise",
-        "ftb-ultimine-neoforge",
-        "garnished-april-foods",
-        # GraveStone (21.07, 1.64.10): могилы убраны с сервера, а мод
-        # регистрирует обязательный сетевой канал — клиент с ним на сервер
-        # без него не заходит («Канал мода GraveStone... отсутствует на
-        # стороне сервера»). Убран и из EXTRA_CLIENT_MODS (см. комментарий
-        # там же). Пишем "gravestone-neoforge", а не "gravestone" — короче
-        # нельзя: вдруг появится другой мод с "gravestone" в имени.
-        "gravestone-neoforge",
-        # Chisels & Bits — убран по решению владельца (16.07).
-        "chisels-and-bits-neoforge-21.1.32.jar",
-        # Industrial Horizons — временно убран владельцем (16.07). Его руды
-        # (олово/свинец/уран) продолжает генерировать Mekanism — включён
-        # в world.toml на 30%.
-        "ic3-2.19.0.jar",
-        # Modern-Industrialization-2.5.2.jar здесь БОЛЬШЕ НЕТ намеренно: он
-        # удаляется через "replaces" у записи 2.5.3 в EXTRA_CLIENT_MODS, то
-        # есть только когда новая версия реально скачалась. Отсюда его сносило
-        # безусловно — и при сбое докачки игрок оставался вообще без мода,
-        # а сервер такого не пускает.
-        # Заменён на 3.9.8 (роняла игру при включении ресурс-паков).
-        # Страховка: обычно выбывший slug лаунчер вычищает сам, но если у
-        # кого-то jar остался — две версии FancyMenu рядом не запустятся.
-        "fancymenu_neoforge_3.9.7_MC_1.21.1.jar",
-        # Самая первая сборка перевода: осталась в mods/ с 15.07, потому что
-        # в owns configpack'а её тогда не было. Рядом со свежей это второй
-        # мод с тем же modId — лишний повод для конфликта.
-        "ih_russian-1.0.0.jar",
-        # EMI под старым именем: лаунчер сам его и создавал, пока filename в
-        # OPTIONAL_MODS не совпадал со сборкой (см. запись "emi" ниже). Рядом
-        # с emi-1.1.24 это второй мод с modId "emi" — из-за него EMI не
-        # показывал рецепты вообще: "Error constructing recipe widgets",
-        # NullPointerException в EmiRecipeFiller.getFirstValidHandler.
-        "emi-1.1.22+1.21.1+neoforge.jar",
-        # Extreme Reactors и его библиотека ZeroCore — убраны по решению
-        # владельца (17.07): ядерка остаётся только в Modern Industrialization.
-        # С сервера сняты, а у игроков jar'ы остались — и оба мода создают
-        # сетевые каналы (bigreactors:update_client_fuelrods,
-        # zerocore:container_sync). Сервер такой клиент не пускает:
-        # «Канал отсутствует на стороне сервера, но необходим на клиенте».
-        # ZeroCore нужен только Extreme Reactors — уходит вместе с ним.
-        "ExtremeReactors2-1.21.1-2.4.28.jar",
-        "ZeroCore2-1.21.1-2.4.21.jar",
-        # Плагин для Paper/Spigot, попавший в mods/ по ошибке лаунчера: при
-        # сбое запроса к Modrinth он брал самую свежую сборку голосового чата
-        # под 1.21.1 без оглядки на загрузчик, а это Bukkit-версия (2.6.20 —
-        # новее нашей NeoForge 2.6.18). NeoForge на старте ругался
-        # «является плагином Bukkit и не может быть загружен». Причину
-        # починили в 1.42.0, а сам файл убираем здесь.
-        "voicechat-bukkit-2.6.20.jar",
-        "voicechat-bukkit-2.6.19.jar",
-        "voicechat-bukkit-2.6.18.jar",
-        # Mekanism убран из сборки (решение владельца от 17.07). Причина не в
-        # качестве мода: он делает ровно то же, что Modern Industrialization —
-        # обогащение руды, своя энергия, свои машины, — только дешевле на
-        # старте. Пока он стоял, прогрессия рассыпалась: игроки шли сразу в
-        # него, а Create оставался декорацией и MI никто не открывал.
-        # С сервера файлы удалены в тот же день, здесь чистим клиентов: моды
-        # приехали в modpack.zip, сами они не исчезнут.
-        # Generators, Tools и создателевский мост уходят следом — у них
-        # зависимость от Mekanism объявлена как required, без него они просто
-        # не загрузятся.
-        "Mekanism-1.21.1-10.7.19.85.jar",
-        "MekanismGenerators-1.21.1-10.7.19.85.jar",
-        "MekanismTools-1.21.1-10.7.19.85.jar",
-        "create_mekanism_compat-0.1.20.jar",
-    ],
+    # Пусто — и должно оставаться пустым. Состав сборки задаётся тем, что
+    # лежит в modpack.zip, а не тем, что лаунчер выкидывает после распаковки.
+    # В 2.0.2 здесь временно висел "VisualWorkbench" (падение при установке
+    # верстака из-за несовместимости с Puzzles Lib 8.1.33). Начиная со сборки
+    # версии 3 этого мода нет в самом архиве, и костыль убран: иначе лаунчер
+    # молча удалял бы моды, которых игрок в сборке даже не ждёт.
+    # AllTheLeaks 1.1.1 can deadlock Forge 1.20.1 during parallel mod
+    # construction: its MixinSquared adjuster cycles with Fzzy Config and
+    # JEI/EnderIO class loading.  It is only a leak-workaround mod, so keeping
+    # it out is safer than risking a permanent freeze at "Mod Gather".
+    "REMOVED_MODS": ["alltheleaks"],
 
-    # ------------------------- СКИНЫ И ПЛАЩИ -------------------------
-    # Сервер в offline-режиме, поэтому обычные скины Mojang не работают — у
-    # всех Стив. Мод CustomSkinLoader (чисто клиентский, ставится сам вместе с
-    # остальными клиентскими модами) умеет брать скины и плащи откуда угодно и
-    # рисует HD (128x128 и выше) без OptiFine.
-    #
-    # Порядок источников важен, мод берёт первый, где скин нашёлся: сначала
-    # выбор игрока в лаунчере, потом наша папка на GitHub (скин кладёт
-    # владелец сборки), потом Ely.by — кто хочет, делает себе скин сам.
-    # Чтобы выдать игроку скин или плащ, достаточно положить PNG в репозиторий:
-    #   skins/<ник>.png   и   capes/<ник>.png
     "SKINS_ROOT_URL": "https://raw.githubusercontent.com/nnacivee/checkpoint-launcher/main/",
 
     # ------------------------- ИКОНКА ОКНА САМОЙ ИГРЫ -------------------------
@@ -2880,17 +2463,14 @@ CONFIG = {
             "slug": "faithful-32x",
             "name": "Faithful 32x",
             "description": "Ванильный стиль в двойном разрешении — самый популярный пак",
-        },
-        {
-            # Не с Modrinth, а наш: 33 772 текстуры из 185 модов, поднятые до
-            # 32x алгоритмом xBR. Скачивается по прямой ссылке (см. "url" в
-            # _install_recommended_pack). Тяжёлый — 46 МБ, поэтому тут, а не
-            # в автозакачке.
-            "url": "https://github.com/nnacivee/checkpoint-launcher/releases/download/modpack/IH_Upscale32.zip",
-            "filename": "IH_Upscale32.zip",
-            "slug": "ih-upscale-32",
-            "name": "Моды в 32x",
-            "description": "Текстуры модов в двойном разрешении — пара к Faithful 32x (46 МБ)",
+            "url": "https://cdn.modrinth.com/data/w0TnApzs/versions/VgTWEXF2/"
+                   "Faithful%2032x%20-%201.20.1.zip",
+            "filename": "Faithful 32x - 1.20.1.zip",
+            "size": 11088963,
+            "hashes": {
+                "sha1": "7084d82b48844f7c1b625e157463c4d7b87a82d3",
+                "sha512": "924fa489a4e5877541e28bd51ef1839fca887e7deab5857ca3d6c18dd831b684918556b28072516f29f22039374043e6de4eefa697bc3979d3c568d090fd5862",
+            },
         },
         {
             "slug": "better-leaves",
@@ -2955,6 +2535,53 @@ CONFIG = {
             "slug": "fresh-animations",
             "name": "Fresh Animations",
             "description": "Живые мобы: моргают, поворачивают головы, ходят как в мультике",
+            "url": "https://cdn.modrinth.com/data/50dA9Sha/versions/xN57JJts/"
+                   "FreshAnimations_v1.10.4.zip",
+            "filename": "FreshAnimations_v1.10.4.zip",
+            "size": 850941,
+            "hashes": {
+                "sha1": "73db740a6868e043c5e615c036fca2c912615b6e",
+                "sha512": "41258f9bea1a773d823f9a014d0c08206e9e7b339bc538e1538211fff28fadd06878a836d292cbb636ed6829cd2801a509368ae3eb3ad4bedf42190a0d5f7a90",
+            },
+        },
+        {
+            "slug": "improved-ae2-32x",
+            "name": "Improved AE2 32x",
+            "description": "Чёткие 32x-текстуры терминалов, кабелей и устройств Applied Energistics 2",
+            "url": "https://cdn.modrinth.com/data/dOV2wnYX/versions/ADLAHWpP/"
+                   "%5B1.20.1_ver_0.05.1%5D_Improved_AE_2_32x.zip",
+            "filename": "[1.20.1_ver_0.05.1]_Improved_AE_2_32x.zip",
+            "size": 2703847,
+            "hashes": {
+                "sha1": "a88aca7ec618bfb8ce4f2ab596c5c2c9c6e41193",
+                "sha512": "dd2a19913bd656c7e15efcd9121a75ececef9af7caa6322fc74033bda8b84f5579f0dd0bb2a7f2989012b91bd6e9f69c1481ac4b78719cc9b89512ccb1cc2da0",
+            },
+        },
+        {
+            "slug": "gt-revival-32x",
+            "name": "GregTech Revival 32x",
+            "description": "Полный 32x-стиль для руд, материалов и механизмов GregTech",
+            "url": "https://cdn.modrinth.com/data/fUawEtti/versions/wvExQkPI/"
+                   "%5Bver_0.25%5D_GT_Revival%2032x_1.19.2-1.20.1-1.21.zip",
+            "filename": "[ver_0.25]_GT_Revival 32x_1.19.2-1.20.1-1.21.zip",
+            "size": 9237353,
+            "hashes": {
+                "sha1": "d38734786721b6c0a058305941cb575607bcf206",
+                "sha512": "7a4443dea26516dbdfc91bb014a5ae6604ee9f3f74f730967056ed84fa43641928f9f1152830f9ef8335cc2971aaef3de486d2b6e1e6b65f7f114627fad1fada",
+            },
+        },
+        {
+            "slug": "faithful-fresh-animations",
+            "name": "Faithful × Fresh Animations",
+            "description": "Патч, который приводит анимированных мобов к единому стилю Faithful 32x",
+            "url": "https://cdn.modrinth.com/data/EeMQI7nJ/versions/vyPFr0hm/"
+                   "Faithful32x-FreshAnimations-v1.10.4.zip",
+            "filename": "Faithful32x-FreshAnimations-v1.10.4.zip",
+            "size": 530643,
+            "hashes": {
+                "sha1": "00469d6d0d3a3a0ce2f1ac73728653a6fdff93ee",
+                "sha512": "8ba629624a9fd750b7fb89f63a4b656718e928995677bcf8fb62aea9b068a0f3eddcb2019a76194e12cb2851e05088f22db23cf8b216f34d53448dd3f95fd23f",
+            },
         },
         # Просьба владельца от 20.07. Пак нашёлся на minecraft-inside, но берём
         # его с Modrinth: там он выложен САМИМ автором (StorchSteam) и есть сборка
@@ -3102,17 +2729,76 @@ CONFIG = {
     #                  Настройки → Ресурспаки. Если пак включали раньше —
     #                  лаунчер его выключит (тоже однократно).
     #
-    # Решение владельца от 17.07: 32x у всех по умолчанию НЕ нужен —
-    # стандартные текстуры остаются как есть, а 32x лежит рядом отдельным
-    # паком для тех, кто захочет. Поэтому enable=False у всех записей.
-    # Список ПУСТ намеренно (решение владельца от 17.07). Паки отсюда качались
-    # каждому при первом запуске — это десятки мегабайт и лишние шаги на входе,
-    # притом что включённым не был ни один. Faithful 32x и апскейл модов теперь
-    # лежат в «Внешний вид → Текстуры»: кто хочет, ставит в один клик.
-    #
-    # Механизм рабочий и остаётся: если понадобится выдать пак принудительно,
-    # достаточно вернуть сюда запись (enable=True — включить один раз).
-    "AUTO_RESOURCE_PACKS": [],
+    # Monifactory использует единый 32x-стиль. Здесь достаточно указать slug:
+    # полные закреплённые URL, размеры и хеши берутся из каталога выше.
+    # Лаунчер включает каждый пак только один раз, поэтому последующий выбор
+    # игрока в меню Minecraft не перезаписывается.
+    "AUTO_RESOURCE_PACKS": [
+        {"slug": "fresh-animations", "enable": True},
+        {"slug": "faithful-32x", "enable": True},
+        {"slug": "improved-ae2-32x", "enable": True},
+        # Revival — основной 32x-слой GTCEu. IH addon стоит выше и
+        # точечно улучшает только похожие материалы и реальные 16x-остатки.
+        {"slug": "gt-revival-32x", "enable": True},
+        {"slug": "faithful-fresh-animations", "enable": True},
+    ],
+
+    # Delta-обновление сборки владеет только mods/*.jar, поэтому новый перевод
+    # не доедет до уже установленного клиента через manifest.json. Этот
+    # небольшой управляемый ZIP едет внутри самого лаунчера 2.0.9. При запуске
+    # меняется только файл: options.txt и выбор включённых паков не трогаются.
+    "BUNDLED_RUSSIAN_RESOURCE_PACK": {
+        "asset": "IH-Russian-Monifactory-1.5.zip",
+        "filename": "IH-Russian-Monifactory-1.5.zip",
+        "size": 240965,
+        "sha256": "f06431e5382444d0a8c043cc3c0c344cba637511585d63756668f4330df2cde9",
+    },
+
+    # В 2.0.7 Revival был автоматически отключён. В 2.0.8 он снова стал базовым
+    # слоем, поэтому один раз включаем его даже при старом .launcher_auto_packs.json.
+    # Отдельный версионный маркер не даст лаунчеру включать его снова, если
+    # игрок потом отключит Revival в меню Minecraft.
+    "RESOURCE_PACK_BASE_ACTIVATION_VERSION": 1,
+    "RESOURCE_PACK_BASE_ACTIVATION_SLUGS": ["gt-revival-32x"],
+
+    # Этот пак не скачивается с чужого CDN: лаунчер собирает его локально из
+    # уже установленных модов, KubeJS и выбранных игроком ресурспаков. Так
+    # результат всегда соответствует точной версии сборки и не требует
+    # переопубликовывать тысячи чужих текстур.
+    "GENERATED_FAITHFUL_ADDON": {
+        "filename": "IH-Faithful-32x-Addon.zip",
+        "version": 7,
+        # IH is deliberately only a small delta above this pack.  Never load
+        # an older, broad IH override without its visual base: doing so would
+        # hide the Revival textures the player selected.
+        "required_base_pack": "[ver_0.25]_GT_Revival 32x_1.19.2-1.20.1-1.21.zip",
+        "icon": "ih_faithful_pack.png",
+        "community_source": "ih_faithful_community_sources.zip",
+        "namespaces": [
+            "nuclearcraft", "thermal", "gtceu", "quark", "kubejs",
+            "ad_astra", "enderio",
+        ],
+    },
+
+    # Minecraft применяет более поздние записи с более высоким приоритетом.
+    # Эту миграцию лаунчер выполняет один раз: Revival стоит над общими
+    # Faithful/GT-слоями, IH addon точечно перекрывает Revival, а пользовательские паки
+    # по-прежнему остаются выше всего управляемого стека.
+    "RESOURCE_PACK_ORDER_VERSION": 3,
+    "MANAGED_RESOURCE_PACK_ORDER": [
+        "FreshAnimations_v1.10.4.zip",
+        "Faithful 32x - 1.20.1.zip",
+        "GregTech Refreshed v0.7 [Modern].zip",
+        "EIO Texture Backport.zip",
+        "cubic-sun-moon-v1.8.5.zip",
+        "Fusion Block Transitions v1.0.3 for Minecraft 1.20-1.21.8.zip",
+        "Fusion Connected Blocks v1.0.2 for Minecraft 1.20-1.21.8.zip",
+        "Fusion Connected Glass v1.0.1 for Minecraft 1.20-1.21.8.zip",
+        "[1.20.1_ver_0.05.1]_Improved_AE_2_32x.zip",
+        "[ver_0.25]_GT_Revival 32x_1.19.2-1.20.1-1.21.zip",
+        "Faithful32x-FreshAnimations-v1.10.4.zip",
+        "IH-Faithful-32x-Addon.zip",
+    ],
 
     # Устаревшие авто-паки: удаляются у игроков вместе с записью в
     # options.txt (см. install_auto_resource_packs). Это первая сборка
@@ -3290,113 +2976,8 @@ CONFIG = {
         },
     ],
 
-    "OPTIONAL_MODS": [
-        {
-            "id": "emi",
-            "name": "EMI",
-            "slug": "emi",
-            "category": "Интерфейс",
-            "description": "Просмотр рецептов и предметов",
-            # ВНИМАНИЕ (17.07): это имя обязано совпадать с тем, что реально
-            # лежит в modpack.zip. Здесь стояло "emi-1.1.22...jar", а сборка
-            # уже везла "emi-1.1.24...jar" — лаунчер не находил свой файл,
-            # качал EMI с Modrinth и клал ТУ ЖЕ версию под старым именем.
-            # В mods/ оказывались два байт-в-байт одинаковых jar с modId "emi",
-            # и EMI ломался: рецепты не строились (NPE в EmiRecipeFiller).
-            "filename": "emi-1.1.24+1.21.1+neoforge.jar",
-            "default": True,
-        },
-        {
-            "id": "invmove",
-            "name": "InvMove",
-            "slug": "invmove",
-            "category": "Управление",
-            "description": "Ходьба при открытом инвентаре",
-            "filename": "InvMove-0.9.3+1.21.1-NeoForge.jar",
-            "default": True,
-        },
-        {
-            "id": "jade",
-            "name": "Jade",
-            "slug": "jade",
-            "category": "Интерфейс",
-            "description": "Подсказки при наведении на блоки",
-            "filename": "Jade-1.21.1-NeoForge-15.10.5.jar",
-            "default": True,
-        },
-        {
-            "id": "jade_addons",
-            "name": "Jade Addons",
-            "slug": "jade-addons",
-            "category": "Интерфейс",
-            "description": "Дополнительные подсказки для Jade",
-            "filename": "JadeAddons-1.21.1-NeoForge-6.1.0.jar",
-            "default": True,
-        },
-        {
-            "id": "appleskin",
-            "name": "AppleSkin",
-            "slug": "appleskin",
-            "category": "Интерфейс",
-            "description": "Показывает сытость/насыщение на HUD",
-            "filename": "appleskin-neoforge-mc1.21-3.0.9.jar",
-            "default": True,
-        },
-        {
-            "id": "ambient_sounds",
-            "name": "AmbientSounds",
-            "slug": "ambientsounds",
-            "category": "Звук",
-            "description": "Атмосферные звуки",
-            "filename": "AmbientSounds_NEOFORGE_v6.3.8_mc1.21.1.jar",
-            "default": True,
-        },
-        {
-            "id": "mouse_tweaks",
-            "name": "Mouse Tweaks",
-            "slug": "mouse-tweaks",
-            "category": "Управление",
-            "description": "Удобный drag&drop в инвентаре",
-            "filename": "MouseTweaks-neoforge-mc1.21-2.26.1.jar",
-            "default": True,
-        },
-        {
-            "id": "just_zoom",
-            "name": "Just Zoom",
-            "slug": "just-zoom",
-            "category": "Управление",
-            "description": "Зум по клавише",
-            "filename": "justzoom_neoforge_2.1.0_MC_1.21.1.jar",
-            "default": True,
-        },
-        {
-            "id": "no_chat_reports",
-            "name": "No Chat Reports",
-            "slug": "no-chat-reports",
-            "category": "Прочее",
-            "description": "Убирает отчёты о чате (приватность)",
-            "filename": "NoChatReports-NEOFORGE-1.21.1-v2.9.1.jar",
-            "default": True,
-        },
-        {
-            "id": "betterf3",
-            "name": "BetterF3",
-            "slug": "betterf3",
-            "category": "Интерфейс",
-            "description": "Улучшенный экран отладки (F3)",
-            "filename": "BetterF3-11.0.3-NeoForge-1.21.1.jar",
-            "default": True,
-        },
-        {
-            "id": "iris",
-            "name": "Iris Shaders",
-            "slug": "iris",
-            "category": "Графика",
-            "description": "Поддержка шейдеров",
-            "filename": "iris-neoforge-1.8.14-beta.1+mc1.21.1.jar",
-            "default": True,
-        },
-    ],
+    # Реальный список — ниже, после CONFIG (переопределение под 1.20.1).
+    "OPTIONAL_MODS": [],
 }
 
 # 1.66.28: the tested client manifest became the normal source of JAR files.
@@ -3407,487 +2988,96 @@ CONFIG = {
 # exact hash here repairs both existing and clean clients without reviving the
 # retired legacy catalogue.  A future manifest that owns the same JAR may keep
 # this idempotent safeguard or remove it in a dedicated launcher release.
-LEGACY_EXTRA_CLIENT_MODS = tuple(CONFIG["EXTRA_CLIENT_MODS"])
-CONFIG["EXTRA_CLIENT_MODS"] = [
-    {
-        "slug": "jei-create-emi-bridge",
-        "url": (
-            "https://industrialhorizon.b-cdn.net/stable/mods/"
-            "jei-1.21.1-neoforge-19.39.0.369.jar"
-        ),
-        "filename": "jei-1.21.1-neoforge-19.39.0.369.jar",
-        "sha256": (
-            "79B6D034FA233CC87C5FE486387F69CDB"
-            "54078E1262B440B5C7E7853A0254ADF"
-        ),
-        "size": 1635413,
-        "fallback_url": (
-            "https://cdn.modrinth.com/data/u6dRKJwZ/versions/5lWKlj9s/"
-            "jei-1.21.1-neoforge-19.39.0.369.jar"
-        ),
-        "fallback_filename": "jei-1.21.1-neoforge-19.39.0.369.jar",
-        "fallback_sha256": (
-            "79B6D034FA233CC87C5FE486387F69CDB"
-            "54078E1262B440B5C7E7853A0254ADF"
-        ),
-        "fallback_size": 1635413,
-        "required": True,
-        "label": "JEI (движок рецептов Create для EMI)",
-    },
-]
+# ================= НАСТРОЙКА ПОД MONIFACTORY (1.20.1 / Forge) =================
+# Всё, что раньше докачивалось лаунчером отдельно, было собрано под
+# NeoForge 1.21.1 и в сборке Monifactory сломало бы игру на старте.
+# Теперь сборка едет целиком одним modpack.zip: 247 модов, конфиги, kubejs,
+# ресурс-паки, шейдеры и готовый options.txt. Лаунчер ничего не доставляет.
+CONFIG["EXTRA_CLIENT_MODS"] = []
+
+# Моды, которые игрок может выключить сам (кнопка «Моды»). Только чисто
+# клиентские и только те, от которых в сборке НИЧЕГО не зависит: выключение
+# мода-зависимости уронило бы игру на старте. Файлы уже лежат в mods/,
+# галочка просто перекладывает их в кэш лаунчера и обратно.
 CONFIG["OPTIONAL_MODS"] = [
-    # Служебные зависимости скрыты из каталога и включаются только вместе
-    # с тем модом, которому они нужны.
     {
-        "id": "prism",
-        "name": "Prism",
-        "slug": "prism-lib",
-        "filename": "Prism-1.21.1-neoforge-1.0.11.jar",
-        "url": "https://cdn.modrinth.com/data/1OE8wbN0/versions/kMcz2lDj/Prism-1.21.1-neoforge-1.0.11.jar",
-        "hashes": {
-            "sha1": "1ae6f7be2ba8f963344dbf27e552920a7bc7a35f",
-            "sha512": "b3539b5dba6414b5f6db126dd703a0923984c1fa11a53e50090eb1b03ec3ef3a09fc048ae2d03b8241e4d182ec4e942cc905d0f3e7366608fd8a0bb2509f55f4",
-        },
-        "default": False,
-        "visible": False,
-        "dependency_only": True,
-    },
-    {
-        "id": "stylish_effects",
-        "name": "Stylish Effects",
-        "slug": "stylish-effects",
-        "filename": "StylishEffects-v21.1.3-1.21.1-NeoForge.jar",
-        "url": "https://cdn.modrinth.com/data/onDuQF5e/versions/MT3yeDds/StylishEffects-v21.1.3-1.21.1-NeoForge.jar",
-        "hashes": {
-            "sha1": "83f764d776e2093d4e822fe784d4b17bc76c1815",
-            "sha512": "5dbf9be82e7da514b84b0b984789d272b5e0ccf2d667dd3d669e504ed512c3b7de1eb59be6ef4895ccd1fd88c4d6aee23ae28748b36b84528d64e94ebfad6282",
-        },
-        "default": False,
-        "visible": False,
-        "dependency_only": True,
-    },
-    {
-        "id": "enchantment_descriptions",
-        "name": "Enchantment Descriptions",
-        "slug": "enchantment-descriptions",
+        "id": "appleskin",
+        "name": "AppleSkin",
         "category": "Интерфейс",
-        "description": "Понятные описания эффектов зачарований во всплывающих подсказках.",
-        "filename": "enchdesc-neoforge-1.21.1-21.1.10.jar",
-        "url": "https://cdn.modrinth.com/data/UVtY3ZAC/versions/OuJDPGSM/enchdesc-neoforge-1.21.1-21.1.10.jar",
-        "hashes": {
-            "sha1": "9a06a20881c5feb730aa249666cac2871ca99fda",
-            "sha512": "8932647d23f19ead791a921b0793f61fd7c36601824afef060a55dad9e1ace64f1cb50bd83490d43c9dff3a34661b68b89975f8c4f36b69f36b8e44592d0ad16",
-        },
-        "default": False,
+        "description": "Показывает насыщение и сколько восстановит еда.",
+        "filename": "appleskin-forge-mc1.20.1-2.5.1.jar",
+        "default": True,
     },
     {
-        "id": "chat_animation",
-        "name": "Chat Animation",
-        "slug": "chatanimation",
+        "id": "betterf3",
+        "name": "BetterF3",
         "category": "Интерфейс",
-        "description": "Плавное появление новых строк чата.",
-        "filename": "chatanimation-neoforge-1.3.1+mc1.21.jar",
-        "url": "https://cdn.modrinth.com/data/DnNYdJsx/versions/wC0uTsko/chatanimation-neoforge-1.3.1%2Bmc1.21.jar",
-        "hashes": {
-            "sha1": "52a07c701aa877a1b158cc235ec5aed93e5819a9",
-            "sha512": "8f9d9d9800bb028897333754b7eacb49d64fb41ccb85e308cc38de5c74bbd9572fe12ce2f5751e85432a5d219c88e057ae87d7b2301a6435fc84bbb1921e125a",
-        },
-        "config_seeds": [
-            {
-                "path": "config/chatanimation.json",
-                "content": (
-                    "{\n"
-                    "  \"enableMessageAnimation\": true,\n"
-                    "  \"fadeTimeMessage\": 150,\n"
-                    "  \"removeMessageIndicator\": true,\n"
-                    "  \"enableOpacity\": true,\n"
-                    "  \"enableTextFieldAnimation\": true,\n"
-                    "  \"fadeTimeTextField\": 170\n"
-                    "}\n"
-                ),
-            },
-        ],
-        "default": False,
+        "description": "Аккуратный отладочный экран по F3 вместо стены текста.",
+        "filename": "BetterF3-7.0.2-Forge-1.20.1.jar",
+        "default": True,
     },
     {
-        "id": "item_highlighter",
-        "name": "Item Highlighter",
-        "slug": "item-highlighter",
-        "category": "Интерфейс",
-        "description": "Подсвечивает недавно подобранные предметы. Выберите его или Pick Up Notifier.",
-        "filename": "Highlighter-1.21-neoforge-1.1.11.jar",
-        "url": "https://cdn.modrinth.com/data/cVNW5lr6/versions/AsQ0Y2G9/Highlighter-1.21-neoforge-1.1.11.jar",
-        "hashes": {
-            "sha1": "22d29eba774530b40a540fdf5ce2d14d89bbe036",
-            "sha512": "41e1d2b3f73cf81b94563f04877528d0076672f95a456e959ca8f72162c8803bb9cf5ad540d1fbd15642a1d974bf11362a6b161003cd0853de050a443458a13b",
-        },
-        "exclusive_group": "pickup_feedback",
-        "exclusive_label": "Один вариант уведомлений",
-        "default": False,
+        "id": "invmove",
+        "name": "InvMove",
+        "category": "Управление",
+        "description": "Ходьба с открытым инвентарём и другими окнами.",
+        "filename": "InvMove-0.9.3+1.20.1-Forge.jar",
+        "default": True,
     },
     {
-        "id": "pick_up_notifier",
-        "name": "Pick Up Notifier",
-        "slug": "pick-up-notifier",
-        "category": "Интерфейс",
-        "description": "Показывает компактный список подобранных предметов. Выберите его или Item Highlighter.",
-        "filename": "PickUpNotifier-v21.1.1-1.21.1-NeoForge.jar",
-        "url": "https://cdn.modrinth.com/data/ZX66K16c/versions/5NZounJc/PickUpNotifier-v21.1.1-1.21.1-NeoForge.jar",
-        "hashes": {
-            "sha1": "90d3fe207c95a3a5d849ebf8d70ffa885694e30f",
-            "sha512": "9754f44f3bf084f45b47c88c3830dc37ffc68b4b5d6cf03ca5015177611068e8c1725670d20c0ed4674fb619227b18ccbff39cfc687a46f5258caf91c96db6db",
-        },
-        "exclusive_group": "pickup_feedback",
-        "exclusive_label": "Один вариант уведомлений",
-        "default": False,
+        "id": "mouse_tweaks",
+        "name": "Mouse Tweaks",
+        "category": "Управление",
+        "description": "Перетаскивание и раскладка предметов мышью.",
+        "filename": "MouseTweaks-forge-mc1.20.1-2.25.1.jar",
+        "default": True,
     },
     {
-        "id": "legendary_tooltips",
-        "name": "Legendary Tooltips",
-        "slug": "legendary-tooltips",
-        "category": "Интерфейс",
-        "description": "Красивые рамки и оформление подсказок редких предметов.",
-        "filename": "LegendaryTooltips-1.21.1-neoforge-1.5.5.jar",
-        "url": "https://cdn.modrinth.com/data/atHH8NyV/versions/BabRJO04/LegendaryTooltips-1.21.1-neoforge-1.5.5.jar",
-        "hashes": {
-            "sha1": "e7d3b66f3afe115c709749739f26f807ca8e827b",
-            "sha512": "3c0de6b6597a57b0fc3a134dde03ea3aeed0a7d64db63def8eda182c8bb7717293d2e4753887dcecaa27e17051c308269039eec6e74186d5eede68f98e74feeb",
-        },
-        "requires": ["prism"],
-        "compatibility": ["modernui_tooltip"],
-        "default": False,
+        "id": "zume",
+        "name": "Zume",
+        "category": "Управление",
+        "description": "Приближение по клавише Z, как в оптифайне.",
+        "filename": "zume-1.2.1.jar",
+        "default": True,
     },
     {
-        "id": "status_effect_bars",
-        "name": "Status Effect Bars Reforged",
-        "slug": "status-effect-bars-reforged",
-        "category": "Интерфейс",
-        "description": "Тонкие цветные полосы оставшегося времени эффектов.",
-        "filename": "statuseffectbars-1.21.1-NeoForge-1.0.2.jar",
-        "url": "https://cdn.modrinth.com/data/TxIuhIFo/versions/PPVE16f7/statuseffectbars-1.21.1-NeoForge-1.0.2.jar",
-        "hashes": {
-            "sha1": "bc2d624a831126bb00032d53ca0211d026e95682",
-            "sha512": "7d81eeb0e60fb304f0a26d696911b4aa0771553975275214750ae99511da17850ad196fb5268cb4362959c10221beb5c92e43ed1d965493c8a76354e76555540",
-        },
-        "requires": ["stylish_effects"],
-        "config_seeds": [
-            {
-                "path": "config/statuseffectbars-common.toml",
-                "content": (
-                    "[color]\n"
-                    "colorMode = \"CUSTOM\"\n"
-                    "backgroundColor = 1711803152\n"
-                    "beneficialForegroundColor = -11151734\n"
-                    "harmfulForegroundColor = -1741969\n"
-                    "neutralForegroundColor = -8869418\n\n"
-                    "[behavior]\n"
-                    "maxRemainingDuration = 12000\n"
-                    "minAmbientAge = 90\n"
-                    "renderOldTimer = false\n"
-                    "renderCustomTimer = false\n\n"
-                    "[layout.hud]\n"
-                    "enabled = true\n"
-                    "[layout.hud.position]\n"
-                    "direction = \"LEFT_TO_RIGHT\"\n"
-                    "relativeToEnd = true\n"
-                    "[layout.hud.shape]\n"
-                    "thickness = 2\n"
-                    "collinearPadding = 2\n"
-                    "[layout.hud.fineTuning]\n"
-                    "collinearOffset = 0\n"
-                    "orthogonalOffset = 1\n\n"
-                    "[layout.inventory]\n"
-                    "enabled = true\n"
-                    "[layout.inventory.position]\n"
-                    "direction = \"LEFT_TO_RIGHT\"\n"
-                    "relativeToEnd = true\n"
-                    "[layout.inventory.shape]\n"
-                    "thickness = 2\n"
-                    "collinearPadding = 3\n"
-                    "[layout.inventory.fineTuning]\n"
-                    "collinearOffset = 0\n"
-                    "orthogonalOffset = 2\n"
-                ),
-            },
-        ],
-        "default": False,
+        "id": "ambient_sounds",
+        "name": "Ambient Sounds",
+        "category": "Звук",
+        "description": "Живые фоновые звуки леса, пещер, дождя.",
+        "filename": "AmbientSounds_FORGE_v6.3.8_mc1.20.1.jar",
+        "default": True,
     },
     {
-        "id": "sodium_extra",
-        "name": "Sodium Extra",
-        "slug": "sodium-extra",
-        "category": "Графика",
-        "description": "Дополнительные параметры графики и анимаций для Sodium.",
-        "filename": "sodium-extra-neoforge-0.9.3+mc1.21.1.jar",
-        "url": "https://cdn.modrinth.com/data/PtjYWJkn/versions/iJsZtWpc/sodium-extra-neoforge-0.9.3%2Bmc1.21.1.jar",
-        "hashes": {
-            "sha1": "3aaac7712521b477acc73757459b3883c4e0bbda",
-            "sha512": "36a7c237519c35e35300deadbdcfd1a270c507d49b9de10eea2cad1075c67567935e95d49ca9db470bd946de8e2ef7634361f912866f84570f3c367bf96d2b79",
-        },
-        "requires_sodium": True,
-        "default": False,
-    },
-    {
-        "id": "not_enough_animations",
-        "name": "Not Enough Animations",
-        "slug": "not-enough-animations",
-        "category": "Анимации",
-        "description": "Больше естественных анимаций игрока и предметов от третьего лица.",
-        "filename": "notenoughanimations-neoforge-1.12.4-mc1.21.1.jar",
-        "url": "https://cdn.modrinth.com/data/MPCX6s5C/versions/eYNogep3/notenoughanimations-neoforge-1.12.4-mc1.21.1.jar",
-        "hashes": {
-            "sha1": "b509863deaa27890f8db600f612966a07490a6cd",
-            "sha512": "9d929cf8e0a0ff2c806e007571b10cd9b81cd508826519f55e25f0390149109c7c12605143e4c11b5b5fac749e69de532c1ad00aa6a257e4dd0d3a3a77f2461b",
-        },
-        "default": False,
-    },
-    {
-        "id": "more_culling",
-        "name": "More Culling",
-        "slug": "moreculling",
-        "category": "Оптимизация",
-        "description": "Не рисует невидимые грани блоков. Версия 1.0.8 исправляет краш с Sodium 0.8.",
-        "filename": "moreculling-neoforge-1.21.1-1.0.8.jar",
-        "url": "https://cdn.modrinth.com/data/51shyZVL/versions/tFPgktUw/moreculling-neoforge-1.21.1-1.0.8.jar",
-        "hashes": {
-            "sha1": "fdbfaa5d6d93a11d44020301199dac68de231649",
-            "sha512": "efc7e0bfeafe4a659540417796675b1ba8fd2cd4d4f3030a85c7cb675a065da6bd0bea9b79ce4e5bf3d13728f1a85c7c9e523567bfd569a415d92ac227d0b023",
-        },
-        "experimental": True,
-        "default": False,
-    },
-    {
-        "id": "model_gap_fix",
-        "name": "Model Gap Fix",
-        "slug": "modelfix",
-        "category": "Графика",
-        "description": "Убирает тонкие щели на моделях предметов.",
-        "filename": "modelfix-1.21-1.10.jar",
-        "url": "https://cdn.modrinth.com/data/QdG47OkI/versions/X2U8ceG9/modelfix-1.21-1.10.jar",
-        "hashes": {
-            "sha1": "9608b1bff92e075ad8c2feb07f7ef095f6887117",
-            "sha512": "647cab9a1bed84e10cfe77732a66bdfe116a6371dcceadcf896083654f7ab39542df4152674b5a3a653e3b36f517f5c1bff4c25db37dd789df9eeb1e1d799c07",
-        },
-        "default": False,
-    },
-    {
-        "id": "chunks_fade_in",
-        "name": "Chunks Fade In",
-        "slug": "chunks-fade-in",
-        "category": "Графика",
-        "description": "Новые чанки плавно проявляются вместо резкого появления.",
-        "filename": "chunksfadein-neoforge-3.0.25-1.21.jar",
-        "url": "https://cdn.modrinth.com/data/JaNmzvA8/versions/prD71pT4/chunksfadein-neoforge-3.0.25-1.21.jar",
-        "hashes": {
-            "sha1": "636721281273905958b408f0452dae9863ab4d1b",
-            "sha512": "533de1f1614f9e8f8a9c967a3016dded84a797c2b9a82db9b6472d62491e0c3e802832ff00acf113c39f889409cdb675c32ebaaad2ebe68d71ed6e9c9d6306f7",
-        },
-        "config_seeds": [
-            {
-                "path": "config/chunksfadein.properties",
-                "content": (
-                    "config-version = 5\n"
-                    "mod-enabled = true\n"
-                    "show-mod-tab-in-settings = false\n"
-                    "update-notifier-enabled = false\n"
-                    "fade-enabled = true\n"
-                    "fade-patch-shaders = true\n"
-                    "fade-time = 0.75\n"
-                    "fade-type = \"full\"\n"
-                    "fade-curve = \"quintic\"\n"
-                    "fade-mix-type = \"linear\"\n"
-                    "fog-override = \"cylindrical\"\n"
-                    "fade-near-player = true\n"
-                    "animation-enabled = false\n"
-                    "animation-patch-shaders = true\n"
-                    "animation-type = \"full\"\n"
-                    "animate-near-player = true\n"
-                    "fade-with-dh = false\n"
-                    "animation-time = 2.56\n"
-                    "animation-curve = \"ease_out\"\n"
-                    "animation-offset = -64.0\n"
-                    "animation-angle = 0.0\n"
-                    "animation-factor = 1.0\n"
-                    "world-curvature-enabled = false\n"
-                    "world-curvature-patch-shaders = true\n"
-                    "world-curvature = 16384\n"
-                ),
-            },
-        ],
-        "requires_sodium": True,
-        "default": False,
-    },
-    {
-        "id": "itemphysic_lite",
-        "name": "ItemPhysic Lite",
-        "slug": "itemphysic-lite",
-        "category": "Анимации",
-        "description": "Выброшенные предметы лежат и вращаются естественнее.",
-        "filename": "ItemPhysicLite_NEOFORGE_v1.6.11_mc1.21.1.jar",
-        "url": "https://cdn.modrinth.com/data/OuyCgP8t/versions/futoVn2U/ItemPhysicLite_NEOFORGE_v1.6.11_mc1.21.1.jar",
-        "hashes": {
-            "sha1": "8a92b235a424bc29f56cf6331e533f8c11f65975",
-            "sha512": "a8f0dc3cc92c2be42e854b2f168fb4f978a833eab2d50bf26d05817505dbe634a159986488b93b0524280b0dae8d601b1d8dfa6ad8be8e75d4b35b18a75d0b76",
-        },
-        "default": False,
-    },
-    {
-        "id": "subtle_effects",
-        "name": "Subtle Effects",
-        "slug": "subtle-effects",
-        "category": "Частицы",
-        "description": "Небольшие атмосферные частицы и реакции мира. Лучше включать один набор частиц за раз.",
-        "filename": "SubtleEffects-neoforge-1.21.1-1.14.3.jar",
-        "url": "https://cdn.modrinth.com/data/4q8UOK1d/versions/s3Fo4cDk/SubtleEffects-neoforge-1.21.1-1.14.3.jar",
-        "hashes": {
-            "sha1": "f0c846484bd7c769b88f38ab31429457f52552d7",
-            "sha512": "efaf415d9dad768ac9b3893973349db65d7848b42d99952e82dbd1b0e66163ba09cfc2233953a8887b54da5ef52e366d7fa18f1b467e05780639be10a0e1e0ef",
-        },
-        "default": False,
-    },
-    {
-        "id": "visuality_reforged",
-        "name": "Visuality: Reforged",
-        "slug": "visuality-forge",
-        "category": "Частицы",
-        "description": "Частицы ударов, блоков, брони и существ. Лучше включать один набор частиц за раз.",
-        "filename": "visuality-forge-2.1.0.jar",
-        "url": "https://cdn.modrinth.com/data/z13R7Et1/versions/ZBidwV02/visuality-forge-2.1.0.jar",
-        "hashes": {
-            "sha1": "b400034ca8affe8f30b21935ae4ef74b1cf2fa29",
-            "sha512": "7ec2beefea92d32e27abf83da7791fbf2d14cc12341ad96672976c119b475e8b376d663e8b42970a3f12cdeb68ec31f976b05c6c749a29dbd3bed8744288aabf",
-        },
-        "default": False,
-    },
-    {
-        "id": "particular_reforged",
-        "name": "Particular Reforged",
-        "slug": "particular-reforged",
-        "category": "Частицы",
-        "description": "Водопады, пещерная пыль, светлячки и водные эффекты. Лучше включать один набор частиц за раз.",
-        "filename": "particular-1.21.1-NeoForge-1.5.5.jar",
-        "url": "https://cdn.modrinth.com/data/pYFUU6cq/versions/gxO1XUMR/particular-1.21.1-NeoForge-1.5.5.jar",
-        "hashes": {
-            "sha1": "ae12a64a5763c701325b8ca5bf6729f645a427e7",
-            "sha512": "60e0a740675cef0b3b18289b62e2fb33662acdc05e5451e977082f4588639fd2d81de33cb619ba88ff0353fd5c16c37403ef7ce233b1d1ce3a5ce6920423597e",
-        },
-        "default": False,
-    },
-    {
-        "id": "bedrock_hotbar",
-        "name": "Bedrock Hotbar",
-        "slug": "bedrock-hotbar",
-        "category": "Bedrock",
-        "description": "Поднимает и оформляет панель быстрого доступа как в Bedrock Edition; совместим с AppleSkin.",
-        "filename": "bedrock-hotbar-neoforge-1.10+1.21.jar",
-        "url": "https://cdn.modrinth.com/data/X1OsYLs1/versions/X2HA1AU5/bedrock-hotbar-neoforge-1.10%2B1.21.jar",
-        "size": 36728,
-        "hashes": {
-            "sha1": "2a088264ee11da46e4fd894dfc06b41042de5435",
-            "sha512": "34bbc52c421d05a6effa652147d24c3d3397592ef6a402ebd5365e1e5963c53d309dc099e6d6f2700f58cfe04faa232fb324035634e647ea30bc0a5e2e39ee10",
-        },
-        "default": False,
-    },
-    {
-        "id": "third_person_death",
-        "name": "Third Person Death Effect",
-        "slug": "third-person-death-effect",
-        "category": "Bedrock",
-        "description": "Кинематографичная камера смерти от третьего лица, как в Bedrock Edition.",
-        "filename": "third_person_death_effect-1.0.2.jar",
-        "url": "https://cdn.modrinth.com/data/e0s4hn5G/versions/DOjcgypm/third_person_death_effect-1.0.2.jar",
-        "size": 92039,
-        "hashes": {
-            "sha1": "55d0c3e81d179849dbead9a6d38833d14a594a49",
-            "sha512": "63885622d7700f5601f0bf37a8fe2e230d1ac19a69046536abc55d9e7d4d7f0fb4bab8102738c0458a60db8e29180f780c1f70afc9033b64305670f78c9c3866",
-        },
-        "default": False,
-    },
-    {
-        "id": "smooth_gui",
-        "name": "Smooth Gui",
-        "slug": "smooth-gui",
-        "category": "Bedrock",
-        "description": "Плавно открывает и закрывает игровые экраны и контейнеры в стиле Bedrock Edition.",
-        "filename": "smoothgui-neoforge-2.0.1+mc1.21.jar",
-        "url": "https://cdn.modrinth.com/data/j6yrZogB/versions/41wQBB9A/smoothgui-neoforge-2.0.1%2Bmc1.21.jar",
-        "size": 695696,
-        "hashes": {
-            "sha1": "6a33eb9f6aeb38695004b330a1ff55f7773b99d7",
-            "sha512": "d6ab61ffb8e0a113010779ab701c1f313377c9ebcf32f891a21d3ca22c95270c26b8c01f7deb4d51954764a9db7be2e8d2e07cd32fd907870f1799e55360ff87",
-        },
-        "default": False,
-    },
-    {
-        "id": "cursors_extended",
-        "name": "Cursors Extended",
-        "slug": "minecraft-cursor",
-        "category": "Bedrock",
-        "description": "Добавляет настраиваемые курсоры; режим Bedrock подключает к нему отдельный официальный ресурс-пак.",
-        "filename": "minecraft-cursor-neoforge-3.11.3+1.21.1.jar",
-        "url": "https://cdn.modrinth.com/data/o5fhgLeQ/versions/hOGb4sKV/minecraft-cursor-neoforge-3.11.3%2B1.21.1.jar",
-        "size": 289244,
-        "hashes": {
-            "sha1": "4bfe5b677b18bc610ff1e381f3abb4f5953b7eba",
-            "sha512": "68442a28f3b79fd000b8155a6ac45318f8f0b105a96973665ba2707a221d1324899703000dd93175b4b3ab2c32e9ba759c491b55258f2e09a44d7bebb24afd40",
-        },
-        "default": False,
-    },
-    {
-        "id": "smooth_swapping",
-        "name": "Smooth Swapping",
-        "slug": "smooth-swapping",
-        "category": "Анимации",
-        "description": "Плавно перемещает предметы между слотами инвентаря.",
-        "filename": "smoothswapping-0.9.3.2-1.21.1-neoforge.jar",
-        "url": "https://cdn.modrinth.com/data/ydZic5r4/versions/tnvwgXE6/smoothswapping-0.9.3.2-1.21.1-neoforge.jar",
-        "hashes": {
-            "sha1": "00338f16b360d6b24b53fc8f92b76256729aee75",
-            "sha512": "0a54365d26c9023bf48129c85a8d771353432ece848e88d8e3a9a3f27d0e058e64fe2c43d5e82c4ed0e8c9494321411362c5af4bb66de5430e142f003667fb5f",
-        },
-        "config_seeds": [
-            {
-                "path": "config/smoothswapping.json",
-                "content": (
-                    "{\n"
-                    "  \"toggle_mod\": true,\n"
-                    "  \"animation_speed\": 300,\n"
-                    "  \"curve_points\": [[0.35, 0.68], [0.72, 0.94]]\n"
-                    "}\n"
-                ),
-            },
-        ],
-        "experimental": True,
-        "default": False,
+        "id": "no_chat_reports",
+        "name": "No Chat Reports",
+        "category": "Прочее",
+        "description": "Убирает подпись сообщений чата ключом Mojang.",
+        "filename": "NoChatReports-FORGE-1.20.1-v2.2.2.jar",
+        "default": True,
     },
 ]
-CONFIG["BEDROCK_MODE"] = {
-    # Порядок ресурс-паков важен: последний находится выше остальных и
-    # отвечает за курсоры, а GUI Overhaul остаётся выше мира и воды.
-    "resource_packs": [
-        "bedrock-parity",
-        "bedrock-waters",
-        "gui-overhaul-bedrock-dark",
-        "bedrock-style-cursors",
+
+# «Режим Bedrock» выключен: его паки и моды были подобраны под 1.21.1.
+CONFIG["BEDROCK_MODE"] = {}
+CONFIG["SET_GAME_WINDOW_ICON"] = False
+CONFIG["MOD_SHOWCASE"] = {
+    "Основа": [
+        "GregTech CEu Modern", "Applied Energistics 2", "Create",
+        "Modern Industrialization", "Ad Astra",
     ],
-    "disable_resource_packs": [
-        "default-dark-mode",
-        "bedrock-ore-ui-je",
+    "Логистика и хранение": [
+        "LaserIO", "Sophisticated Backpacks", "Ender Chests",
+        "Find Me", "Iron Jetpacks",
     ],
-    "optional_mods": [
-        "bedrock_hotbar",
-        "third_person_death",
-        "smooth_gui",
-        "cursors_extended",
-        "chat_animation",
-        "chunks_fade_in",
-        "not_enough_animations",
-        "model_gap_fix",
-        "smooth_swapping",
+    "Мир и удобства": [
+        "JourneyMap", "FTB Chunks", "Jade", "EMI", "FramedBlocks",
+        "Quark", "Sophisticated Core",
+    ],
+    "Прогресс": [
+        "FTB Quests — ветка GloryCraft",
     ],
 }
-CONFIG["SET_GAME_WINDOW_ICON"] = False
-CONFIG["MOD_SHOWCASE"] = {}
 # ================================================================
 
 # Цвета интерфейса — тёмная и светлая тема (индустриальный стиль:
@@ -4289,6 +3479,32 @@ def _atomic_write_text(path, text: str, encoding="utf-8", keep_backup=False) -> 
     finally:
         try:
             temp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _atomic_write_bytes(path, payload: bytes) -> None:
+    """Atomically replace a binary file used by launcher-managed state."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".%s." % target.name,
+        suffix=".tmp",
+        dir=target.parent,
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            try:
+                os.fsync(handle.fileno())
+            except OSError:
+                pass
+        os.replace(temporary, target)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
         except OSError:
             pass
 
@@ -5427,6 +4643,13 @@ def download_file(url: str, dest: Path, progress_cb=None, retries: int = 5,
                         total or 0
                     )
                 response_received = 0
+                # Живая скорость и мегабайты. Раньше наружу уходил только
+                # процент, и на медленном интернете игрок видел неподвижную
+                # надпись без единой цифры — отличить работу от зависания
+                # было нельзя. Обновляем не чаще раза в секунду: вызовы в
+                # окно намного дороже чтения из сети.
+                _speed = {"mark": time.monotonic(), "base": have,
+                          "shown": time.monotonic()}
                 with open(part, "ab" if have else "wb") as fh:
                     while True:
                         _check_download_deadline(deadline_at)
@@ -5437,6 +4660,19 @@ def download_file(url: str, dest: Path, progress_cb=None, retries: int = 5,
                         response_received += len(chunk)
                         have += len(chunk)
                         report(have, total)
+                        if status_cb and total:
+                            _now = time.monotonic()
+                            if _now - _speed["shown"] >= 1.0:
+                                _dt = max(0.001, _now - _speed["mark"])
+                                _mbs = (have - _speed["base"]) / _dt / 1048576.0
+                                _speed.update(mark=_now, base=have, shown=_now)
+                                try:
+                                    status_cb(
+                                        "скачивание · %d/%d МБ · %.1f МБ/с"
+                                        % (have // 1048576, total // 1048576,
+                                           _mbs))
+                                except Exception:  # noqa: BLE001
+                                    pass
                 if (
                     response_expected is not None
                     and response_received != response_expected
@@ -5512,7 +4748,8 @@ def download_file(url: str, dest: Path, progress_cb=None, retries: int = 5,
 
 def download_with_mirror(primary_url: str, mirror_url: str, dest: Path,
                          progress_cb=None, status_cb=None, expected_size: int = 0,
-                         expected_sha256=None) -> None:
+                         expected_sha256=None, fallback_urls=None,
+                         mirror_retries: int = 6) -> None:
     """Качает файл, пробуя сначала зеркало на игровом сервере, потом основной
     источник.
 
@@ -5530,21 +4767,29 @@ def download_with_mirror(primary_url: str, mirror_url: str, dest: Path,
     равно никогда не будет применён: итоговая SHA-256 остаётся обязательной."""
     part = dest.with_name(dest.name + ".part")
     sources = []
+
+    def add_source(url, retries):
+        value = str(url or "").strip()
+        if value and all(existing != value for existing, _ in sources):
+            sources.append((value, max(1, int(retries))))
+
     if mirror_url:
         # Прямой IP игрового сервера. Веб-сервер BlueMap НЕ умеет докачку (отвечает
         # 200 на Range), поэтому большой modpack.zip качается одним куском, и любой
         # обрыв = заново. Раньше тут была 1 попытка — при первом же обрыве установка
         # уходила на GitHub (в РФ закрыт) и падала. Даём много попыток: рано или
         # поздно один прогон доходит целиком (20.07).
-        sources.append((mirror_url, 6))
+        add_source(mirror_url, mirror_retries)
         # Запасной HTTPS-домен на случай, если провайдер режет прямой IP. Через
         # бесплатный тоннель большой файл может не дойти, но для тех, у кого IP
         # закрыт полностью, это единственный HTTPS-шанс — пусть попробует.
         if isinstance(mirror_url, str) and "95.216.30.64:25980" in mirror_url:
             dom = mirror_url.replace("http://95.216.30.64:25980",
                                      "https://industrialhorizon.dynmap.xyz")
-            sources.append((dom, 2))
-    sources.append((primary_url, 3))
+            add_source(dom, 2)
+    add_source(primary_url, 3)
+    for fallback_url in fallback_urls or ():
+        add_source(fallback_url, 3)
 
     last_error = None
     source_count = len(sources)
@@ -5659,7 +4904,7 @@ def _metadata_request(url: str):
     )
 
 
-def _fetch_tiny_text(urls, timeout=3):
+def _fetch_tiny_text(urls, timeout=3, validator=None, max_bytes=4096):
     """Скачивает крошечный текстовый файл, пробуя список URL по очереди;
     возвращает строку или None, если не вышло нигде.
 
@@ -5670,12 +4915,23 @@ def _fetch_tiny_text(urls, timeout=3):
         try:
             request = _metadata_request(u)
             with urllib.request.urlopen(request, timeout=timeout) as response:
-                raw = response.read().decode("utf-8", "replace").strip()
-            if raw:
+                body = response.read(max_bytes + 1)
+            if len(body) > max_bytes:
+                continue
+            raw = body.decode("utf-8", "replace").strip()
+            if raw and (validator is None or validator(raw)):
                 return raw
         except Exception:  # noqa: BLE001 — сеть падает по-разному
             continue
     return None
+
+
+def _is_integer_marker(value) -> bool:
+    try:
+        int(str(value).split()[0])
+        return True
+    except (IndexError, TypeError, ValueError):
+        return False
 
 
 _SHA256_TOKEN_RE = re.compile(
@@ -5737,7 +4993,8 @@ def _adjacent_sidecar_url(artifact_url: str) -> str:
     ))
 
 
-def fetch_artifact_sha256(primary_url: str, mirror_url: str = "") -> str:
+def fetch_artifact_sha256(primary_url: str, mirror_url: str = "",
+                          fallback_urls=None) -> str:
     """Fetch the checksum paired with the exact downloadable artifact.
 
     Bunny publishes ``*.sha256`` before the version marker.  Requiring that
@@ -5749,7 +5006,14 @@ def fetch_artifact_sha256(primary_url: str, mirror_url: str = "") -> str:
         sidecar = _adjacent_sidecar_url(artifact_url)
         if sidecar and sidecar not in candidates:
             candidates.append(sidecar)
-    raw = _fetch_tiny_text(candidates)
+    for sidecar_url in fallback_urls or ():
+        sidecar = str(sidecar_url or "").strip()
+        if sidecar and sidecar not in candidates:
+            candidates.append(sidecar)
+    raw = _fetch_tiny_text(
+        candidates,
+        validator=lambda value: bool(parse_sha256_sidecar(value)),
+    )
     digest = parse_sha256_sidecar(raw)
     if digest:
         return digest
@@ -5867,7 +5131,7 @@ def get_modpack_version_status() -> dict:
         ):
             if extra and extra not in candidates:
                 candidates.append(extra)
-    raw = _fetch_tiny_text(candidates)
+    raw = _fetch_tiny_text(candidates, validator=_is_integer_marker)
     if raw is not None:
         try:
             return {"version": int(raw.split()[0]), "online": True}
@@ -5947,7 +5211,10 @@ def download_modpack_archive(dest, progress_cb, status_cb):
     архивом на зеркале. Части склеиваются побайтово обратно в исходный zip."""
     dest = Path(dest)
     mirror = CONFIG.get("MODPACK_MIRROR_URL") or ""
-    expected_digest = fetch_artifact_sha256(CONFIG["MODPACK_URL"], mirror)
+    expected_digest = fetch_artifact_sha256(
+        CONFIG["MODPACK_URL"], mirror,
+        CONFIG.get("MODPACK_SHA256_FALLBACK_URLS"),
+    )
     # A previous run may have downloaded and verified the whole archive, then
     # failed later during extraction/commit.  Reuse that payload instead of
     # making the player download hundreds of megabytes again.
@@ -6063,7 +5330,10 @@ def download_modpack_archive(dest, progress_cb, status_cb):
     status_cb("скачивание")
     download_with_mirror(CONFIG["MODPACK_URL"], CONFIG.get("MODPACK_MIRROR_URL"),
                          dest, progress_cb, status_cb,
-                         expected_sha256=expected_digest)
+                         expected_sha256=expected_digest,
+                         fallback_urls=CONFIG.get("MODPACK_FALLBACK_URLS"),
+                         mirror_retries=CONFIG.get(
+                             "MODPACK_MIRROR_RETRIES", 6))
 
 
 MODPACK_MANAGED_FOLDERS = ("mods", "config", "kubejs")
@@ -6082,6 +5352,22 @@ CONFIGPACK_SEED_ONLY_FILES = {
     "config/jade/plugins.json",
     "config/modern_industrialization-client.toml",
     "config/neat-client.toml",
+    # Ниже - личные настройки игрока, а не настройки сборки. Раньше их тут
+    # не было, и при каждом обновлении набора конфигов они возвращались к
+    # паковым: человек выставлял графику под свой компьютер, включал шейдер
+    # или подкручивал звук, а после обновления всё оказывалось как из
+    # коробки. Пак ставит их один раз новичку и больше не трогает.
+    "config/embeddium-options.json",       # вся графика: дальность, эффекты
+    "config/oculus.properties",            # выбранный шейдер
+    "config/emi.css",                      # раскладка и настройки EMI
+    "config/betterzoom-client.toml",       # приближение
+    "config/ambientsounds-client.json",    # окружающие звуки
+    "config/chloride-client.json",         # тонкая настройка рендера
+    "config/bocchium-client.toml",
+    "config/notenoughanimations.json",     # анимации от первого лица
+    "config/appleskin-client.toml",
+    "config/betteradvancements-client.toml",
+    "config/ModernUI/text.toml",           # шрифт и его толщина
 }
 
 
@@ -6422,14 +5708,13 @@ def _sha256_cached(path: Path, index: dict) -> str:
         return ""
 
 
-def _fetch_modpack_manifest():
-    """manifest.json с зеркала. Ошибка/нет файла -> None (дельта пропускается)."""
+def _fetch_modpack_manifest(expected_version=None):
+    """Fetch a valid manifest from Bunny or the independent fallback."""
     mirror = CONFIG.get("MODPACK_MIRROR_URL") or ""
-    if "/" not in mirror:
-        return None
-    root = mirror.rsplit("/", 1)[0]
-    roots = [root]
-    if not root.startswith("file:"):
+    roots = []
+    if "/" in mirror:
+        roots.append(mirror.rsplit("/", 1)[0])
+    if not mirror.startswith("file:"):
         primary = CONFIG.get("MODPACK_URL") or ""
         if "/" in primary:
             primary_root = primary.rsplit("/", 1)[0]
@@ -6439,14 +5724,37 @@ def _fetch_modpack_manifest():
         # v12 manifest and are not an atomic fallback for the current v13
         # payload; mixing their metadata with a newer version marker makes a
         # healthy client look corrupt during a Bunny/GitHub outage.
-    for r in roots:
+    candidates = [root.rstrip("/") + "/manifest.json" for root in roots]
+    fallback = str(CONFIG.get("MODPACK_MANIFEST_FALLBACK_URL") or "").strip()
+    if fallback and fallback not in candidates:
+        candidates.append(fallback)
+    for url in candidates:
         try:
-            request = _metadata_request(r + "/manifest.json")
+            request = _metadata_request(url)
             with urllib.request.urlopen(request, timeout=10) as response:
-                data = json.loads(response.read().decode("utf-8", "replace"))
+                raw = response.read((2 << 20) + 1)
+            if len(raw) > (2 << 20):
+                raise ValueError("manifest is larger than 2 MiB")
+            data = json.loads(raw.decode("utf-8", "replace"))
             if isinstance(data, dict) and isinstance(data.get("files"), list):
+                if expected_version is not None:
+                    try:
+                        actual_version = int(data.get("version"))
+                    except (TypeError, ValueError):
+                        actual_version = -1
+                    if actual_version != int(expected_version):
+                        runtime_log(
+                            "modpack_manifest_version_mismatch url=%s expected=%s actual=%s",
+                            url, expected_version, actual_version,
+                            level=logging.WARNING,
+                        )
+                        continue
                 return data
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            runtime_log(
+                "modpack_manifest_fetch_failed url=%s: %s",
+                url, exc, level=logging.WARNING,
+            )
             continue
     return None
 
@@ -6591,7 +5899,7 @@ def _load_or_fetch_modpack_manifest(expected_version=None):
         if expected_version is None or cached_version == expected_version:
             return manifest
 
-    manifest = _fetch_modpack_manifest()
+    manifest = _fetch_modpack_manifest(expected_version)
     if not _normalise_modpack_manifest(manifest):
         return None
     try:
@@ -6703,11 +6011,11 @@ def install_modpack_delta(status_cb, progress_cb) -> bool:
         mods_dir = INSTANCE_DIR / "mods"
         if get_local_modpack_version() < 0 or not mods_dir.is_dir():
             return False  # первой установке — полный путь (архив частями)
-        man = _fetch_modpack_manifest()
+        remote_ver = get_remote_modpack_version()
+        man = _fetch_modpack_manifest(remote_ver)
         files = _normalise_modpack_manifest(man)
         if not files:
             return False
-        remote_ver = get_remote_modpack_version()
         local_ver = get_local_modpack_version()
         if local_ver >= 0 and remote_ver < local_ver:
             runtime_log(
@@ -6886,13 +6194,19 @@ def install_modpack(
             "Источник обновлений временно показывает более старую сборку. "
             "Текущая версия сохранена; повторите позже."
         )
-    manifest = _fetch_modpack_manifest()
+    manifest = _fetch_modpack_manifest(remote_version)
     manifest_files = _normalise_modpack_manifest(manifest)
     try:
         manifest_version = int(manifest.get("version")) if manifest else -1
     except (TypeError, ValueError):
         manifest_version = -1
-    if not manifest_files or manifest_version != remote_version:
+    if not manifest_files:
+        raise RuntimeError(
+            "Не удалось получить манифест сборки ни с основного, ни с "
+            "резервного источника. Проверьте интернет или попробуйте другой "
+            "интернет/VPN, затем нажмите «Играть» ещё раз."
+        )
+    if manifest_version != remote_version:
         raise RuntimeError(
             "Манифест сборки ещё не синхронизирован с архивом. "
             "Попробуйте снова через минуту."
@@ -7066,7 +6380,7 @@ def get_remote_configpack_version() -> int:
         ):
             if extra and extra not in candidates:
                 candidates.append(extra)
-    raw = _fetch_tiny_text(candidates)
+    raw = _fetch_tiny_text(candidates, validator=_is_integer_marker)
     if raw is not None:
         try:
             return int(raw.split()[0])
@@ -8726,6 +8040,112 @@ def get_resourcepacks_dir() -> Path:
     return INSTANCE_DIR / "resourcepacks"
 
 
+def _validate_bundled_resource_pack_payload(payload: bytes, config: dict) -> None:
+    """Validate a pinned launcher-owned resource pack before it is installed."""
+    try:
+        expected_size = int(config["size"])
+        expected_sha256 = str(config["sha256"]).strip().lower()
+    except (KeyError, TypeError, ValueError) as error:
+        raise RuntimeError("Некорректная конфигурация встроенного перевода") from error
+    if expected_size <= 0 or not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+        raise RuntimeError("Некорректные размер или SHA-256 встроенного перевода")
+    if len(payload) != expected_size:
+        raise RuntimeError(
+            "Неверный размер встроенного перевода: %d вместо %d"
+            % (len(payload), expected_size)
+        )
+    actual_sha256 = hashlib.sha256(payload).hexdigest()
+    if not secrets.compare_digest(actual_sha256, expected_sha256):
+        raise RuntimeError("SHA-256 встроенного перевода не совпадает")
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(payload), "r") as archive:
+            if archive.namelist().count("pack.mcmeta") != 1:
+                raise RuntimeError(
+                    "Во встроенном переводе отсутствует корневой pack.mcmeta"
+                )
+            if archive.testzip() is not None:
+                raise RuntimeError("Встроенный перевод повреждён")
+            metadata_info = archive.getinfo("pack.mcmeta")
+            if metadata_info.file_size > 256 * 1024:
+                raise RuntimeError("Слишком большой pack.mcmeta встроенного перевода")
+            metadata = json.loads(
+                archive.read(metadata_info).decode("utf-8-sig")
+            )
+    except (OSError, UnicodeError, json.JSONDecodeError, zipfile.BadZipFile) as error:
+        raise RuntimeError("Встроенный перевод не является корректным ресурс-паком") from error
+    pack = metadata.get("pack") if isinstance(metadata, dict) else None
+    if (
+        not isinstance(pack, dict)
+        or not isinstance(pack.get("pack_format"), int)
+        or pack["pack_format"] <= 0
+    ):
+        raise RuntimeError("Некорректный pack.mcmeta встроенного перевода")
+
+
+def install_bundled_russian_resource_pack(status_cb=None) -> bool:
+    """Atomically update the managed translation without changing its state.
+
+    Returns ``True`` when the file was replaced and ``False`` when the exact
+    pinned version was already installed. In particular, this function never
+    reads or writes ``resourcePacks`` in options.txt: a player's manual disable
+    remains a manual disable after the translation itself is updated.
+    """
+    config = CONFIG.get("BUNDLED_RUSSIAN_RESOURCE_PACK")
+    if not isinstance(config, dict):
+        raise RuntimeError("Не настроен встроенный русский ресурс-пак")
+    asset_name = str(config.get("asset") or "")
+    filename = str(config.get("filename") or "")
+    if (
+        not asset_name
+        or asset_name != Path(asset_name).name
+        or "/" in asset_name
+        or "\\" in asset_name
+        or not filename
+        or filename != Path(filename).name
+        or "/" in filename
+        or "\\" in filename
+        or not filename.lower().endswith(".zip")
+    ):
+        raise RuntimeError("Небезопасное имя встроенного русского ресурс-пака")
+
+    source = resource_path(asset_name)
+    try:
+        payload = source.read_bytes()
+    except OSError as error:
+        raise RuntimeError("В лаунчере отсутствует встроенный русский ресурс-пак") from error
+    _validate_bundled_resource_pack_payload(payload, config)
+
+    expected_size = int(config["size"])
+    expected_sha256 = str(config["sha256"]).strip().lower()
+    with RESOURCE_PACKS_LOCK:
+        target = get_resourcepacks_dir() / filename
+        try:
+            already_current = (
+                target.is_file()
+                and target.stat().st_size == expected_size
+                and secrets.compare_digest(
+                    calculate_file_sha256(target), expected_sha256
+                )
+            )
+        except OSError:
+            already_current = False
+        if already_current:
+            return False
+        _atomic_write_bytes(target, payload)
+        if (
+            not target.is_file()
+            or target.stat().st_size != expected_size
+            or not secrets.compare_digest(
+                calculate_file_sha256(target), expected_sha256
+            )
+        ):
+            raise RuntimeError("Не удалось проверить установленный русский ресурс-пак")
+    if status_cb:
+        status_cb("Обновлён русский перевод сборки")
+    return True
+
+
 def get_enabled_resource_packs() -> list:
     with RESOURCE_PACKS_LOCK:
         raw = _read_options_value("resourcePacks", "[]")
@@ -8831,7 +8251,7 @@ def _recommended_pack_file_is_valid(path: Path, pack_cfg: dict) -> bool:
 
 
 def _install_recommended_pack(pack_cfg: dict, dst_dir: Path, loaders: list,
-                              status_cb=None) -> str:
+                              status_cb=None, progress_cb=None) -> str:
     """Общая закачка готового пака по slug с Modrinth. Отличаются только папка
     назначения и loaders (у ресурс-паков это minecraft, у шейдеров — iris).
 
@@ -8853,14 +8273,26 @@ def _install_recommended_pack(pack_cfg: dict, dst_dir: Path, loaders: list,
     dst_dir.mkdir(parents=True, exist_ok=True)
     target = dst_dir / (filename or (pack_cfg.get("slug") or "pack") + ".zip")
     if not _recommended_pack_file_is_valid(target, pack_cfg):
-        target.unlink(missing_ok=True)
-        download_file(
-            url,
-            target,
-            expected_size=int(pack_cfg.get("size", 0) or 0),
-        )
+        # Не удаляем работающую старую версию до окончания загрузки. Если сеть
+        # оборвётся, Minecraft продолжит запускаться с прежним архивом.
+        staged = target.with_name(target.name + ".new")
+        staged.unlink(missing_ok=True)
+        try:
+            download_file(
+                url,
+                staged,
+                progress_cb,
+                expected_size=int(pack_cfg.get("size", 0) or 0),
+            )
+            if not _recommended_pack_file_is_valid(staged, pack_cfg):
+                raise RuntimeError(
+                    "Ресурс-пак «%s» не прошёл проверку целостности"
+                    % pack_cfg["name"]
+                )
+            os.replace(staged, target)
+        finally:
+            staged.unlink(missing_ok=True)
     if not _recommended_pack_file_is_valid(target, pack_cfg):
-        target.unlink(missing_ok=True)
         raise RuntimeError(
             "Ресурс-пак «%s» не прошёл проверку целостности"
             % pack_cfg["name"]
@@ -10113,6 +9545,463 @@ def install_extra_shaderpacks(status_cb=None, progress_cb=None) -> None:
         marker_file.write_text(json.dumps(sorted(installed)), encoding="utf-8")
 
 
+def _expanded_auto_resource_pack_entries() -> list:
+    """Merge compact auto entries with the pinned catalogue metadata."""
+    catalogue = {
+        str(pack.get("slug")): pack
+        for pack in CONFIG.get("RECOMMENDED_RESOURCE_PACKS", [])
+        if pack.get("slug")
+    }
+    result = []
+    for auto_cfg in CONFIG.get("AUTO_RESOURCE_PACKS", []):
+        cfg = dict(catalogue.get(str(auto_cfg.get("slug")), {}))
+        cfg.update(auto_cfg)
+        if not cfg.get("slug"):
+            continue
+        cfg.setdefault("name", cfg["slug"])
+        result.append(cfg)
+    return result
+
+
+def _apply_managed_resource_pack_order(
+        mark_complete: bool = True, force: bool = False) -> bool:
+    """Keep enabled managed packs in priority order without taking control.
+
+    Entries later in ``options.txt`` have higher priority. Managed packs are
+    kept after built-ins but before every unknown file pack, so local addons
+    deliberately chosen by a player continue to win conflicts during the
+    versioned migration. After that migration, only the values occupying
+    managed slots are sorted. This repairs a manually re-enabled managed pack
+    without moving unknown packs or enabling a pack the player disabled.
+    """
+    version = int(CONFIG.get("RESOURCE_PACK_ORDER_VERSION", 0) or 0)
+    if version <= 0:
+        return False
+    packs_dir = get_resourcepacks_dir()
+    marker = packs_dir / ".launcher_resource_pack_order.json"
+    marker_is_current = False
+    try:
+        saved = json.loads(marker.read_text(encoding="utf-8"))
+        marker_is_current = (
+            isinstance(saved, dict)
+            and int(saved.get("version", 0) or 0) >= version
+        )
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        pass
+
+    managed = list(dict.fromkeys(
+        "file/%s" % str(name)
+        for name in CONFIG.get("MANAGED_RESOURCE_PACK_ORDER", [])
+        if str(name)
+    ))
+    managed_set = set(managed)
+    current = [str(item) for item in get_enabled_resource_packs()]
+
+    if marker_is_current and not force:
+        # Minecraft appends a pack when it is manually enabled. The marker is
+        # already current in that case, but Revival may now sit above the IH
+        # delta and hide it. Refill only the existing managed positions in the
+        # configured order: every unknown/built-in entry keeps the exact same
+        # index and an absent managed pack stays absent.
+        managed_slots = [
+            index for index, entry in enumerate(current)
+            if entry in managed_set
+        ]
+        rank = {entry: index for index, entry in enumerate(managed)}
+        enabled_managed = sorted(
+            (current[index] for index in managed_slots),
+            key=rank.__getitem__,
+        )
+        migrated = list(current)
+        for index, entry in zip(managed_slots, enabled_managed):
+            migrated[index] = entry
+        if migrated != current:
+            set_enabled_resource_packs(migrated or ["vanilla"])
+            return True
+        return False
+
+    ordered = [entry for entry in managed if entry in current]
+    remaining = [entry for entry in current if entry not in managed_set]
+    insert_at = next(
+        (index for index, entry in enumerate(remaining)
+         if entry.startswith("file/")),
+        len(remaining),
+    )
+    migrated = remaining[:insert_at] + ordered + remaining[insert_at:]
+    if migrated != current:
+        set_enabled_resource_packs(migrated or ["vanilla"])
+    if mark_complete:
+        marker.write_text(
+            json.dumps({"version": version}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    return migrated != current
+
+
+def _generated_faithful_source_pack_entries(config: dict) -> list:
+    """Return only resource-pack layers that sit below the generated pack."""
+    filename = str(config.get("filename") or "IH-Faithful-32x-Addon.zip")
+    own_entry = "file/%s" % filename
+    current = [str(item) for item in get_enabled_resource_packs()]
+    if own_entry in current:
+        return [
+            entry for entry in current[:current.index(own_entry)]
+            if entry.startswith("file/")
+        ]
+
+    managed_names = [
+        str(name) for name in CONFIG.get("MANAGED_RESOURCE_PACK_ORDER", [])
+        if str(name)
+    ]
+    try:
+        addon_position = managed_names.index(filename)
+    except ValueError:
+        addon_position = len(managed_names)
+    allowed = {
+        "file/%s" % name for name in managed_names[:addon_position]
+    }
+    return [
+        entry for entry in current
+        if entry.startswith("file/") and entry in allowed
+    ]
+
+
+def _generated_faithful_addon_fingerprint(config: dict) -> str:
+    """Return a cheap, stable signature of every layer used by the builder.
+
+    File size + nanosecond mtime is intentional here: calculating hashes for
+    hundreds of large mod jars on every launch would cost almost as much as
+    rebuilding the pack. The resulting ZIP still gets a full SHA-256 check.
+    """
+    records = [
+        ["generator", int(config.get("version", 0) or 0)],
+        ["minecraft", str(CONFIG.get("MC_VERSION", ""))],
+        ["namespaces", sorted(str(item) for item in config.get("namespaces", []))],
+    ]
+
+    source_packs = _generated_faithful_source_pack_entries(config)
+    records.append(["source_resource_packs", source_packs])
+    try:
+        records.append([
+            "modpack_version",
+            (INSTANCE_DIR / ".modpack_version").read_text(
+                encoding="utf-8"
+            ).strip(),
+        ])
+    except OSError:
+        records.append(["modpack_version", ""])
+
+    def add_file(path: Path, label: str) -> None:
+        try:
+            stat_result = path.stat()
+            records.append([
+                label,
+                int(stat_result.st_size),
+                int(stat_result.st_mtime_ns),
+            ])
+        except OSError:
+            records.append([label, "missing"])
+
+    version = str(CONFIG.get("MC_VERSION", "1.20.1"))
+    exact_vanilla = INSTANCE_DIR / "versions" / version / (version + ".jar")
+    if exact_vanilla.is_file():
+        add_file(exact_vanilla, "vanilla/%s.jar" % version)
+    else:
+        candidates = sorted(
+            (INSTANCE_DIR / "versions").glob("**/%s.jar" % version),
+            key=lambda path: path.as_posix().casefold(),
+        )
+        if not candidates:
+            records.append(["vanilla/%s.jar" % version, "missing"])
+        for path in candidates:
+            add_file(
+                path,
+                "vanilla/%s" % path.relative_to(INSTANCE_DIR).as_posix(),
+            )
+
+    mods_dir = INSTANCE_DIR / "mods"
+    for path in sorted(mods_dir.glob("*.jar"), key=lambda item: item.name.casefold()):
+        add_file(path, "mods/%s" % path.name)
+
+    kubejs_assets = INSTANCE_DIR / "kubejs" / "assets"
+    if kubejs_assets.is_dir():
+        kubejs_files = sorted(
+            (path for path in kubejs_assets.rglob("*") if path.is_file()),
+            key=lambda path: path.as_posix().casefold(),
+        )
+        for path in kubejs_files:
+            add_file(
+                path,
+                "kubejs/assets/%s" % path.relative_to(kubejs_assets).as_posix(),
+            )
+    else:
+        records.append(["kubejs/assets", "missing"])
+
+    packs_dir = get_resourcepacks_dir()
+    for entry in source_packs:
+        if not entry.startswith("file/"):
+            continue
+        path = packs_dir / entry[5:]
+        if path.is_dir():
+            children = sorted(
+                (child for child in path.rglob("*") if child.is_file()),
+                key=lambda child: child.as_posix().casefold(),
+            )
+            for child in children:
+                add_file(
+                    child,
+                    "resourcepacks/%s/%s" % (
+                        path.name, child.relative_to(path).as_posix()),
+                )
+        else:
+            add_file(path, "resourcepacks/%s" % path.name)
+
+    icon_name = str(config.get("icon") or "")
+    if icon_name:
+        icon = resource_path(icon_name)
+        try:
+            records.append(["icon_sha256", calculate_file_sha256(icon)])
+        except OSError:
+            records.append(["icon_sha256", "missing"])
+    community_name = str(config.get("community_source") or "")
+    if community_name:
+        community_path = resource_path(community_name)
+        try:
+            records.append([
+                "community_source_sha256",
+                calculate_file_sha256(community_path),
+            ])
+        except OSError:
+            records.append(["community_source_sha256", "missing"])
+
+    payload = json.dumps(
+        records, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _generated_faithful_addon_is_valid(
+        path: Path, expected_sha256: str = "") -> bool:
+    try:
+        if not path.is_file() or not zipfile.is_zipfile(path):
+            return False
+        if expected_sha256 and calculate_file_sha256(path) != expected_sha256:
+            return False
+        with zipfile.ZipFile(path) as archive:
+            names = archive.namelist()
+            for name in names:
+                parts = Path(name.replace("\\", "/")).parts
+                if name.startswith(("/", "\\")) or ".." in parts:
+                    return False
+            if "pack.mcmeta" not in names:
+                return False
+            metadata = json.loads(archive.read("pack.mcmeta").decode("utf-8"))
+            if int(metadata.get("pack", {}).get("pack_format", 0) or 0) != 15:
+                return False
+            return any(
+                name.startswith("assets/") and name.lower().endswith(".png")
+                for name in names
+            )
+    except (OSError, ValueError, TypeError, KeyError, zipfile.BadZipFile,
+            json.JSONDecodeError):
+        return False
+
+
+def install_generated_faithful_addon(status_cb=None, progress_cb=None) -> bool:
+    """Build and enable the local 32x compatibility layer exactly once.
+
+    The pack is rebuilt only when a source layer changes. Rebuilding never
+    re-enables a pack that the player later disabled in Minecraft settings.
+    Any failure is non-fatal and leaves the previously valid ZIP untouched.
+    """
+    config = CONFIG.get("GENERATED_FAITHFUL_ADDON") or {}
+    if not isinstance(config, dict) or not config.get("filename"):
+        return False
+
+    packs_dir = get_resourcepacks_dir()
+    packs_dir.mkdir(parents=True, exist_ok=True)
+    output = packs_dir / str(config["filename"])
+    output_entry = "file/%s" % output.name
+    state_dir = packs_dir / ".launcher_generated"
+    state_file = state_dir / "ih_faithful_32x.json"
+    manifest_file = state_dir / "ih_faithful_32x_manifest.json"
+    state = {}
+    try:
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+        if not isinstance(state, dict):
+            state = {}
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        state = {}
+
+    def disable_generated_delta() -> None:
+        """Keep Revival visible when its dependent delta is unsafe to load."""
+        if output_entry in get_enabled_resource_packs():
+            set_resource_pack_enabled({"entry": output_entry}, False)
+
+    required_base_name = str(config.get("required_base_pack") or "").strip()
+    if required_base_name:
+        required_base = packs_dir / required_base_name
+        required_entry = "file/%s" % required_base_name
+        base_enabled = required_entry in get_enabled_resource_packs()
+        base_valid = required_base.is_file() and zipfile.is_zipfile(required_base)
+        if not base_enabled or not base_valid:
+            disable_generated_delta()
+            if status_cb:
+                status_cb(
+                    "Дополнение IH отключено: сначала нужен включённый "
+                    "GregTech Revival 32x."
+                )
+            return False
+
+    current_version = int(config.get("version", 0) or 0)
+    previous_version = int(state.get("version", -1) or -1)
+    legacy_delta_migration = previous_version < current_version
+    if not _PIL_OK:
+        if legacy_delta_migration:
+            disable_generated_delta()
+        if status_cb:
+            status_cb("Не удалось создать 32×-дополнение: в лаунчере нет Pillow.")
+        return False
+
+    legacy_delta_disabled_on_failure = False
+
+    try:
+        fingerprint = _generated_faithful_addon_fingerprint(config)
+        up_to_date = (
+            int(state.get("version", -1) or -1) == current_version
+            and state.get("fingerprint") == fingerprint
+            and _generated_faithful_addon_is_valid(
+                output, str(state.get("zip_sha256") or "")
+            )
+        )
+        if up_to_date:
+            if progress_cb:
+                progress_cb(100)
+            _apply_managed_resource_pack_order(mark_complete=True)
+            return False
+
+        if status_cb:
+            status_cb("Собираю 32×-текстуры под установленную версию сборки…")
+        icon_name = str(config.get("icon") or "")
+        icon_path = resource_path(icon_name) if icon_name else None
+        community_name = str(config.get("community_source") or "")
+        community_path = (
+            resource_path(community_name)
+            if community_name and resource_path(community_name).is_file()
+            else None
+        )
+        previous_bytes = output.read_bytes() if output.is_file() else None
+        previous_manifest_bytes = (
+            manifest_file.read_bytes() if manifest_file.is_file() else None
+        )
+
+        from tools import build_ih_faithful_addon as addon_builder
+
+        def report(current, total, _message):
+            percent = int(current * 100 / max(1, total))
+            if progress_cb:
+                progress_cb(percent)
+            if status_cb and percent in {0, 25, 50, 75, 100}:
+                status_cb("Создаю 32×-текстуры — %d%%" % percent)
+
+        try:
+            build_options = {
+                "icon_path": icon_path,
+                "progress_cb": report,
+                "manifest_path": manifest_file,
+                "minecraft_version": str(CONFIG.get("MC_VERSION", "1.20.1")),
+            }
+            if config.get("namespaces"):
+                build_options["namespaces"] = tuple(config["namespaces"])
+            if community_path is not None:
+                build_options["community_source"] = community_path
+            build_options["active_resource_packs"] = (
+                _generated_faithful_source_pack_entries(config)
+            )
+            result = addon_builder.build_addon(
+                INSTANCE_DIR,
+                output,
+                **build_options,
+            )
+            if not _generated_faithful_addon_is_valid(
+                    output, str(result.zip_sha256)):
+                raise RuntimeError("generated resource pack failed validation")
+        except Exception:
+            # The ZIP and provenance manifest form one logical artifact. If a
+            # build or validation fails, restore both snapshots so support
+            # diagnostics can never describe a different ZIP than Minecraft
+            # is about to load.
+            try:
+                if previous_bytes is not None:
+                    _atomic_write_bytes(output, previous_bytes)
+                else:
+                    output.unlink(missing_ok=True)
+            finally:
+                if previous_manifest_bytes is not None:
+                    _atomic_write_bytes(
+                        manifest_file, previous_manifest_bytes
+                    )
+                else:
+                    manifest_file.unlink(missing_ok=True)
+            # Schema 6 changed IH from a broad replacement into a small
+            # Revival-compatible delta.  A restored schema-5 ZIP would again
+            # cover Revival, so keep it on disk for diagnostics but never
+            # leave it active after a failed migration.
+            if legacy_delta_migration and previous_bytes is not None:
+                disable_generated_delta()
+                legacy_delta_disabled_on_failure = True
+            raise
+
+        first_activation = not bool(state.get("activated_once"))
+        if first_activation:
+            enabled_before_activation = get_enabled_resource_packs()
+            try:
+                set_resource_pack_enabled(
+                    {"entry": "file/%s" % output.name}, True
+                )
+                _apply_managed_resource_pack_order(
+                    mark_complete=True, force=True
+                )
+            except Exception:
+                set_enabled_resource_packs(enabled_before_activation)
+                raise
+            if status_cb:
+                status_cb("Включено локальное 32×-дополнение: %s" % output.name)
+        else:
+            _apply_managed_resource_pack_order(mark_complete=True)
+
+        state_dir.mkdir(parents=True, exist_ok=True)
+        state_document = {
+            "activated_once": bool(state.get("activated_once")) or first_activation,
+            "fingerprint": fingerprint,
+            "texture_count": int(result.texture_count),
+            "version": current_version,
+            "zip_sha256": str(result.zip_sha256),
+        }
+        _atomic_write_text(
+            state_file,
+            json.dumps(state_document, ensure_ascii=False, indent=2) + "\n",
+        )
+        if progress_cb:
+            progress_cb(100)
+        return True
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Failed to build IH Faithful 32x add-on"
+        )
+        if status_cb:
+            if legacy_delta_disabled_on_failure:
+                status_cb(
+                    "Не удалось обновить дополнение IH — запускаю только с "
+                    "базовыми текстурами GregTech Revival 32x."
+                )
+            else:
+                status_cb(
+                    "Не удалось обновить 32×-дополнение — запускаю игру с прежними текстурами."
+                )
+        return False
+
+
 def install_auto_resource_packs(status_cb=None, progress_cb=None) -> None:
     """Скачивает паки из CONFIG["AUTO_RESOURCE_PACKS"] и включает каждый
     РОВНО ОДИН РАЗ. Однократность — принципиальна: если игрок выключил пак
@@ -10120,7 +10009,7 @@ def install_auto_resource_packs(status_cb=None, progress_cb=None) -> None:
     как поломка. Список уже включённых лежит в resourcepacks/
     .launcher_auto_packs.json. Любая ошибка (нет сети, Modrinth молчит) не
     мешает запуску игры — просто пропускаем до следующего раза."""
-    entries = CONFIG.get("AUTO_RESOURCE_PACKS", [])
+    entries = _expanded_auto_resource_pack_entries()
     if not entries:
         return
 
@@ -10147,48 +10036,95 @@ def install_auto_resource_packs(status_cb=None, progress_cb=None) -> None:
         except Exception:
             activated = []
 
+    # A normal auto-pack is only enabled while its filename is absent from the
+    # legacy marker above. That preserves a later manual disable by the player,
+    # but it cannot express an intentional change of the pack's role between
+    # releases. Revival was optional/disabled in 2.0.7 and became the GTCEu base
+    # again in 2.0.8, so it needs one explicit, versioned activation regardless
+    # of the old marker. A separate marker makes that override exactly one-shot:
+    # after this migration, disabling Revival in Minecraft remains respected.
+    base_activation_version = int(
+        CONFIG.get("RESOURCE_PACK_BASE_ACTIVATION_VERSION", 0) or 0
+    )
+    configured_base_slugs = {
+        str(slug)
+        for slug in CONFIG.get("RESOURCE_PACK_BASE_ACTIVATION_SLUGS", [])
+        if str(slug)
+    }
+    base_activation_marker = (
+        packs_dir / ".launcher_resource_pack_base_activation.json"
+    )
+    applied_base_activation_version = 0
+    try:
+        base_activation_state = json.loads(
+            base_activation_marker.read_text(encoding="utf-8")
+        )
+        applied_base_activation_version = int(
+            base_activation_state.get("version", 0) or 0
+        )
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        pass
+    base_activation_pending = (
+        base_activation_version > applied_base_activation_version
+    )
+    required_base_slugs = {
+        str(entry.get("slug"))
+        for entry in entries
+        if (
+            str(entry.get("slug")) in configured_base_slugs
+            and entry.get("enable", True)
+        )
+    }
+    activated_base_slugs = set()
+
     changed = False
     total = len(entries)
+    installed_count = 0
     for index, entry in enumerate(entries):
         label = entry.get("name") or entry.get("slug") or entry.get("filename", "?")
         try:
-            # 1. Выясняем имя файла и откуда качать.
-            if entry.get("url"):
-                filename = entry.get("filename") or entry["url"].rsplit("/", 1)[-1]
-                url = entry["url"]
-            else:
-                # Файл с Modrinth мог уже стоять (игрок ставил из
-                # «Оформления») — тогда и искать ссылку не надо.
-                filename = _recommended_pack_filename(entry["slug"])
-                url = None
-                if not (filename and (packs_dir / filename).exists()):
-                    filename, url = _find_modrinth_download(
-                        entry["slug"], CONFIG["MC_VERSION"], ["minecraft"])
-                    if not url:
-                        continue  # на Modrinth нет версии — не критично
-            target = packs_dir / filename
+            def _progress(pct, _i=index):
+                if progress_cb:
+                    progress_cb(int((_i + pct / 100.0) / total * 100))
 
-            # 2. Скачиваем, если файла ещё нет.
-            if not target.exists():
-                if status_cb:
-                    status_cb("Скачиваю ресурс-пак «%s»..." % label)
+            # Общий установщик проверяет ZIP, размер и хеш даже когда файл с
+            # таким именем уже лежит у игрока. Новая версия заменяет старую
+            # атомарно только после полной успешной загрузки.
+            filename = _install_recommended_pack(
+                entry,
+                packs_dir,
+                ["minecraft"],
+                status_cb,
+                _progress,
+            )
+            installed_count += 1
+            if progress_cb:
+                progress_cb(int((index + 1) / total * 100))
 
-                def _progress(pct, _i=index):
-                    if progress_cb:
-                        progress_cb(int((_i + pct / 100.0) / total * 100))
-
-                download_file(url, target, _progress)
-                if entry.get("slug"):
-                    _remember_recommended_pack(entry["slug"], filename)
-
-            # 3. Включаем/выключаем — каждое действие ровно один раз.
+            # Включаем/выключаем — каждое действие ровно один раз.
             # Маркер activated помнит паки, которые включили МЫ. Отсюда:
             #   enable=True  и его нет в маркере -> включаем, запоминаем;
             #   enable=False и он есть в маркере -> выключаем, забываем.
             # Пак, который игрок выключил сам, повторно не включаем: его имя
             # осталось в маркере, а второй раз мы туда не лезем.
             want_enabled = entry.get("enable", True)
-            if want_enabled and filename not in activated:
+            entry_slug = str(entry.get("slug"))
+            force_base_activation = (
+                base_activation_pending and entry_slug in required_base_slugs
+            )
+            if force_base_activation:
+                pack_entry = "file/%s" % filename
+                was_enabled = pack_entry in get_enabled_resource_packs()
+                set_resource_pack_enabled({"entry": pack_entry}, True)
+                if filename not in activated:
+                    activated.append(filename)
+                    changed = True
+                if not was_enabled:
+                    changed = True
+                    if status_cb:
+                        status_cb("Включён базовый ресурс-пак: %s" % label)
+                activated_base_slugs.add(entry_slug)
+            elif want_enabled and filename not in activated:
                 set_resource_pack_enabled({"entry": "file/%s" % filename}, True)
                 activated.append(filename)
                 changed = True
@@ -10207,6 +10143,37 @@ def install_auto_resource_packs(status_cb=None, progress_cb=None) -> None:
 
     if changed:
         marker_file.write_text(json.dumps(activated, ensure_ascii=False), encoding="utf-8")
+    if (
+        base_activation_pending
+        and required_base_slugs
+        and required_base_slugs.issubset(activated_base_slugs)
+    ):
+        try:
+            base_activation_marker.write_text(
+                json.dumps(
+                    {
+                        "version": base_activation_version,
+                        "slugs": sorted(required_base_slugs),
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+        except OSError:
+            # A read-only marker must not make an otherwise usable game fail to
+            # launch. The migration will be retried on the next writable run.
+            pass
+    try:
+        _apply_managed_resource_pack_order(
+            mark_complete=(installed_count == total),
+            # A previously unavailable auto-pack is appended when it finally
+            # downloads. Re-run the migration in that case even if the same
+            # order-version marker already exists.
+            force=changed,
+        )
+    except Exception:
+        if status_cb:
+            status_cb("Паки установлены, но порядок применится при следующем запуске.")
 
 
 def disable_shaders_once(status_cb=None) -> None:
@@ -12099,28 +12066,110 @@ def restore_player_settings_snapshot(snapshot: Path) -> None:
         raise
 
 
-# Клавиши по умолчанию для новых установок. Меняем ТОЛЬКО если игрок не
-# назначал свою: строки нет вовсе, там дефолт мода («ё»/grave) или unknown.
-# Осознанный бинд игрока не трогаем никогда.
-DEFAULT_KEYBIND_SEEDS = (
-    # Реальный id подтверждён логом fixbind 23.07 на машине владельца:
-    # key_key.ezactions.open:key.keyboard.grave.accent
-    ("key_key.ezactions.open", "key.keyboard.grave.accent", "key.keyboard.g"),
-    # G зарезервирована за круговым меню. Эти строки нужны даже при полностью
-    # свежем options.txt: моды добавляют свои дефолты только при первом старте,
-    # то есть прежняя пост-проверка ещё не могла увидеть конфликт.
-    ("key_key.voice_chat_group", "key.keyboard.g", "key.keyboard.unknown"),
-    ("key_key.curios.open.desc", "key.keyboard.g", "key.keyboard.unknown"),
-    ("key_key.jetpack.toggle_active.description",
-     "key.keyboard.g", "key.keyboard.semicolon"),
-    ("key_key.guideme.guide", "key.keyboard.g", "key.keyboard.unknown"),
+# Versioned keybind migration for the 1.20.1 Monifactory client.  Every entry
+# lists only the known pack/default values that may be replaced.  A different
+# value is a player's choice and is deliberately left untouched.
+KEYBIND_PROFILE_VERSION = 1
+KEYBIND_PROFILE_STATE_FILENAME = ".launcher_keybind_profile.json"
+KEYBIND_PROFILE_MIGRATIONS = (
+    ("key_key.push_to_talk", ("key.keyboard.unknown",),
+     "key.keyboard.caps.lock"),
+    ("key_keybind.ironjetpacks.engine", ("key.keyboard.v",),
+     "key.keyboard.g"),
+    ("key_key.ad_astra.toggle_suit_flight", ("key.keyboard.v",),
+     "key.keyboard.g"),
+    ("key_gtceu.key.enable_jetpack", ("key.keyboard.unknown",),
+     "key.keyboard.g"),
+    ("key_key.shrink.shrink", ("key.keyboard.unknown",),
+     "key.keyboard.delete"),
+    ("key_key.buildinggadgets2.settings_menu", ("key.keyboard.unknown",),
+     "key.keyboard.semicolon"),
+    ("key_gtceu.key.tool_aoe_change", ("key.keyboard.v",),
+     "key.keyboard.right.bracket"),
+    ("key_key.journeymap.create_waypoint", ("key.keyboard.b",),
+     "key.keyboard.insert"),
+    ("key_key.corpse.death_history", ("key.keyboard.u",),
+     "key.keyboard.home"),
+    ("key_gtceu.key.armor_mode_switch", ("key.keyboard.m",),
+     "key.keyboard.f6"),
+    ("key_gtceu.key.armor_charging", ("key.keyboard.n",),
+     "key.keyboard.f7"),
+    ("key_gtceu.key.enable_boots", ("key.keyboard.period",),
+     "key.keyboard.f8"),
+    ("key_key.voice_chat_group", ("key.keyboard.g",),
+     "key.keyboard.unknown"),
+    ("key_key.mute_microphone", ("key.keyboard.m",),
+     "key.keyboard.unknown"),
+    ("key_key.disable_voice_chat", ("key.keyboard.n",),
+     "key.keyboard.unknown"),
+    ("key_key.hide_icons", ("key.keyboard.h",),
+     "key.keyboard.unknown"),
+    ("key_iris.keybind.reload", ("key.keyboard.end", "key.keyboard.r"),
+     "key.keyboard.unknown"),
+    ("key_iris.keybind.shaderPackSelection", ("key.keyboard.o",),
+     "key.keyboard.unknown"),
+    ("key_key.toastcontrol.clear", ("key.keyboard.j",),
+     "key.keyboard.unknown"),
+    ("key_key.jade.config", ("key.keyboard.keypad.0",),
+     "key.keyboard.unknown"),
+    ("key_key.jade.show_overlay", ("key.keyboard.keypad.1",),
+     "key.keyboard.unknown"),
+    ("key_quark.keybind.lock_rotation", ("key.keyboard.k",),
+     "key.keyboard.unknown"),
+    ("key_quark.keybind.change_hotbar", ("key.keyboard.z",),
+     "key.keyboard.unknown"),
+    ("key_key.journeymap.toggle_waypoints", ("key.keyboard.z",),
+     "key.keyboard.unknown"),
+    ("key_key.climbladdersfast.toggle", ("key.keyboard.backslash",),
+     "key.keyboard.unknown"),
+    ("key_zume.zoom_in", ("key.keyboard.equal",),
+     "key.keyboard.unknown"),
+    ("key_zume.zoom_out", ("key.keyboard.minus",),
+     "key.keyboard.unknown"),
+    ("key_key.ftbchunks.minimap.zoomIn", ("key.keyboard.equal",),
+     "key.keyboard.unknown"),
+    ("key_key.ftbchunks.minimap.zoomOut", ("key.keyboard.minus",),
+     "key.keyboard.unknown"),
+    ("key_key.inventoryessentials.sort_inventory", ("key.mouse.middle",),
+     "key.keyboard.unknown"),
+    ("key_key.craftingtweaks.compress_one", ("key.keyboard.k:CONTROL",),
+     "key.keyboard.unknown"),
+    ("key_key.craftingtweaks.compress_stack", ("key.keyboard.k",),
+     "key.keyboard.unknown"),
+    ("key_key.craftingtweaks.compress_all", ("key.keyboard.k:SHIFT",),
+     "key.keyboard.unknown"),
+    ("key_key.modernui.openCenter", ("key.keyboard.k:CONTROL",),
+     "key.keyboard.unknown"),
+    ("key_crafting_on_a_stick.key.open_curios", ("key.keyboard.v",),
+     "key.keyboard.unknown"),
+    ("key_key.toolbelt.slot", ("key.keyboard.v",),
+     "key.keyboard.unknown"),
+    ("key_key.cofh.mode_change_increment", ("key.keyboard.v",),
+     "key.keyboard.unknown"),
+    ("key_key.cofh.mode_change_decrement", ("key.keyboard.b",),
+     "key.keyboard.unknown"),
+    ("key_key.sophisticatedbackpacks.inventory_interaction", ("key.keyboard.c",),
+     "key.keyboard.unknown"),
+    ("key_key.socialInteractions", ("key.keyboard.p",),
+     "key.keyboard.unknown"),
+    ("key_key.curios.open.desc", ("key.keyboard.g",),
+     "key.keyboard.unknown"),
+    ("key_key.guideme.guide", ("key.keyboard.g",),
+     "key.keyboard.unknown"),
+    ("key_key.buildinggadgets2.anchor", ("key.keyboard.h",),
+     "key.keyboard.unknown"),
 )
+REMOVED_KEYBIND_ACTIONS = frozenset({
+    "key_key.ezactions.open",
+    "key_key.jetpack.toggle_active.description",
+})
+REMOVED_KEYBIND_PREFIXES = ("key_mod.chiselsandbits.",)
 
-# DataVersion формата options.txt для Minecraft 1.21.1. Без этой строки
+# DataVersion формата options.txt для Minecraft 1.20.1. Без этой строки
 # Minecraft считает созданный лаунчером файл древним и пытается преобразовать
 # современные ``key.keyboard.*`` как числовые LWJGL-коды. В итоге загрузка всех
 # настроек падает и игра возвращает экран первого запуска и дефолтные клавиши.
-CURRENT_OPTIONS_VERSION = "3955"
+CURRENT_OPTIONS_VERSION = "3465"
 
 # Обычные опции для СВЕЖЕГО options.txt: строка добавляется только если её
 # нет вовсе. Существующее значение игрока не трогаем никогда. Просьба
@@ -12137,14 +12186,6 @@ DEFAULT_OPTION_SEEDS = (
     # Просьба владельца (23.07): не запускать игру в полноэкранном режиме.
     ("fullscreen", "false"),
 )
-
-# G зарезервирована за круговым меню; стандартные конфликтующие назначения
-# других модов снимаются:
-# Simple Voice Chat по умолчанию вешает на G «группу» и перехватывает
-# нажатие (экран «Join or Create Group» вместо меню).
-RADIAL_MENU_BIND = "key_key.ezactions.open"
-RADIAL_MENU_KEY = "key.keyboard.g"
-
 
 def seed_default_keybinds() -> None:
     path = INSTANCE_DIR / "options.txt"
@@ -12181,40 +12222,58 @@ def seed_default_keybinds() -> None:
             ]
             lines.insert(0, wanted_version)
             changed = True
-        for prefix, mod_default, wanted in DEFAULT_KEYBIND_SEEDS:
-            hit = None
-            for i, line in enumerate(lines):
-                if line.startswith(prefix + ":"):
-                    hit = i
-                    break
-            if hit is None:
-                lines.append("%s:%s" % (prefix, wanted))
-                changed = True
-            elif (
-                lines[hit].split(":", 1)[1]
-                in (mod_default, "key.keyboard.unknown")
-                and lines[hit].split(":", 1)[1] != wanted
-            ):
-                lines[hit] = "%s:%s" % (prefix, wanted)
-                changed = True
+        state_path = INSTANCE_DIR / KEYBIND_PROFILE_STATE_FILENAME
+        applied_profile_version = 0
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            if isinstance(state, dict):
+                applied_profile_version = int(state.get("version", 0) or 0)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            pass
+        profile_migrated = applied_profile_version < KEYBIND_PROFILE_VERSION
+        if profile_migrated:
+            filtered_lines = []
+            for line in lines:
+                action = line.split(":", 1)[0] if line.startswith("key_") else ""
+                if (
+                    action in REMOVED_KEYBIND_ACTIONS
+                    or any(action.startswith(prefix)
+                           for prefix in REMOVED_KEYBIND_PREFIXES)
+                ):
+                    changed = True
+                    continue
+                filtered_lines.append(line)
+            lines = filtered_lines
+
+            for action, replaceable_values, wanted in KEYBIND_PROFILE_MIGRATIONS:
+                hit = None
+                for i, line in enumerate(lines):
+                    if line.startswith(action + ":"):
+                        hit = i
+                        break
+                if hit is None:
+                    lines.append("%s:%s" % (action, wanted))
+                    changed = True
+                    continue
+                current = lines[hit].split(":", 1)[1]
+                if current in replaceable_values and current != wanted:
+                    lines[hit] = "%s:%s" % (action, wanted)
+                    changed = True
         for option, value in DEFAULT_OPTION_SEEDS:
             if not any(line.startswith(option + ":") for line in lines):
                 lines.append("%s:%s" % (option, value))
                 changed = True
-        if ("%s:%s" % (RADIAL_MENU_BIND, RADIAL_MENU_KEY)) in lines:
-            for i, line in enumerate(lines):
-                if (line.startswith("key_")
-                        and line.endswith(":" + RADIAL_MENU_KEY)
-                        and not line.startswith(RADIAL_MENU_BIND + ":")):
-                    lines[i] = (line.split(":", 1)[0]
-                                + ":key.keyboard.unknown")
-                    runtime_log("radial_key_conflict_unbound: %s",
-                                line.split(":", 1)[0])
-                    changed = True
         if changed:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(chr(10).join(lines) + chr(10), encoding="utf-8")
+            _atomic_write_text(path, chr(10).join(lines) + chr(10))
             runtime_log("default_keybinds_seeded")
+        if profile_migrated:
+            _atomic_write_json(state_path, {
+                "version": KEYBIND_PROFILE_VERSION,
+                "profile": "monifactory-clean",
+            })
+            runtime_log("keybind_profile_migrated version=%s",
+                        KEYBIND_PROFILE_VERSION)
     except Exception as exc:  # noqa: BLE001
         runtime_log("keybind_seed_failed: %s", exc, level=logging.WARNING)
 
@@ -12536,6 +12595,121 @@ def _progress_slice(progress_cb, start: int, end: int):
     return sliced
 
 
+ASSET_HOST = "https://resources.download.minecraft.net/"
+VERSION_MANIFEST_URL = (
+    "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
+
+
+def _asset_index_info(mc_version):
+    """Откуда брать список ресурсов. Сначала смотрим локальный файл версии:
+    если Minecraft уже ставился, он на месте и лезть в сеть незачем."""
+    local = INSTANCE_DIR / "versions" / mc_version / ("%s.json" % mc_version)
+    if local.is_file():
+        try:
+            data = json.loads(local.read_text(encoding="utf-8"))
+            if data.get("assetIndex"):
+                return data["assetIndex"]
+        except Exception:  # noqa: BLE001
+            pass
+    manifest = _json_from_url(VERSION_MANIFEST_URL, timeout=20)
+    for item in manifest.get("versions", []):
+        if item.get("id") == mc_version:
+            return _json_from_url(item["url"], timeout=20).get("assetIndex")
+    return None
+
+
+def _json_from_url(url, timeout=20):
+    request = urllib.request.Request(url, headers={"User-Agent": "IH-Launcher"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def predownload_assets(mc_version, status_cb=None, workers=16):
+    """Скачивает ресурсы игры в несколько потоков.
+
+    minecraft-launcher-lib берёт их строго по одному, а ресурсов около
+    3600 штук и почти все — крошечные звуки. На канале с большой задержкой
+    время уходит не на передачу, а на ожидание ответа по каждому файлу:
+    у игрока с плохим пингом этап растягивается на час с лишним при том,
+    что данных там меньше гигабайта. В 16 потоков ожидание перекрывается.
+
+    Функция намеренно молчаливая: любая осечка — просто выходим, и mll
+    докачает всё сам, как делал раньше. Хуже, чем было, стать не может.
+    """
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+
+        info = _asset_index_info(mc_version)
+        if not info or not info.get("url"):
+            return 0
+
+        indexes = INSTANCE_DIR / "assets" / "indexes"
+        indexes.mkdir(parents=True, exist_ok=True)
+        index_file = indexes / ("%s.json" % info.get("id", mc_version))
+        if index_file.is_file():
+            objects = json.loads(index_file.read_text(encoding="utf-8"))
+        else:
+            objects = _json_from_url(info["url"], timeout=30)
+            index_file.write_text(json.dumps(objects), encoding="utf-8")
+        objects = objects.get("objects") or {}
+        if not objects:
+            return 0
+
+        korzina = INSTANCE_DIR / "assets" / "objects"
+        nuzhno = []
+        for value in objects.values():
+            digest = value.get("hash")
+            size = value.get("size", 0)
+            if not digest:
+                continue
+            dest = korzina / digest[:2] / digest
+            if dest.is_file() and dest.stat().st_size == size:
+                continue
+            nuzhno.append((digest, size, dest))
+        # каждый хеш встречается в списке по нескольку раз
+        nuzhno = list({item[0]: item for item in nuzhno}.values())
+        if not nuzhno:
+            return 0
+
+        vsego = len(nuzhno)
+        gotovo = [0]
+        zamok = threading.Lock()
+        if status_cb:
+            status_cb("Ресурсы игры · 0/%d" % vsego)
+
+        def kachat(zadacha):
+            digest, size, dest = zadacha
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                url = ASSET_HOST + digest[:2] + "/" + digest
+                request = urllib.request.Request(
+                    url, headers={"User-Agent": "IH-Launcher"})
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    dannye = response.read()
+                if size and len(dannye) != size:
+                    return False
+                vremenno = dest.with_suffix(".part")
+                vremenno.write_bytes(dannye)
+                vremenno.replace(dest)
+                return True
+            except Exception:  # noqa: BLE001
+                return False
+            finally:
+                with zamok:
+                    gotovo[0] += 1
+                    if status_cb and (gotovo[0] % 25 == 0
+                                      or gotovo[0] == vsego):
+                        status_cb("Ресурсы игры · %d/%d" % (gotovo[0], vsego))
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            list(pool.map(kachat, nuzhno))
+        return vsego
+    except Exception as err:  # noqa: BLE001
+        runtime_log("predownload_assets propushchen: %s" % err,
+                    level=logging.WARNING)
+        return 0
+
+
 def install_minecraft_and_modloader(
     progress: "LaunchProgress", *, force=False
 ) -> str:
@@ -12652,6 +12826,11 @@ def install_minecraft_and_modloader(
         }
 
     mc_status("подготовка")
+    # Ресурсы качаем сами и параллельно - до того, как за них возьмётся
+    # minecraft-launcher-lib. Она берёт их по одному, и на медленном
+    # отклике это самый долгий этап установки. Всё, что мы успели забрать,
+    # она потом просто проверит и пропустит.
+    predownload_assets(CONFIG["MC_VERSION"], status_cb=mc_status)
     _install_with_retry(
         mll.install.install_minecraft_version,
         CONFIG["MC_VERSION"], str(INSTANCE_DIR),
@@ -13037,28 +13216,47 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
     install_extra_shaderpacks(
         extras_status, _progress_slice(extras_progress, 15, 30))
     extras_progress(30)
+    # Mods-only delta manifest cannot carry resourcepacks/. Install the pinned
+    # translation bundled with this launcher, but never change whether the
+    # player has it enabled in options.txt.
+    try:
+        install_bundled_russian_resource_pack(extras_status)
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Failed to install bundled Russian resource pack"
+        )
+        extras_status(
+            "Не удалось обновить перевод — игра запустится с прежней версией."
+        )
     # Faithful 32x + апскейл модов. После шейдеров: обе загрузки некритичные,
     # но паки заметнее — их статус пусть будет последним на экране.
     install_auto_resource_packs(
-        extras_status, _progress_slice(extras_progress, 30, 45))
-    extras_progress(45)
+        extras_status, _progress_slice(extras_progress, 30, 42))
+    extras_progress(42)
     ensure_bedrock_mode_applied(extras_status)
     disable_shaders_once(extras_status)
     set_russian_once(extras_status)
     fix_key_conflicts_once(extras_status)
     install_game_window_icon(extras_status)
     missing_required = install_extra_client_mods(
-        extras_status, _progress_slice(extras_progress, 45, 100))
+        extras_status, _progress_slice(extras_progress, 42, 68))
+    extras_progress(68)
+    # Build only after every client mod is in place: the generated pack must
+    # describe the exact set of jars that Java is about to load.
+    install_generated_faithful_addon(
+        extras_status, _progress_slice(extras_progress, 68, 100))
     extras_progress(100)
     install_skin_config(extras_status)
 
-    # Embeddium пробовали как замену Sodium для старых видеокарт, но в ЭТОЙ
-    # сборке он несовместим с Veil (Veil идёт внутри мода Sable как jar-in-jar,
-    # а Sable нужен для серверных блоков и убрать его нельзя). Итог: игра падала
-    # с "Mod 'veil' is incompatible with 'embeddium'". Поэтому Embeddium всегда
-    # убираем, а на старой видеокарте играем на Sodium-OFF + минимальная графика
-    # (её включает weak_gpu выше). Это без артефактов, ценой FPS.
-    remove_embeddium()
+    # Раньше здесь безусловно вызывался remove_embeddium(). Это наследие
+    # Industrial Horizon: там рендером был Sodium, а Embeddium конфликтовал
+    # с Veil внутри мода Sable. В Monifactory всё наоборот - Embeddium И ЕСТЬ
+    # штатный рендер сборки, а мод chloride объявляет его обязательной
+    # зависимостью. Удаление роняло игру ещё до окна:
+    #   Missing or unsupported mandatory dependencies:
+    #     Mod ID: 'embeddium', Requested by: 'chloride'
+    # Состав сборки лаунчер трогать не должен: что приехало в modpack.zip,
+    # то и запускается.
     # Режим «очень старая видеокарта»: строго ПОСЛЕ всех установок модов,
     # чтобы снять и Sodium из сборки, и его аддоны из доп-модов.
     if load_settings().get("no_sodium"):
@@ -13115,6 +13313,12 @@ def launch_game(username: str, memory_mb: int, low_end_enabled: bool, status_cb,
             "-XX:+DisableExplicitGC", "-XX:G1NewSizePercent=30",
             "-XX:G1ReservePercent=20", "-XX:G1HeapRegionSize=16M",
             "-XX:+UseStringDeduplication",
+            # Forge рвёт рукопожатие с сервером через 40 секунд (fml.readTimeout).
+            # При входе сервер шлёт реестры всех сотен модов — на
+            # медленном канале это не успевает доехать, и игрок видит
+            # «Timed out» вместо захода. Три минуты хватает даже на плохом ADSL,
+            # а на быстром канале ничего не меняет: таймаут — это потолок, не задержка.
+            "-Dfml.readTimeout=180",
         ],
     }
 
