@@ -362,7 +362,7 @@ jobs:
             echo "::error::BUNNY_STORAGE_ACCESS_KEY is not configured."
             exit 1
           fi
-          STORAGE="https://storage.bunnycdn.com/industrial-horizon-downloads/stable"
+          STORAGE="https://storage.bunnycdn.com/industrial-horizon-downloads/moni"
           VERSIONED="CheckpointSetup-${VERSION}.exe"
           upload() {
             local file="$1"
@@ -391,7 +391,7 @@ jobs:
             echo "::error::BUNNY_API_KEY is not configured."
             exit 1
           fi
-          BASE="https://industrialhorizon.b-cdn.net/stable"
+          BASE="https://industrialhorizon.b-cdn.net/moni"
           VERSIONED="CheckpointSetup-${VERSION}.exe"
           EXPECTED="$(awk '{print tolower($1)}' deploy/CheckpointSetup.exe.sha256)"
           purge() {
@@ -423,8 +423,8 @@ jobs:
           BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
         run: |
           set -euo pipefail
-          MARKER_URL="https://industrialhorizon.b-cdn.net/stable/launcher_version.txt"
-          STORAGE_URL="https://storage.bunnycdn.com/industrial-horizon-downloads/stable/launcher_version.txt"
+          MARKER_URL="https://industrialhorizon.b-cdn.net/moni/launcher_version.txt"
+          STORAGE_URL="https://storage.bunnycdn.com/industrial-horizon-downloads/moni/launcher_version.txt"
           CHECKSUM="$(sha256sum deploy/launcher_version.txt | awk '{print toupper($1)}')"
           curl --fail --silent --show-error --retry 4 --retry-all-errors \
             --request PUT "$STORAGE_URL" \
@@ -443,7 +443,7 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
-          BASE="https://industrialhorizon.b-cdn.net/stable"
+          BASE="https://industrialhorizon.b-cdn.net/moni"
           VERSIONED="CheckpointSetup-${VERSION}.exe"
           EXPECTED="$(awk '{print tolower($1)}' deploy/CheckpointSetup.exe.sha256)"
           REMOTE_VERSION="$(curl --fail --silent --show-error --retry 4 \
