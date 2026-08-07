@@ -35,7 +35,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: build-and-release
+  group: build-and-release-v2
   cancel-in-progress: false
 
 jobs:
