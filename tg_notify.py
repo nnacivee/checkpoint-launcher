@@ -49,7 +49,7 @@ def read_changelog(launcher_path: Path) -> list:
 def build_message(version: str, changelog: list, release_url: str = "") -> str:
     entry = next((e for e in changelog if str(e.get("version")) == version), None)
 
-    title = "🚀 <b>Industrial Horizon — лаунчер %s</b>" % html.escape(version)
+    title = "🚀 <b>GloryCraft — лаунчер %s</b>" % html.escape(version)
     lines = [title]
 
     if entry:
@@ -309,7 +309,7 @@ def main() -> None:
         # Подпись к фото — максимум 1024 символа, длинный список изменений
         # туда не влезает. Карточка уходит с короткой шапкой, полный текст —
         # следом обычным сообщением: ничего не теряется.
-        short = "🚀 <b>Industrial Horizon — лаунчер %s</b>" % html.escape(version)
+        short = "🚀 <b>GloryCraft — лаунчер %s</b>" % html.escape(version)
         if release_url:
             short += '\n<a href="%s">Скачать</a>' % html.escape(release_url, quote=True)
         result = send_photo(token, chat_id, card, short)
